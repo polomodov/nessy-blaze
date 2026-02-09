@@ -219,6 +219,7 @@ export interface LanguageModelProvider {
   secondary?: boolean;
   envVarName?: string;
   apiBaseUrl?: string;
+  trustSelfSigned?: boolean;
   type: "custom" | "local" | "cloud";
 }
 
@@ -254,6 +255,7 @@ export interface CreateCustomLanguageModelProviderParams {
   name: string;
   apiBaseUrl: string;
   envVarName?: string;
+  trustSelfSigned?: boolean;
 }
 
 export interface CreateCustomLanguageModelParams {

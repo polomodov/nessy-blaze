@@ -7,6 +7,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
@@ -30,6 +31,7 @@ export function CreateCustomProviderDialog({
   const [name, setName] = useState("");
   const [apiBaseUrl, setApiBaseUrl] = useState("");
   const [envVarName, setEnvVarName] = useState("");
+  const [trustSelfSigned, setTrustSelfSigned] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const isEditMode = Boolean(editingProvider);
 
@@ -45,12 +47,14 @@ export function CreateCustomProviderDialog({
       setName(editingProvider.name || "");
       setApiBaseUrl(editingProvider.apiBaseUrl || "");
       setEnvVarName(editingProvider.envVarName || "");
+      setTrustSelfSigned(editingProvider.trustSelfSigned ?? false);
     } else if (!isOpen) {
       // Reset form when dialog closes
       setId("");
       setName("");
       setApiBaseUrl("");
       setEnvVarName("");
+      setTrustSelfSigned(false);
       setErrorMessage("");
     }
   }, [editingProvider, isOpen]);
@@ -69,6 +73,7 @@ export function CreateCustomProviderDialog({
           name: name.trim(),
           apiBaseUrl: apiBaseUrl.trim(),
           envVarName: envVarName.trim() || undefined,
+          trustSelfSigned,
         });
       } else {
         await createProvider({
@@ -76,6 +81,7 @@ export function CreateCustomProviderDialog({
           name: name.trim(),
           apiBaseUrl: apiBaseUrl.trim(),
           envVarName: envVarName.trim() || undefined,
+          trustSelfSigned,
         });
       }
 
@@ -84,6 +90,7 @@ export function CreateCustomProviderDialog({
       setName("");
       setApiBaseUrl("");
       setEnvVarName("");
+      setTrustSelfSigned(false);
 
       onSuccess();
     } catch (error) {
@@ -175,6 +182,26 @@ export function CreateCustomProviderDialog({
             <p className="text-xs text-muted-foreground">
               Environment variable name for the API key.
             </p>
+          </div>
+
+          <div className="flex items-start gap-3">
+            <Checkbox
+              id="trustSelfSigned"
+              checked={trustSelfSigned}
+              onCheckedChange={(checked) =>
+                setTrustSelfSigned(checked === true)
+              }
+              disabled={isLoading}
+            />
+            <div className="space-y-1 leading-none">
+              <Label htmlFor="trustSelfSigned">
+                Trust self-signed certificate
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Allow TLS connections to endpoints with self-signed
+                certificates.
+              </p>
+            </div>
           </div>
 
           {(errorMessage || error) && (

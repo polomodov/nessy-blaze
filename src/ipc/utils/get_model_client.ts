@@ -32,6 +32,7 @@ import { LM_STUDIO_BASE_URL } from "./lm_studio_utils";
 import { createOllamaProvider } from "./ollama_provider";
 import { getOllamaApiUrl } from "../handlers/local_model_ollama_handler";
 import { createFallback } from "./fallback_ai_model";
+import { createSelfSignedFetch } from "./self_signed_fetch";
 
 const dyadEngineUrl = process.env.DYAD_ENGINE_URL;
 
@@ -462,6 +463,9 @@ function getRegularModelClient(
           name: providerConfig.id,
           baseURL: providerConfig.apiBaseUrl,
           apiKey,
+          fetch: providerConfig.trustSelfSigned
+            ? createSelfSignedFetch()
+            : undefined,
         });
         return {
           modelClient: {

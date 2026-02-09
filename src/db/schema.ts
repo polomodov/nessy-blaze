@@ -152,6 +152,9 @@ export const language_model_providers = sqliteTable(
     name: text("name").notNull(),
     api_base_url: text("api_base_url").notNull(),
     env_var_name: text("env_var_name"),
+    trust_self_signed: integer("trust_self_signed", { mode: "boolean" })
+      .notNull()
+      .default(sql`0`),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
       .default(sql`(unixepoch())`),

@@ -31,6 +31,7 @@ export async function getLanguageModelProviders(): Promise<
       name: cp.name,
       apiBaseUrl: cp.api_base_url,
       envVarName: cp.env_var_name ?? undefined,
+      trustSelfSigned: cp.trust_self_signed ?? false,
       type: "custom",
       // hasFreeTier, websiteUrl, gatewayPrefix are not in the custom DB schema
       // They will be undefined unless overridden by hardcoded values if IDs match

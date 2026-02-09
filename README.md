@@ -22,6 +22,15 @@ No sign-up required. Just download and go.
 
 Join our growing community of AI app builders on **Reddit**: [r/dyadbuilders](https://www.reddit.com/r/dyadbuilders/) - share your projects and get help from the community!
 
+## 🧑‍💻 Local development
+
+```sh
+npm install
+npm run dev
+```
+
+Need more setup details? See [CONTRIBUTING.md](./CONTRIBUTING.md).
+
 ## 🛠️ Contributing
 
 **Dyad** is open-source (see License info below).

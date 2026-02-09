@@ -38,7 +38,7 @@ export function registerLanguageModelHandlers() {
       event: IpcMainInvokeEvent,
       params: CreateCustomLanguageModelProviderParams,
     ): Promise<LanguageModelProvider> => {
-      const { id, name, apiBaseUrl, envVarName } = params;
+      const { id, name, apiBaseUrl, envVarName, trustSelfSigned } = params;
 
       // Validation
       if (!id) {
@@ -71,6 +71,7 @@ export function registerLanguageModelHandlers() {
         name,
         api_base_url: apiBaseUrl,
         env_var_name: envVarName || null,
+        trust_self_signed: trustSelfSigned ?? false,
       });
 
       // Return the newly created provider
@@ -79,6 +80,7 @@ export function registerLanguageModelHandlers() {
         name,
         apiBaseUrl,
         envVarName,
+        trustSelfSigned: trustSelfSigned ?? false,
         type: "custom",
       };
     },
@@ -135,7 +137,7 @@ export function registerLanguageModelHandlers() {
       event: IpcMainInvokeEvent,
       params: CreateCustomLanguageModelProviderParams,
     ): Promise<LanguageModelProvider> => {
-      const { id, name, apiBaseUrl, envVarName } = params;
+      const { id, name, apiBaseUrl, envVarName, trustSelfSigned } = params;
 
       if (!id) {
         throw new Error("Provider ID is required");
@@ -168,6 +170,7 @@ export function registerLanguageModelHandlers() {
             name,
             api_base_url: apiBaseUrl,
             env_var_name: envVarName || null,
+            trust_self_signed: trustSelfSigned ?? false,
           })
           .where(
             eq(languageModelProvidersSchema.id, CUSTOM_PROVIDER_PREFIX + id),
@@ -183,6 +186,7 @@ export function registerLanguageModelHandlers() {
           name,
           apiBaseUrl,
           envVarName,
+          trustSelfSigned: trustSelfSigned ?? false,
           type: "custom" as const,
         };
       });

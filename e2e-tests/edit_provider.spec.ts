@@ -1,3 +1,4 @@
+import { expect } from "@playwright/test";
 import { test } from "./helpers/test_helper";
 
 test("can edit custom provider", async ({ po }) => {
@@ -18,7 +19,21 @@ test("can edit custom provider", async ({ po }) => {
     .getByRole("textbox", { name: "API Base URL" })
     .fill("https://api.updated-test.com/v1");
 
+  const trustCheckbox = po.page.getByRole("checkbox", {
+    name: "Trust self-signed certificate",
+  });
+  await expect(trustCheckbox).not.toBeChecked();
+  await trustCheckbox.check();
+
   await po.page.getByRole("button", { name: "Update Provider" }).click();
+
+  // Verify the flag persists
+  await po.page.getByTestId("edit-custom-provider").click();
+  await expect(
+    po.page.getByRole("checkbox", {
+      name: "Trust self-signed certificate",
+    }),
+  ).toBeChecked();
 
   // Make sure UI hasn't freezed
 });
