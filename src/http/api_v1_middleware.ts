@@ -199,7 +199,6 @@ export function createApiV1Middleware(invoke: IpcInvokeHandler) {
     const method = (req.method || "GET").toUpperCase() as HttpMethod;
     const requestUrl = new URL(req.url || "/", "http://localhost");
     const pathName = requestUrl.pathname;
-    const body = method === "GET" ? {} : await readJsonBody(req);
 
     const route = ROUTES.find((item) => {
       if (item.method !== method) {
@@ -220,6 +219,7 @@ export function createApiV1Middleware(invoke: IpcInvokeHandler) {
     }
 
     try {
+      const body = route.method === "GET" ? {} : await readJsonBody(req);
       const target = route.build(requestUrl, match, body);
       if (!target) {
         writeJson(res, 400, { error: "Invalid route parameters" });

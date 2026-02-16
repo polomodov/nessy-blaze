@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 import { createApiV1Middleware } from "./api_v1_middleware";
+import { createIpcInvokeMiddleware } from "./ipc_http_middleware";
 
 function createMockRequest({
   method,
@@ -122,5 +123,32 @@ describe("createApiV1Middleware", () => {
 
     expect(next).toHaveBeenCalledOnce();
     expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("does not consume body for non-api-v1 routes in middleware chain", async () => {
+    const invokeApi = vi.fn();
+    const invokeIpc = vi.fn().mockResolvedValue({ ok: true });
+    const apiMiddleware = createApiV1Middleware(invokeApi);
+    const ipcMiddleware = createIpcInvokeMiddleware(invokeIpc);
+
+    const req = createMockRequest({
+      method: "POST",
+      url: "/api/ipc/invoke",
+      body: JSON.stringify({
+        channel: "list-apps",
+        args: [],
+      }),
+    });
+    const { response, getBody } = createMockResponse();
+    const next = vi.fn();
+
+    await apiMiddleware(req, response, next);
+    await ipcMiddleware(req, response, vi.fn());
+
+    expect(next).toHaveBeenCalledOnce();
+    expect(invokeApi).not.toHaveBeenCalled();
+    expect(invokeIpc).toHaveBeenCalledWith("list-apps", []);
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(getBody())).toEqual({ data: { ok: true } });
   });
 });

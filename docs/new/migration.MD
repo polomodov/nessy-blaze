@@ -1,7 +1,14 @@
 # План миграции Dyad из local-first в client-service
 
 Дата: 13 февраля 2026  
+Обновлено: 16 февраля 2026  
 Статус: Draft (execution plan)
+
+## Политика транспорта (актуально)
+
+- IPC взаимодействие между клиентом и сервером помечено как **legacy**.
+- В режиме `client-server` клиент обязан обращаться к серверу только через HTTP API ручки.
+- `IpcBackendClient` сохраняется исключительно как compatibility путь для legacy desktop runtime.
 
 ## 1) Цель миграции
 
@@ -17,6 +24,7 @@
 - Выполнение кода и команд вынесено в sandbox runners.
 - Включены SSO/RBAC, audit, quotas и базовые SLO.
 - Local-first пути отключены для production-режима внутреннего сервиса.
+- Прямой IPC для client-server профиля не используется (HTTP-only контракт).
 
 ## 3) План по фазам
 
@@ -43,8 +51,8 @@
 ### Задачи
 - Ввести интерфейс `BackendClient` в renderer-слое.
 - Реализовать:
-  - `IpcBackendClient` (текущий путь),
-  - `HttpBackendClient` (новый сервисный путь).
+  - `HttpBackendClient` (основной и обязательный путь),
+  - `IpcBackendClient` (legacy compatibility only).
 - Включить feature flag/remote config для переключения режима.
 - Стабилизировать query/mutation контракты под единый клиент.
 
@@ -54,7 +62,7 @@
   - См. `docs/new/ipc_http_mapping.MD`.
 
 ### Критерий завершения
-- UI работает в двух режимах без изменения UX.
+- UI работает в client-server профиле через HTTP endpoints без прямых IPC вызовов.
 
 ---
 
@@ -92,7 +100,7 @@
 - Метрики latency/cost/token usage по tenant/user.
 
 ### Критерий завершения
-- Генерация и streaming работают без main-process AI исполнения.
+- Генерация и streaming работают по HTTP streaming контракту без зависимости от IPC.
 
 ---
 

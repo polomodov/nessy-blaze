@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Code2, Globe, Image, RotateCcw, Send, Sparkles } from "lucide-react";
+import { IpcClient } from "@/ipc/ipc_client";
+import type { Message as BackendMessage } from "@/ipc/ipc_types";
 
 type Message = {
   id: string;
@@ -35,20 +37,49 @@ const starterPrompts = [
   },
 ];
 
-const agentResponses = [
-  "Great. I am generating the first version of the page with the existing design system. Preview will appear on the right side shortly.",
-  "Understood. I am composing the layout from reusable blocks and preparing an editable preview.",
-  "Got it. I am building a consistent structure with hero, benefits, and CTA sections. You can request revisions in chat.",
-  "Working on it. I am aligning the design with your current style guide and generating the draft now.",
-];
+function generateAppName(prompt: string): string {
+  const baseName = prompt
+    .trim()
+    .replace(/[^a-zA-Z0-9\s-]/g, "")
+    .replace(/\s+/g, " ")
+    .slice(0, 48)
+    .trim();
 
-function getAgentResponse() {
-  return agentResponses[Math.floor(Math.random() * agentResponses.length)];
+  if (baseName.length > 0) {
+    return `${baseName} ${Date.now()}`;
+  }
+
+  return `Blaze Project ${Date.now()}`;
+}
+
+function mapBackendMessages(messages: BackendMessage[]): Message[] {
+  return messages
+    .filter((message) => message.role === "user" || message.role === "assistant")
+    .filter(
+      (message) => message.role === "user" || message.content.trim().length > 0,
+    )
+    .map((message) => ({
+      id: String(message.id),
+      role: message.role === "assistant" ? "agent" : "user",
+      content: message.content,
+    }));
+}
+
+function resolveErrorMessage(error: unknown): string {
+  if (typeof error === "string") {
+    return error;
+  }
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return "Failed to send message. Please try again.";
 }
 
 export function BlazeChatArea() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  const [chatId, setChatId] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -57,28 +88,50 @@ export function BlazeChatArea() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
 
-  const sendMessage = () => {
+  const sendMessage = async () => {
     if (!input.trim()) return;
+    if (isTyping) return;
+
+    const prompt = input.trim();
+    setError(null);
 
     const userMessage: Message = {
       id: String(Date.now()),
       role: "user",
-      content: input.trim(),
+      content: prompt,
     };
 
     setMessages((previous) => [...previous, userMessage]);
     setInput("");
     setIsTyping(true);
+    let activeChatId = chatId;
 
-    window.setTimeout(() => {
-      const agentMessage: Message = {
-        id: String(Date.now() + 1),
-        role: "agent",
-        content: getAgentResponse(),
-      };
-      setMessages((previous) => [...previous, agentMessage]);
+    try {
+      if (activeChatId === null) {
+        const createAppResult = await IpcClient.getInstance().createApp({
+          name: generateAppName(prompt),
+        });
+        activeChatId = createAppResult.chatId;
+        setChatId(createAppResult.chatId);
+      }
+
+      IpcClient.getInstance().streamMessage(prompt, {
+        chatId: activeChatId,
+        onUpdate: (updatedMessages) => {
+          setMessages(mapBackendMessages(updatedMessages));
+        },
+        onEnd: () => {
+          setIsTyping(false);
+        },
+        onError: (streamError) => {
+          setError(streamError);
+          setIsTyping(false);
+        },
+      });
+    } catch (sendError) {
+      setError(resolveErrorMessage(sendError));
       setIsTyping(false);
-    }, 1400 + Math.random() * 900);
+    }
   };
 
   const onInputKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -198,12 +251,17 @@ export function BlazeChatArea() {
           </div>
           <button
             onClick={sendMessage}
-            disabled={!input.trim()}
+            disabled={!input.trim() || isTyping}
             className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-all hover:brightness-105 active:scale-95 disabled:opacity-40 disabled:hover:brightness-100"
           >
             <Send size={18} />
           </button>
         </div>
+        {error && (
+          <p className="mx-auto mt-2 max-w-2xl text-center text-xs text-destructive">
+            {error}
+          </p>
+        )}
         <p className="mx-auto mt-2 max-w-2xl text-center text-xs text-muted-foreground">
           The agent drafts pages based on your design system.
         </p>

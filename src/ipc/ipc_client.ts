@@ -108,6 +108,8 @@ import { showError } from "@/lib/toast";
 import { DeepLinkData } from "./deep_link_data";
 import {
   createBackendClientTransport,
+  getConfiguredBackendBaseUrl,
+  getConfiguredBackendMode,
   type BackendClient as BackendClientTransport,
 } from "./backend_client";
 
@@ -115,6 +117,17 @@ export interface ChatStreamCallbacks {
   onUpdate: (messages: Message[]) => void;
   onEnd: (response: ChatResponseEnd) => void;
   onError: (error: string) => void;
+}
+
+interface StreamMessageOptions {
+  selectedComponents?: ComponentSelection[];
+  chatId: number;
+  redo?: boolean;
+  attachments?: FileAttachment[];
+  onUpdate: (messages: Message[]) => void;
+  onEnd: (response: ChatResponseEnd) => void;
+  onError: (error: string) => void;
+  onProblems?: (problems: ChatProblemsEvent) => void;
 }
 
 export interface AppStreamCallbacks {
@@ -140,6 +153,13 @@ interface DeleteCustomModelParams {
   modelApiName: string;
 }
 
+interface EncodedStreamAttachment {
+  name: string;
+  type: string;
+  data: string;
+  attachmentType: "upload-to-codebase" | "chat-context";
+}
+
 function normalizeDate(value: unknown): Date {
   if (value instanceof Date) {
     return value;
@@ -155,10 +175,76 @@ function normalizeDate(value: unknown): Date {
   throw new Error(`Invalid date value: ${value}`);
 }
 
+function parseSseEvent(rawEvent: string): { event: string; data: string } | null {
+  let eventName = "";
+  const dataLines: string[] = [];
+
+  for (const line of rawEvent.split("\n")) {
+    if (line.startsWith("event:")) {
+      eventName = line.slice(6).trim();
+      continue;
+    }
+
+    if (line.startsWith("data:")) {
+      dataLines.push(line.slice(5).trimStart());
+    }
+  }
+
+  if (!eventName || dataLines.length === 0) {
+    return null;
+  }
+
+  return {
+    event: eventName,
+    data: dataLines.join("\n"),
+  };
+}
+
+function resolveBackendBaseUrl(): string {
+  const configuredBaseUrl = getConfiguredBackendBaseUrl();
+  if (configuredBaseUrl) {
+    return configuredBaseUrl;
+  }
+
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return window.location.origin;
+  }
+
+  throw new Error("Backend base URL is not configured.");
+}
+
+async function encodeAttachmentsForStream(
+  attachments: FileAttachment[] | undefined,
+): Promise<EncodedStreamAttachment[]> {
+  if (!attachments || attachments.length === 0) {
+    return [];
+  }
+
+  return Promise.all(
+    attachments.map(async (attachment) => {
+      return new Promise<EncodedStreamAttachment>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          resolve({
+            name: attachment.file.name,
+            type: attachment.file.type,
+            data: reader.result as string,
+            attachmentType: attachment.type,
+          });
+        };
+        reader.onerror = () =>
+          reject(new Error(`Failed to read file: ${attachment.file.name}`));
+        reader.readAsDataURL(attachment.file);
+      });
+    }),
+  );
+}
+
 export class IpcClient {
   private static instance: IpcClient;
   private ipcRenderer: BackendClientTransport;
   private chatStreams: Map<number, ChatStreamCallbacks>;
+  private httpChatAbortControllers: Map<number, AbortController>;
   private appStreams: Map<number, AppStreamCallbacks>;
   private helpStreams: Map<
     string,
@@ -185,6 +271,7 @@ export class IpcClient {
       | undefined;
     this.ipcRenderer = createBackendClientTransport(electronIpcRenderer);
     this.chatStreams = new Map();
+    this.httpChatAbortControllers = new Map();
     this.appStreams = new Map();
     this.helpStreams = new Map();
     this.mcpConsentHandlers = new Map();
@@ -513,19 +600,12 @@ export class IpcClient {
   }
 
   // New method for streaming responses
-  public streamMessage(
-    prompt: string,
-    options: {
-      selectedComponents?: ComponentSelection[];
-      chatId: number;
-      redo?: boolean;
-      attachments?: FileAttachment[];
-      onUpdate: (messages: Message[]) => void;
-      onEnd: (response: ChatResponseEnd) => void;
-      onError: (error: string) => void;
-      onProblems?: (problems: ChatProblemsEvent) => void;
-    },
-  ): void {
+  public streamMessage(prompt: string, options: StreamMessageOptions): void {
+    if (getConfiguredBackendMode() === "http") {
+      this.streamMessageOverHttp(prompt, options);
+      return;
+    }
+
     const {
       chatId,
       redo,
@@ -544,30 +624,7 @@ export class IpcClient {
 
     // Handle file attachments if provided
     if (attachments && attachments.length > 0) {
-      // Process each file attachment and convert to base64
-      Promise.all(
-        attachments.map(async (attachment) => {
-          return new Promise<{
-            name: string;
-            type: string;
-            data: string;
-            attachmentType: "upload-to-codebase" | "chat-context";
-          }>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-              resolve({
-                name: attachment.file.name,
-                type: attachment.file.type,
-                data: reader.result as string,
-                attachmentType: attachment.type,
-              });
-            };
-            reader.onerror = () =>
-              reject(new Error(`Failed to read file: ${attachment.file.name}`));
-            reader.readAsDataURL(attachment.file);
-          });
-        }),
-      )
+      encodeAttachmentsForStream(attachments)
         .then((fileDataArray) => {
           // Use invoke to start the stream and pass the chatId and attachments
           this.ipcRenderer
@@ -609,8 +666,183 @@ export class IpcClient {
     }
   }
 
+  private streamMessageOverHttp(
+    prompt: string,
+    options: StreamMessageOptions,
+  ): void {
+    const {
+      chatId,
+      redo,
+      attachments,
+      selectedComponents,
+      onUpdate,
+      onEnd,
+      onError,
+    } = options;
+
+    this.chatStreams.set(chatId, { onUpdate, onEnd, onError });
+
+    for (const handler of this.globalChatStreamStartHandlers) {
+      handler(chatId);
+    }
+
+    const abortController = new AbortController();
+    this.httpChatAbortControllers.set(chatId, abortController);
+
+    let settled = false;
+    const settleWithEnd = (response: ChatResponseEnd) => {
+      if (settled) return;
+      settled = true;
+      this.chatStreams.delete(chatId);
+      this.httpChatAbortControllers.delete(chatId);
+      onEnd(response);
+      for (const handler of this.globalChatStreamEndHandlers) {
+        handler(chatId);
+      }
+    };
+
+    const settleWithError = (errorMessage: string) => {
+      if (settled) return;
+      settled = true;
+      this.chatStreams.delete(chatId);
+      this.httpChatAbortControllers.delete(chatId);
+      onError(errorMessage);
+      for (const handler of this.globalChatStreamEndHandlers) {
+        handler(chatId);
+      }
+    };
+
+    void (async () => {
+      try {
+        const encodedAttachments = await encodeAttachmentsForStream(attachments);
+        const baseUrl = resolveBackendBaseUrl();
+        const response = await fetch(
+          `${baseUrl}/api/v1/chats/${chatId}/stream`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              prompt,
+              chatId,
+              redo,
+              selectedComponents,
+              attachments: encodedAttachments,
+            }),
+            signal: abortController.signal,
+          },
+        );
+
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => "");
+          throw new Error(
+            `Backend stream failed with status ${response.status}${
+              errorText ? `: ${errorText}` : ""
+            }`,
+          );
+        }
+
+        if (!response.body) {
+          throw new Error("Streaming response body is empty.");
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            break;
+          }
+
+          buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+
+          let separatorIndex = buffer.indexOf("\n\n");
+          while (separatorIndex !== -1) {
+            const rawEvent = buffer.slice(0, separatorIndex).trim();
+            buffer = buffer.slice(separatorIndex + 2);
+            separatorIndex = buffer.indexOf("\n\n");
+
+            if (!rawEvent) {
+              continue;
+            }
+
+            const parsedEvent = parseSseEvent(rawEvent);
+            if (!parsedEvent) {
+              continue;
+            }
+
+            let payload: any;
+            try {
+              payload = JSON.parse(parsedEvent.data);
+            } catch {
+              continue;
+            }
+
+            if (parsedEvent.event === "chat:response:chunk") {
+              if (payload && Array.isArray(payload.messages)) {
+                onUpdate(payload.messages as Message[]);
+              }
+              continue;
+            }
+
+            if (parsedEvent.event === "chat:response:error") {
+              const errorMessage =
+                typeof payload?.error === "string"
+                  ? payload.error
+                  : "Unknown streaming error.";
+              settleWithError(errorMessage);
+              return;
+            }
+
+            if (parsedEvent.event === "chat:response:end") {
+              settleWithEnd(payload as ChatResponseEnd);
+              return;
+            }
+          }
+        }
+
+        settleWithEnd({
+          chatId,
+          updatedFiles: false,
+        });
+      } catch (error) {
+        if (abortController.signal.aborted) {
+          settleWithEnd({
+            chatId,
+            updatedFiles: false,
+          });
+          return;
+        }
+
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        showError(error);
+        settleWithError(errorMessage);
+      }
+    })();
+  }
+
   // Method to cancel an ongoing stream
   public cancelChatStream(chatId: number): void {
+    if (getConfiguredBackendMode() === "http") {
+      const controller = this.httpChatAbortControllers.get(chatId);
+      if (controller) {
+        controller.abort();
+        this.httpChatAbortControllers.delete(chatId);
+      }
+
+      const baseUrl = resolveBackendBaseUrl();
+      fetch(`${baseUrl}/api/v1/chats/${chatId}/stream/cancel`, {
+        method: "POST",
+      }).catch((error) => {
+        console.error("Error cancelling HTTP chat stream:", error);
+      });
+      return;
+    }
+
     this.ipcRenderer.invoke("chat:cancel", chatId);
   }
 

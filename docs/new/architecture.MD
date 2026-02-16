@@ -1,6 +1,7 @@
 # Целевая архитектура Dyad в режиме Client-Service
 
 Дата: 13 февраля 2026
+Обновлено: 16 февраля 2026
 Статус: Draft (для внутреннего согласования)
 
 ## 1) Контекст и цель
@@ -15,6 +16,7 @@
 3. **Безопасность по умолчанию**: sandbox для выполнения кода, audit trail, строгие политики доступа.
 4. **Надежный streaming UX**: генерация кода и ответов модели должна идти потоково с низкой задержкой.
 5. **Постепенная миграция**: без big-bang переписывания, через совместимость с текущим IPC-слоем.
+6. **HTTP-only контракт для client-service**: клиент и сервер взаимодействуют только через HTTP API (включая streaming). IPC остается legacy-компатибилити для desktop runtime.
 
 ## 3) Целевая логическая схема
 
@@ -47,6 +49,8 @@ Cross-cutting:
 ### 4.1 Client (Web/Electron)
 - Отображает UI, отправляет команды, подписывается на stream.
 - Работает через единый `BackendClient` интерфейс.
+- В режиме `client-service` использует только HTTP ручки backend API.
+- IPC вызовы в client-service профиле считаются legacy и не используются.
 - Локальное состояние — только для UX (optimistic updates, draft input).
 
 ### 4.2 API Gateway / BFF
@@ -123,8 +127,8 @@ Cross-cutting:
 
 ### Фаза A — абстракция транспорта
 - Ввести `BackendClient` в renderer:
-  - `IpcBackendClient` (текущее поведение)
-  - `HttpBackendClient` (новый service mode)
+  - `HttpBackendClient` (основной и обязательный transport в client-service)
+  - `IpcBackendClient` (legacy compatibility для desktop runtime)
 
 ### Фаза B — Control Plane
 - Вынести CRUD (apps/chats/messages/settings) в backend API.

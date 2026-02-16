@@ -11,17 +11,22 @@ function ipcHttpGatewayPlugin(): Plugin {
     apply: "serve",
     async configureServer(server) {
       const [
+        { createChatStreamMiddleware },
         { createApiV1Middleware },
         { createIpcInvokeMiddleware },
         { invokeIpcChannelOverHttp },
       ] =
         await Promise.all([
+          import("./src/http/chat_stream_middleware"),
           import("./src/http/api_v1_middleware"),
           import("./src/http/ipc_http_middleware"),
           import("./src/http/ipc_http_gateway"),
         ]);
+      const chatStreamMiddleware =
+        createChatStreamMiddleware();
       const apiMiddleware = createApiV1Middleware(invokeIpcChannelOverHttp);
       const middleware = createIpcInvokeMiddleware(invokeIpcChannelOverHttp);
+      server.middlewares.use(chatStreamMiddleware);
       server.middlewares.use(apiMiddleware);
       server.middlewares.use(middleware);
     },

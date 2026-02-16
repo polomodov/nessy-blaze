@@ -258,6 +258,64 @@ function mapMessageRow(row: Record<string, unknown>) {
   };
 }
 
+export type HttpChatMessage = {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+};
+
+export function doesHttpChatExist(chatId: number): boolean {
+  const database = getSqlite();
+  const row = database
+    .prepare("SELECT id FROM chats WHERE id = ? LIMIT 1")
+    .get(chatId);
+  return Boolean(row);
+}
+
+export function listHttpChatMessages(chatId: number): HttpChatMessage[] {
+  const database = getSqlite();
+  const rows = database
+    .prepare(
+      `SELECT id, role, content
+       FROM messages
+       WHERE chat_id = ?
+       ORDER BY created_at ASC, id ASC`,
+    )
+    .all(chatId) as Array<{
+    id: number;
+    role: string;
+    content: string;
+  }>;
+
+  return rows.map((row) => ({
+    id: Number(row.id),
+    role: row.role === "assistant" ? "assistant" : "user",
+    content: String(row.content ?? ""),
+  }));
+}
+
+export function insertHttpChatMessage(params: {
+  chatId: number;
+  role: "user" | "assistant";
+  content: string;
+}): HttpChatMessage {
+  const { chatId, role, content } = params;
+  const database = getSqlite();
+
+  const inserted = database
+    .prepare(
+      `INSERT INTO messages (chat_id, role, content, created_at)
+       VALUES (?, ?, ?, unixepoch())`,
+    )
+    .run(chatId, role, content);
+
+  return {
+    id: Number(inserted.lastInsertRowid),
+    role,
+    content,
+  };
+}
+
 async function listLanguageModelProviders() {
   const database = getSqlite();
   const customProviders = database
