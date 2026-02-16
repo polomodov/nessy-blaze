@@ -20,20 +20,31 @@ Note: if you do this, then you will need to re-add the changes and commit again.
 
 ## Project context
 
-- This is an Electron application with a secure IPC boundary.
+- The default app mode is now **client-server** (web client + backend service).
+- Electron is kept as a legacy/compatibility runtime and must be treated as secondary.
 - Frontend is a React app that uses TanStack Router (not Next.js or React Router).
-- Data fetching/mutations should be handled with TanStack Query when touching IPC-backed endpoints.
+- Data fetching/mutations should be handled with TanStack Query via the `BackendClient` abstraction.
+
+### Default run/build mode
+
+- Default scripts (`npm run dev`, `npm start`, `npm run build`) target client-server mode.
+- Electron scripts are explicit opt-in:
+  - `npm run dev:desktop`
+  - `npm run start:desktop`
+  - `npm run package:desktop`
+  - `npm run make:desktop`
+  - `npm run publish:desktop`
 
 ## IPC architecture expectations
 
-1. `src/ipc/ipc_client.ts` runs in the renderer. Access it via `IpcClient.getInstance()` and expose dedicated methods per IPC channel.
-2. `src/preload.ts` defines the renderer allowlist. New IPC APIs must be added here.
-3. `src/ipc/ipc_host.ts` registers handlers that live in files under `src/ipc/handlers/` (e.g., `app_handlers.ts`, `chat_stream_handlers.ts`, `settings_handlers.ts`).
+1. `src/ipc/ipc_client.ts` runs in the renderer and must use transport abstraction (`BackendClient`).
+2. New client features should be transport-agnostic first (HTTP/service-mode first).
+3. `src/preload.ts` and `src/ipc/ipc_host.ts` are only for desktop compatibility paths.
 4. IPC handlers should `throw new Error("...")` on failure instead of returning `{ success: false }` style payloads.
 
 ## React + IPC integration pattern
 
-When creating hooks/components that call IPC handlers:
+When creating hooks/components that call backend handlers:
 
 - Wrap reads in `useQuery`, providing a stable `queryKey`, async `queryFn` that calls the relevant `IpcClient` method, and conditionally use `enabled`/`initialData`/`meta` as needed.
 - Wrap writes in `useMutation`; validate inputs locally, call the IPC client, and invalidate related queries on success. Use shared utilities (e.g., toast helpers) in `onError`.
@@ -53,8 +64,8 @@ IMPORTANT: Do NOT generate SQL migration files by hand! This is wrong.
 
 ## General guidance
 
-- Favor descriptive module/function names that mirror IPC channel semantics.
-- Keep Electron security practices in mind (no `remote`, validate/lock by `appId` when mutating shared resources).
+- Favor descriptive module/function names that mirror backend/API semantics.
+- Keep Electron security practices in mind **only when touching desktop compatibility code** (no `remote`, validate/lock by `appId` when mutating shared resources).
 - Add tests in the same folder tree when touching renderer components.
 
 Use these guidelines whenever you work within this repository.
@@ -75,19 +86,7 @@ If you would need to mock a lot of things to unit test a feature, prefer to writ
 
 Do NOT write lots of e2e test cases for one feature. Each e2e test case adds a significant amount of overhead, so instead prefer just one or two E2E test cases that each have broad coverage of the feature in question.
 
-## Git workflow
+## Deployment workflow
 
-When pushing changes and creating PRs:
-
-1. If the branch already has an associated PR, push to whichever remote the branch is tracking.
-2. If the branch hasn't been pushed before, default to pushing to `origin` (the fork `wwwillchen/dyad`), then create a PR from the fork to the upstream repo (`dyad-sh/dyad`).
-3. If you cannot push to the fork due to permissions, push directly to `upstream` (`dyad-sh/dyad`) as a last resort.
-
-### Skipping automated review
-
-Add `#skip-bugbot` to the PR description for trivial PRs that won't affect end-users, such as:
-
-- Claude settings, commands, or agent configuration
-- Linting or test setup changes
-- Documentation-only changes
-- CI/build configuration updates
+GitHub-specific deployment and PR routing rules are temporarily removed.
+Use the current team process for release/deployment decisions until a new workflow is defined.

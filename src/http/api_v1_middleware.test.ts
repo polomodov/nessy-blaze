@@ -1,0 +1,126 @@
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { Readable } from "node:stream";
+import { describe, expect, it, vi } from "vitest";
+import { createApiV1Middleware } from "./api_v1_middleware";
+
+function createMockRequest({
+  method,
+  url,
+  body,
+}: {
+  method: string;
+  url: string;
+  body?: string;
+}): IncomingMessage {
+  const requestStream = Readable.from(body ? [body] : []);
+  return Object.assign(requestStream, {
+    method,
+    url,
+    headers: {
+      "content-type": "application/json",
+    },
+  }) as IncomingMessage;
+}
+
+function createMockResponse() {
+  let responseBody = "";
+  const headers: Record<string, string> = {};
+
+  const response = {
+    statusCode: 200,
+    setHeader: vi.fn((headerName: string, headerValue: string) => {
+      headers[headerName.toLowerCase()] = String(headerValue);
+    }),
+    end: vi.fn((chunk?: string | Buffer) => {
+      if (typeof chunk === "string") {
+        responseBody += chunk;
+        return;
+      }
+      if (chunk) {
+        responseBody += chunk.toString("utf-8");
+      }
+    }),
+  } as unknown as ServerResponse;
+
+  return {
+    response,
+    headers,
+    getBody: () => responseBody,
+  };
+}
+
+describe("createApiV1Middleware", () => {
+  it("routes GET /api/v1/apps to list-apps channel", async () => {
+    const invoke = vi.fn().mockResolvedValue({ apps: [] });
+    const middleware = createApiV1Middleware(invoke);
+    const req = createMockRequest({
+      method: "GET",
+      url: "/api/v1/apps",
+    });
+    const { response, headers, getBody } = createMockResponse();
+    const next = vi.fn();
+
+    await middleware(req, response, next);
+
+    expect(invoke).toHaveBeenCalledWith("list-apps", []);
+    expect(response.statusCode).toBe(200);
+    expect(headers["content-type"]).toBe("application/json");
+    expect(JSON.parse(getBody())).toEqual({ data: { apps: [] } });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("routes PATCH /api/v1/user/settings to set-user-settings channel", async () => {
+    const invoke = vi.fn().mockResolvedValue({ ok: true });
+    const middleware = createApiV1Middleware(invoke);
+    const req = createMockRequest({
+      method: "PATCH",
+      url: "/api/v1/user/settings",
+      body: JSON.stringify({ enableAutoUpdate: false }),
+    });
+    const { response, getBody } = createMockResponse();
+    const next = vi.fn();
+
+    await middleware(req, response, next);
+
+    expect(invoke).toHaveBeenCalledWith("set-user-settings", [
+      { enableAutoUpdate: false },
+    ]);
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(getBody())).toEqual({ data: { ok: true } });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("routes dynamic path /api/v1/apps/:appId/chats", async () => {
+    const invoke = vi.fn().mockResolvedValue([]);
+    const middleware = createApiV1Middleware(invoke);
+    const req = createMockRequest({
+      method: "GET",
+      url: "/api/v1/apps/42/chats",
+    });
+    const { response, getBody } = createMockResponse();
+    const next = vi.fn();
+
+    await middleware(req, response, next);
+
+    expect(invoke).toHaveBeenCalledWith("get-chats", [42]);
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(getBody())).toEqual({ data: [] });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("passes through unknown routes", async () => {
+    const invoke = vi.fn();
+    const middleware = createApiV1Middleware(invoke);
+    const req = createMockRequest({
+      method: "GET",
+      url: "/health",
+    });
+    const { response } = createMockResponse();
+    const next = vi.fn();
+
+    await middleware(req, response, next);
+
+    expect(next).toHaveBeenCalledOnce();
+    expect(invoke).not.toHaveBeenCalled();
+  });
+});

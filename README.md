@@ -29,6 +29,13 @@ npm install
 npm run dev
 ```
 
+`npm run dev` now starts client-server web mode by default.  
+For desktop compatibility mode, use:
+
+```sh
+npm run dev:desktop
+```
+
 Need more setup details? See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## 🛠️ Contributing

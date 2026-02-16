@@ -1,4 +1,3 @@
-import type { IpcRenderer } from "electron";
 import {
   type ChatSummary,
   ChatSummariesSchema,
@@ -107,6 +106,10 @@ import type {
 } from "@/lib/schemas";
 import { showError } from "@/lib/toast";
 import { DeepLinkData } from "./deep_link_data";
+import {
+  createBackendClientTransport,
+  type BackendClient as BackendClientTransport,
+} from "./backend_client";
 
 export interface ChatStreamCallbacks {
   onUpdate: (messages: Message[]) => void;
@@ -137,9 +140,24 @@ interface DeleteCustomModelParams {
   modelApiName: string;
 }
 
+function normalizeDate(value: unknown): Date {
+  if (value instanceof Date) {
+    return value;
+  }
+
+  if (typeof value === "string" || typeof value === "number") {
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) {
+      return date;
+    }
+  }
+
+  throw new Error(`Invalid date value: ${value}`);
+}
+
 export class IpcClient {
   private static instance: IpcClient;
-  private ipcRenderer: IpcRenderer;
+  private ipcRenderer: BackendClientTransport;
   private chatStreams: Map<number, ChatStreamCallbacks>;
   private appStreams: Map<number, AppStreamCallbacks>;
   private helpStreams: Map<
@@ -162,7 +180,10 @@ export class IpcClient {
   // Global handlers called for any chat stream completion (used for cleanup)
   private globalChatStreamEndHandlers: Set<(chatId: number) => void>;
   private constructor() {
-    this.ipcRenderer = (window as any).electron.ipcRenderer as IpcRenderer;
+    const electronIpcRenderer = (window as any).electron?.ipcRenderer as
+      | BackendClientTransport
+      | undefined;
+    this.ipcRenderer = createBackendClientTransport(electronIpcRenderer);
     this.chatStreams = new Map();
     this.appStreams = new Map();
     this.helpStreams = new Map();
@@ -406,7 +427,11 @@ export class IpcClient {
   public async getChats(appId?: number): Promise<ChatSummary[]> {
     try {
       const data = await this.ipcRenderer.invoke("get-chats", appId);
-      return ChatSummariesSchema.parse(data);
+      const normalizedData = (data as ChatSummary[]).map((chat) => ({
+        ...chat,
+        createdAt: normalizeDate(chat.createdAt),
+      }));
+      return ChatSummariesSchema.parse(normalizedData);
     } catch (error) {
       showError(error);
       throw error;
@@ -420,7 +445,11 @@ export class IpcClient {
   ): Promise<ChatSearchResult[]> {
     try {
       const data = await this.ipcRenderer.invoke("search-chats", appId, query);
-      return ChatSearchResultsSchema.parse(data);
+      const normalizedData = (data as ChatSearchResult[]).map((chat) => ({
+        ...chat,
+        createdAt: normalizeDate(chat.createdAt),
+      }));
+      return ChatSearchResultsSchema.parse(normalizedData);
     } catch (error) {
       showError(error);
       throw error;
@@ -436,7 +465,11 @@ export class IpcClient {
   public async searchApps(searchQuery: string): Promise<AppSearchResult[]> {
     try {
       const data = await this.ipcRenderer.invoke("search-app", searchQuery);
-      return AppSearchResultsSchema.parse(data);
+      const normalizedData = (data as AppSearchResult[]).map((app) => ({
+        ...app,
+        createdAt: normalizeDate(app.createdAt),
+      }));
+      return AppSearchResultsSchema.parse(normalizedData);
     } catch (error) {
       showError(error);
       throw error;
@@ -654,13 +687,8 @@ export class IpcClient {
 
   // Get allow-listed environment variables
   public async getEnvVars(): Promise<Record<string, string | undefined>> {
-    try {
-      const envVars = await this.ipcRenderer.invoke("get-env-vars");
-      return envVars as Record<string, string | undefined>;
-    } catch (error) {
-      showError(error);
-      throw error;
-    }
+    const envVars = await this.ipcRenderer.invoke("get-env-vars");
+    return envVars as Record<string, string | undefined>;
   }
 
   // List all versions (commits) of an app
@@ -706,13 +734,8 @@ export class IpcClient {
 
   // Get user settings
   public async getUserSettings(): Promise<UserSettings> {
-    try {
-      const settings = await this.ipcRenderer.invoke("get-user-settings");
-      return settings;
-    } catch (error) {
-      showError(error);
-      throw error;
-    }
+    const settings = await this.ipcRenderer.invoke("get-user-settings");
+    return settings;
   }
 
   // Update user settings

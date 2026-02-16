@@ -14,7 +14,8 @@ Something that I really appreciate are all the non-code contributions, such as r
 
 ## Development
 
-Dyad is an Electron app.
+Dyad now defaults to a client-server web mode for local development.
+Electron is supported as a compatibility runtime via explicit desktop scripts.
 
 **Install dependencies:**
 
@@ -49,6 +50,13 @@ npm run db:generate
 
 ```sh
 npm start
+```
+
+The default `npm start` / `npm run dev` command runs client-server mode.  
+To run desktop compatibility mode:
+
+```sh
+npm run start:desktop
 ```
 
 ## Setup
