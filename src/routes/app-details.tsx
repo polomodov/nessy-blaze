@@ -1,12 +1,12 @@
 import { createRoute } from "@tanstack/react-router";
-import { rootRoute } from "./root";
-import AppDetailsPage from "../pages/app-details";
 import { z } from "zod";
+import { rootRoute } from "./root";
+import { LegacyRedirect } from "./LegacyRedirect";
 
 export const appDetailsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/app-details",
-  component: AppDetailsPage,
+  component: LegacyRedirect,
   validateSearch: z.object({
     appId: z.number().optional(),
   }),

@@ -106,7 +106,7 @@ async function getSystemDebugInfo({
     selectedLanguageModel:
       serializeModelForDebug(settings.selectedModel) || "unknown",
     telemetryConsent: settings.telemetryConsent || "unknown",
-    telemetryUrl: "https://us.i.posthog.com", // Hardcoded from renderer.tsx
+    telemetryUrl: "disabled",
     dyadVersion,
     platform: process.platform,
     architecture: arch(),
