@@ -10,6 +10,8 @@ on:
   workflow_dispatch:
 jobs:
   build:
+    # Temporarily disabled while CI/CD is being redesigned.
+    if: ${{ false }}
     environment: release
     strategy:
       # Uncomment max-parallel to prevent race condition (where multiple releases are
@@ -81,6 +83,8 @@ jobs:
 
   verify-assets:
     name: Verify Release Assets
+    # Temporarily disabled while CI/CD is being redesigned.
+    if: ${{ false }}
     needs: build
     runs-on: ubuntu-latest
     steps:

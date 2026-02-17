@@ -1,9 +1,8 @@
 name: Playwright Report Comment
 
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
+  # Temporarily disabled while CI/CD is being redesigned.
+  workflow_dispatch:
 
 permissions:
   contents: read
