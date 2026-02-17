@@ -109,7 +109,7 @@
     "@ai-sdk/xai": "^3.0.10",
     "@babel/parser": "^7.28.5",
     "@biomejs/biome": "^1.9.4",
-    "@blaze-sh/supabase-management-js": "file:packages/@blaze-sh/supabase-management-js",
+    "@blaze-sh/supabase-management-js": "npm:@dyad-sh/supabase-management-js@1.0.1",
     "@lexical/react": "^0.33.1",
     "@modelcontextprotocol/sdk": "^1.17.5",
     "@monaco-editor/react": "^4.7.0-rc.0",

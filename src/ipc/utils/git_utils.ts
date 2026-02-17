@@ -1,7 +1,15 @@
 import { getGitAuthor } from "./git_author";
 import git from "isomorphic-git";
 import http from "isomorphic-git/http/node";
-import { exec } from "dugite";
+import {
+  exec as dugiteExec,
+  type IGitBufferExecutionOptions,
+  type IGitBufferResult,
+  type IGitExecutionOptions,
+  type IGitResult,
+  type IGitStringExecutionOptions,
+  type IGitStringResult,
+} from "dugite";
 import fs from "node:fs";
 import { promises as fsPromises } from "node:fs";
 import pathModule from "node:path";
@@ -30,6 +38,62 @@ import type {
   GitCreateBranchParams,
   GitDeleteBranchParams,
 } from "../git_types";
+
+const GIT_WORKDIR_MISSING_MESSAGE =
+  "The project may have been moved or deleted.";
+
+function ensureGitWorkingDirectory(path: string): void {
+  if (!fs.existsSync(path)) {
+    throw new Error(
+      `Project directory does not exist: ${path}. ${GIT_WORKDIR_MISSING_MESSAGE}`,
+    );
+  }
+
+  try {
+    if (!fs.statSync(path).isDirectory()) {
+      throw new Error(`Project path is not a directory: ${path}.`);
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Project path is")) {
+      throw error;
+    }
+    throw new Error(
+      `Project directory does not exist: ${path}. ${GIT_WORKDIR_MISSING_MESSAGE}`,
+    );
+  }
+}
+
+function exec(
+  args: string[],
+  path: string,
+  options?: IGitStringExecutionOptions,
+): Promise<IGitStringResult>;
+function exec(
+  args: string[],
+  path: string,
+  options?: IGitBufferExecutionOptions,
+): Promise<IGitBufferResult>;
+async function exec(
+  args: string[],
+  path: string,
+  options?: IGitExecutionOptions,
+): Promise<IGitResult> {
+  ensureGitWorkingDirectory(path);
+  try {
+    return await dugiteExec(args, path, options);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.includes("ENOENT: Git failed to execute") &&
+      !fs.existsSync(path)
+    ) {
+      throw new Error(
+        `Project directory does not exist: ${path}. ${GIT_WORKDIR_MISSING_MESSAGE}`,
+      );
+    }
+    throw error;
+  }
+}
 
 /**
  * Helper function that wraps exec and throws an error if the exit code is non-zero

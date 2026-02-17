@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
+import git from "isomorphic-git";
 import { getBlazeAppPath, getUserDataPath } from "../paths/paths";
 import { getEnvVar } from "../ipc/utils/read_env";
 import {
@@ -89,6 +90,54 @@ function sanitizePathName(value: string): string {
     return sanitized;
   }
   return "app";
+}
+
+async function stageAllFiles(dir: string): Promise<void> {
+  const matrix = await git.statusMatrix({ fs, dir });
+
+  for (const [filepath, headStatus, workdirStatus] of matrix) {
+    if (headStatus === 0 && workdirStatus === 2) {
+      await git.add({ fs, dir, filepath });
+    }
+  }
+}
+
+async function ensureWorkspaceForApp(
+  appPath: string,
+): Promise<{ initialCommitHash: string }> {
+  const resolvedPath = getBlazeAppPath(appPath);
+  const scaffoldPath = path.resolve(process.cwd(), "scaffold");
+
+  if (!fs.existsSync(scaffoldPath)) {
+    throw new Error(`Scaffold directory not found: ${scaffoldPath}`);
+  }
+
+  if (fs.existsSync(resolvedPath)) {
+    throw new Error(`App already exists at: ${resolvedPath}`);
+  }
+
+  await fs.promises.mkdir(resolvedPath, { recursive: true });
+
+  try {
+    await fs.promises.cp(scaffoldPath, resolvedPath, { recursive: true });
+    await git.init({ fs, dir: resolvedPath, defaultBranch: "main" });
+    await stageAllFiles(resolvedPath);
+
+    const initialCommitHash = await git.commit({
+      fs,
+      dir: resolvedPath,
+      message: "Init Blaze app",
+      author: {
+        name: "Blaze",
+        email: "noreply@blaze.sh",
+      },
+    });
+
+    return { initialCommitHash };
+  } catch (error) {
+    await fs.promises.rm(resolvedPath, { recursive: true, force: true });
+    throw error;
+  }
 }
 
 function getDatabasePath(): string {
@@ -489,6 +538,7 @@ const handlers: Record<string, InvokeHandler> = {
     }
 
     const appPath = `${sanitizePathName(appName)}-${Date.now()}`;
+    const { initialCommitHash } = await ensureWorkspaceForApp(appPath);
     const database = getSqlite();
 
     const appInsert = database
@@ -503,9 +553,9 @@ const handlers: Record<string, InvokeHandler> = {
     const chatInsert = database
       .prepare(
         `INSERT INTO chats (app_id, title, initial_commit_hash, created_at)
-         VALUES (?, NULL, NULL, unixepoch())`,
+         VALUES (?, NULL, ?, unixepoch())`,
       )
-      .run(appId);
+      .run(appId, initialCommitHash);
 
     const appRow = database
       .prepare("SELECT * FROM apps WHERE id = ? LIMIT 1")
