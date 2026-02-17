@@ -60,9 +60,9 @@ export function createStreamChunk(
 }
 
 export const CANNED_MESSAGE = `
-  <dyad-write path="file1.txt">
+  <blaze-write path="file1.txt">
   A file (2)
-  </dyad-write>
+  </blaze-write>
   More
   EOM`;
 
@@ -204,7 +204,7 @@ app.post("/github/api/test/clear-push-events", handleClearPushEvents);
 // GitHub Git endpoints - intercept all paths with /github/git prefix
 app.all("/github/git/*", handleGitPush);
 
-// Dyad Engine turbo-file-edit endpoint for edit_file tool
+// Blaze Engine turbo-file-edit endpoint for edit_file tool
 app.post("/engine/v1/tools/turbo-file-edit", (req, res) => {
   const { path: filePath, description } = req.body;
   console.log(
@@ -219,7 +219,7 @@ app.post("/engine/v1/tools/turbo-file-edit", (req, res) => {
   }
 });
 
-// Dyad Engine code-search endpoint for code_search tool
+// Blaze Engine code-search endpoint for code_search tool
 app.post("/engine/v1/tools/code-search", (req, res) => {
   const { query, filesContext } = req.body;
   console.log(

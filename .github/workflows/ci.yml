@@ -16,7 +16,7 @@ jobs:
   test:
     # Why Mac and Windows?
     # I can't run electron playwright on ubuntu-latest and
-    # Linux support for Dyad is experimental so not as important
+    # Linux support for Blaze is experimental so not as important
     # as Mac + Windows
     strategy:
       fail-fast: false
@@ -66,7 +66,7 @@ jobs:
         with:
           version: latest
       - name: Clone nextjs-template
-        run: git clone --depth 1 https://github.com/dyad-sh/nextjs-template.git nextjs-template
+        run: git clone --depth 1 https://github.com/blaze-sh/nextjs-template.git nextjs-template
       - name: Get pnpm store directory
         id: pnpm-cache
         shell: bash

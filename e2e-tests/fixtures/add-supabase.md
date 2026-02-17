@@ -1,2 +1,2 @@
 Adding supabase...
-<dyad-add-integration provider="supabase"></dyad-add-integration>
+<blaze-add-integration provider="supabase"></blaze-add-integration>

@@ -203,7 +203,7 @@ export function ChatInput({ chatId }: { chatId?: number }) {
     // Clear overlays in the preview iframe
     if (previewIframeRef?.contentWindow) {
       previewIframeRef.contentWindow.postMessage(
-        { type: "clear-dyad-component-overlays" },
+        { type: "clear-blaze-component-overlays" },
         "*",
       );
     }
@@ -302,7 +302,7 @@ export function ChatInput({ chatId }: { chatId?: number }) {
         <ChatErrorBox
           onDismiss={dismissError}
           error={error}
-          isDyadProEnabled={settings.enableDyadPro ?? false}
+          isBlazeProEnabled={settings.enableBlazePro ?? false}
         />
       )}
       {/* Display loading or error state for proposal */}
@@ -399,7 +399,7 @@ export function ChatInput({ chatId }: { chatId?: number }) {
                 // Deactivate component selector in iframe
                 if (previewIframeRef?.contentWindow) {
                   previewIframeRef.contentWindow.postMessage(
-                    { type: "deactivate-dyad-component-selector" },
+                    { type: "deactivate-blaze-component-selector" },
                     "*",
                   );
                 }
@@ -414,7 +414,7 @@ export function ChatInput({ chatId }: { chatId?: number }) {
                       <button
                         onClick={() => {
                           IpcClient.getInstance().openExternalUrl(
-                            "https://dyad.sh/pro",
+                            "https://blaze.sh/pro",
                           );
                         }}
                         className="flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors cursor-pointer"
@@ -450,7 +450,7 @@ export function ChatInput({ chatId }: { chatId?: number }) {
               onChange={setInputValue}
               onSubmit={handleSubmit}
               onPaste={handlePaste}
-              placeholder="Ask Dyad to build..."
+              placeholder="Ask Blaze to build..."
               excludeCurrentApp={true}
               disableSendButton={disableSendButton}
             />
@@ -573,7 +573,7 @@ function WriteCodeProperlyButton() {
       return;
     }
     streamMessage({
-      prompt: `Write the code in the previous message in the correct format using \`<dyad-write>\` tags!`,
+      prompt: `Write the code in the previous message in the correct format using \`<blaze-write>\` tags!`,
       chatId,
       redo: false,
     });

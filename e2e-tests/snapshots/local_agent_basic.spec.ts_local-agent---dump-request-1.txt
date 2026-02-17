@@ -14,7 +14,7 @@
       },
       {
         "role": "assistant",
-        "content": "\n  <dyad-write path=\"file1.txt\">\n  A file (2)\n  </dyad-write>\n  More\n  EOM"
+        "content": "\n  <blaze-write path=\"file1.txt\">\n  A file (2)\n  </blaze-write>\n  More\n  EOM"
       },
       {
         "role": "user",
@@ -460,6 +460,6 @@
     "stream": true
   },
   "headers": {
-    "authorization": "Bearer testdyadkey"
+    "authorization": "Bearer testblazekey"
   }
 }

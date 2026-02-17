@@ -22,6 +22,24 @@ describe("invokeIpcChannelOverHttp", () => {
     expect(response.version).toBe(packageJson.version);
   });
 
+  it("creates app via HTTP IPC gateway", async () => {
+    const appName = `http-ipc-create-app-${Date.now()}`;
+
+    const response = (await invokeIpcChannelOverHttp("create-app", [
+      { name: appName },
+    ])) as {
+      app: {
+        id: number;
+        name: string;
+      };
+      chatId: number;
+    };
+
+    expect(response.app.id).toBeGreaterThan(0);
+    expect(response.app.name).toBe(appName);
+    expect(response.chatId).toBeGreaterThan(0);
+  });
+
   it("throws for unsupported channels", async () => {
     await expect(
       invokeIpcChannelOverHttp("unknown-channel", []),

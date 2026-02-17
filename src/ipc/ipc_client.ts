@@ -108,6 +108,7 @@ import { showError } from "@/lib/toast";
 import { DeepLinkData } from "./deep_link_data";
 import {
   createBackendClientTransport,
+  getAllowIpcFallback,
   getConfiguredBackendBaseUrl,
   getConfiguredBackendMode,
   type BackendClient as BackendClientTransport,
@@ -175,7 +176,9 @@ function normalizeDate(value: unknown): Date {
   throw new Error(`Invalid date value: ${value}`);
 }
 
-function parseSseEvent(rawEvent: string): { event: string; data: string } | null {
+function parseSseEvent(
+  rawEvent: string,
+): { event: string; data: string } | null {
   let eventName = "";
   const dataLines: string[] = [];
 
@@ -200,17 +203,34 @@ function parseSseEvent(rawEvent: string): { event: string; data: string } | null
   };
 }
 
-function resolveBackendBaseUrl(): string {
+function getBackendBaseUrlCandidates(): string[] {
+  const candidates: string[] = [];
   const configuredBaseUrl = getConfiguredBackendBaseUrl();
   if (configuredBaseUrl) {
-    return configuredBaseUrl;
+    candidates.push(configuredBaseUrl);
   }
 
   if (typeof window !== "undefined" && window.location?.origin) {
-    return window.location.origin;
+    const originBaseUrl = window.location.origin.replace(/\/+$/, "");
+    if (!candidates.includes(originBaseUrl)) {
+      candidates.push(originBaseUrl);
+    }
   }
 
-  throw new Error("Backend base URL is not configured.");
+  return candidates;
+}
+
+function isLikelyFetchFailure(error: unknown): boolean {
+  if (error instanceof DOMException && error.name === "AbortError") {
+    return false;
+  }
+
+  if (error instanceof TypeError) {
+    return true;
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  return /failed to fetch|fetch failed|networkerror/i.test(message);
 }
 
 async function encodeAttachmentsForStream(
@@ -243,6 +263,7 @@ async function encodeAttachmentsForStream(
 export class IpcClient {
   private static instance: IpcClient;
   private ipcRenderer: BackendClientTransport;
+  private readonly hasNativeIpc: boolean;
   private chatStreams: Map<number, ChatStreamCallbacks>;
   private httpChatAbortControllers: Map<number, AbortController>;
   private appStreams: Map<number, AppStreamCallbacks>;
@@ -269,6 +290,7 @@ export class IpcClient {
     const electronIpcRenderer = (window as any).electron?.ipcRenderer as
       | BackendClientTransport
       | undefined;
+    this.hasNativeIpc = Boolean(electronIpcRenderer);
     this.ipcRenderer = createBackendClientTransport(electronIpcRenderer);
     this.chatStreams = new Map();
     this.httpChatAbortControllers = new Map();
@@ -459,8 +481,8 @@ export class IpcClient {
     return IpcClient.instance;
   }
 
-  public async restartDyad(): Promise<void> {
-    await this.ipcRenderer.invoke("restart-dyad");
+  public async restartBlaze(): Promise<void> {
+    await this.ipcRenderer.invoke("restart-blaze");
   }
 
   public async reloadEnvPath(): Promise<void> {
@@ -606,6 +628,14 @@ export class IpcClient {
       return;
     }
 
+    this.streamMessageOverIpc(prompt, options);
+  }
+
+  private streamMessageOverIpc(
+    prompt: string,
+    options: StreamMessageOptions,
+    notifyStartHandlers = true,
+  ): void {
     const {
       chatId,
       redo,
@@ -617,9 +647,10 @@ export class IpcClient {
     } = options;
     this.chatStreams.set(chatId, { onUpdate, onEnd, onError });
 
-    // Notify global stream start handlers
-    for (const handler of this.globalChatStreamStartHandlers) {
-      handler(chatId);
+    if (notifyStartHandlers) {
+      for (const handler of this.globalChatStreamStartHandlers) {
+        handler(chatId);
+      }
     }
 
     // Handle file attachments if provided
@@ -714,25 +745,48 @@ export class IpcClient {
 
     void (async () => {
       try {
-        const encodedAttachments = await encodeAttachmentsForStream(attachments);
-        const baseUrl = resolveBackendBaseUrl();
-        const response = await fetch(
-          `${baseUrl}/api/v1/chats/${chatId}/stream`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              prompt,
-              chatId,
-              redo,
-              selectedComponents,
-              attachments: encodedAttachments,
-            }),
-            signal: abortController.signal,
-          },
-        );
+        const encodedAttachments =
+          await encodeAttachmentsForStream(attachments);
+        const baseUrls = getBackendBaseUrlCandidates();
+        if (baseUrls.length === 0) {
+          throw new Error("Backend base URL is not configured.");
+        }
+
+        let response: Response | null = null;
+        for (let index = 0; index < baseUrls.length; index += 1) {
+          const baseUrl = baseUrls[index];
+          const hasNextBaseUrl = index < baseUrls.length - 1;
+          try {
+            response = await fetch(`${baseUrl}/api/v1/chats/${chatId}/stream`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                prompt,
+                chatId,
+                redo,
+                selectedComponents,
+                attachments: encodedAttachments,
+              }),
+              signal: abortController.signal,
+            });
+            break;
+          } catch (fetchError) {
+            if (!hasNextBaseUrl || !isLikelyFetchFailure(fetchError)) {
+              throw fetchError;
+            }
+
+            console.warn(
+              `[IpcClient] Stream request failed against "${baseUrl}". Retrying with "${baseUrls[index + 1]}".`,
+              fetchError,
+            );
+          }
+        }
+
+        if (!response) {
+          throw new Error("Streaming request failed.");
+        }
 
         if (!response.ok) {
           const errorText = await response.text().catch(() => "");
@@ -757,7 +811,9 @@ export class IpcClient {
             break;
           }
 
-          buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+          buffer += decoder
+            .decode(value, { stream: true })
+            .replace(/\r\n/g, "\n");
 
           let separatorIndex = buffer.indexOf("\n\n");
           while (separatorIndex !== -1) {
@@ -819,6 +875,15 @@ export class IpcClient {
 
         const errorMessage =
           error instanceof Error ? error.message : String(error);
+        if (
+          this.hasNativeIpc &&
+          getAllowIpcFallback() &&
+          isLikelyFetchFailure(error)
+        ) {
+          this.httpChatAbortControllers.delete(chatId);
+          this.streamMessageOverIpc(prompt, options, false);
+          return;
+        }
         showError(error);
         settleWithError(errorMessage);
       }
@@ -834,12 +899,44 @@ export class IpcClient {
         this.httpChatAbortControllers.delete(chatId);
       }
 
-      const baseUrl = resolveBackendBaseUrl();
-      fetch(`${baseUrl}/api/v1/chats/${chatId}/stream/cancel`, {
-        method: "POST",
-      }).catch((error) => {
-        console.error("Error cancelling HTTP chat stream:", error);
-      });
+      const baseUrls = getBackendBaseUrlCandidates();
+      if (baseUrls.length === 0) {
+        console.error(
+          "Error cancelling HTTP chat stream:",
+          new Error("Backend base URL is not configured."),
+        );
+        return;
+      }
+
+      void (async () => {
+        for (let index = 0; index < baseUrls.length; index += 1) {
+          const baseUrl = baseUrls[index];
+          const hasNextBaseUrl = index < baseUrls.length - 1;
+          try {
+            await fetch(`${baseUrl}/api/v1/chats/${chatId}/stream/cancel`, {
+              method: "POST",
+            });
+            return;
+          } catch (error) {
+            if (!hasNextBaseUrl || !isLikelyFetchFailure(error)) {
+              console.error("Error cancelling HTTP chat stream:", error);
+              if (
+                this.hasNativeIpc &&
+                getAllowIpcFallback() &&
+                isLikelyFetchFailure(error)
+              ) {
+                this.ipcRenderer.invoke("chat:cancel", chatId).catch(() => {});
+              }
+              return;
+            }
+
+            console.warn(
+              `[IpcClient] Stream cancel failed against "${baseUrl}". Retrying with "${baseUrls[index + 1]}".`,
+              error,
+            );
+          }
+        }
+      })();
       return;
     }
 

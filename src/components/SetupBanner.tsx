@@ -170,7 +170,7 @@ export function SetupBanner() {
   return (
     <>
       <p className="text-xl font-medium text-zinc-700 dark:text-zinc-300 p-4">
-        Setup Dyad
+        Setup Blaze
       </p>
       <OnboardingBanner
         isVisible={isOnboardingVisible}
@@ -372,7 +372,7 @@ function NodeJsHelpCallout() {
         <a
           onClick={() => {
             IpcClient.getInstance().openExternalUrl(
-              "https://www.dyad.sh/docs/help/nodejs",
+              "https://www.blaze.sh/docs/help/nodejs",
             );
           }}
           className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
@@ -425,7 +425,7 @@ function NodeInstallButton({
     case "finished-checking":
       return (
         <div className="mt-3 text-sm text-red-600 dark:text-red-400">
-          Node.js not detected. Closing and re-opening Dyad usually fixes this.
+          Node.js not detected. Closing and re-opening Blaze usually fixes this.
         </div>
       );
     default:

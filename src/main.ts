@@ -1,4 +1,9 @@
-import { app, BrowserWindow, dialog, Menu } from "electron";
+import electron from "electron";
+import type {
+  BrowserWindow as BrowserWindowType,
+  Event as ElectronEvent,
+  ContextMenuParams,
+} from "electron";
 import * as path from "node:path";
 import { registerIpcHandlers } from "./ipc/ipc_host";
 import dotenv from "dotenv";
@@ -12,7 +17,7 @@ import {
   writeSettings,
 } from "./main/settings";
 import { handleSupabaseOAuthReturn } from "./supabase_admin/supabase_return_handler";
-import { handleDyadProReturn } from "./main/pro";
+import { handleBlazeProReturn } from "./main/pro";
 import { IS_TEST_BUILD } from "./ipc/utils/test_utils";
 import { BackupManager } from "./backup_manager";
 import { getDatabasePath, initializeDatabase } from "./db";
@@ -31,7 +36,9 @@ import {
 import { cleanupOldAiMessagesJson } from "./pro/main/ipc/handlers/local_agent/ai_messages_cleanup";
 import fs from "fs";
 import { gitAddSafeDirectory } from "./ipc/utils/git_utils";
-import { getDyadAppsBaseDirectory } from "./paths/paths";
+import { getBlazeAppsBaseDirectory } from "./paths/paths";
+
+const { app, BrowserWindow, dialog, Menu } = electron;
 
 log.errorHandler.startCatching();
 log.eventLogger.startLogging();
@@ -69,12 +76,12 @@ if (fs.existsSync(gitDir)) {
 // https://www.electronjs.org/docs/latest/tutorial/launch-app-from-url-in-another-app#main-process-mainjs
 if (process.defaultApp) {
   if (process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient("dyad", process.execPath, [
+    app.setAsDefaultProtocolClient("blaze", process.execPath, [
       path.resolve(process.argv[1]),
     ]);
   }
 } else {
-  app.setAsDefaultProtocolClient("dyad");
+  app.setAsDefaultProtocolClient("blaze");
 }
 
 export async function onReady() {
@@ -94,11 +101,11 @@ export async function onReady() {
 
   const settings = readSettings();
 
-  // Add dyad-apps directory to git safe.directory (required for Windows)
+  // Add blaze-apps directory to git safe.directory (required for Windows)
   if (settings.enableNativeGit) {
     // Don't need to await because this only needs to run before
-    // the user starts interacting with Dyad app and uses a git-related feature.
-    gitAddSafeDirectory(getDyadAppsBaseDirectory());
+    // the user starts interacting with Blaze app and uses a git-related feature.
+    gitAddSafeDirectory(getBlazeAppsBaseDirectory());
   }
 
   // Check if app was force-closed
@@ -127,13 +134,13 @@ export async function onReady() {
     // but this is more explicit and falls back to stable if there's an unknown
     // release channel.
     const postfix = settings.releaseChannel === "beta" ? "beta" : "stable";
-    const host = `https://api.dyad.sh/v1/update/${postfix}`;
+    const host = `https://api.blaze.sh/v1/update/${postfix}`;
     logger.info("Auto-update release channel=", postfix);
     updateElectronApp({
       logger,
       updateSource: {
         type: UpdateSourceType.ElectronPublicUpdateService,
-        repo: "dyad-sh/dyad",
+        repo: "blaze-sh/blaze",
         host,
       },
     }); // additional configuration options available
@@ -186,7 +193,7 @@ declare global {
   const MAIN_WINDOW_VITE_DEV_SERVER_URL: string;
 }
 
-let mainWindow: BrowserWindow | null = null;
+let mainWindow: BrowserWindowType | null = null;
 let pendingForceCloseData: any = null;
 
 const createWindow = () => {
@@ -235,64 +242,69 @@ const createWindow = () => {
   }
 
   // Enable native context menu on right-click
-  mainWindow.webContents.on("context-menu", (event, params) => {
-    // Prevent any default behavior and show our own menu
-    event.preventDefault();
+  mainWindow.webContents.on(
+    "context-menu",
+    (event: ElectronEvent, params: ContextMenuParams) => {
+      // Prevent any default behavior and show our own menu
+      event.preventDefault();
 
-    const template: Electron.MenuItemConstructorOptions[] = [];
-    if (params.isEditable) {
-      template.push(
-        { role: "undo" },
-        { role: "redo" },
-        { type: "separator" },
-        { role: "cut" },
-        { role: "copy" },
-        { role: "paste" },
-        { role: "delete" },
-      );
-      if (params.misspelledWord) {
-        const suggestions: Electron.MenuItemConstructorOptions[] =
-          params.dictionarySuggestions.slice(0, 5).map((suggestion) => ({
-            label: suggestion,
-            click: () => {
-              try {
-                mainWindow?.webContents.replaceMisspelling(suggestion);
-              } catch (error) {
-                logger.error("Failed to replace misspelling:", error);
-              }
+      const template: Electron.MenuItemConstructorOptions[] = [];
+      if (params.isEditable) {
+        template.push(
+          { role: "undo" },
+          { role: "redo" },
+          { type: "separator" },
+          { role: "cut" },
+          { role: "copy" },
+          { role: "paste" },
+          { role: "delete" },
+        );
+        if (params.misspelledWord) {
+          const suggestions: Electron.MenuItemConstructorOptions[] =
+            params.dictionarySuggestions
+              .slice(0, 5)
+              .map((suggestion: string) => ({
+                label: suggestion,
+                click: () => {
+                  try {
+                    mainWindow?.webContents.replaceMisspelling(suggestion);
+                  } catch (error) {
+                    logger.error("Failed to replace misspelling:", error);
+                  }
+                },
+              }));
+          template.push(
+            { type: "separator" },
+            {
+              type: "submenu",
+              label: `Correct "${params.misspelledWord}"`,
+              submenu: suggestions,
             },
-          }));
+          );
+        }
+        template.push({ type: "separator" }, { role: "selectAll" });
+      } else {
+        if (params.selectionText && params.selectionText.length > 0) {
+          template.push({ role: "copy" });
+        }
+        template.push({ role: "selectAll" });
+      }
+
+      if (process.env.NODE_ENV === "development") {
         template.push(
           { type: "separator" },
           {
-            type: "submenu",
-            label: `Correct "${params.misspelledWord}"`,
-            submenu: suggestions,
+            label: "Inspect Element",
+            click: () =>
+              mainWindow?.webContents.inspectElement(params.x, params.y),
           },
         );
       }
-      template.push({ type: "separator" }, { role: "selectAll" });
-    } else {
-      if (params.selectionText && params.selectionText.length > 0) {
-        template.push({ role: "copy" });
-      }
-      template.push({ role: "selectAll" });
-    }
 
-    if (process.env.NODE_ENV === "development") {
-      template.push(
-        { type: "separator" },
-        {
-          label: "Inspect Element",
-          click: () =>
-            mainWindow?.webContents.inspectElement(params.x, params.y),
-        },
-      );
-    }
-
-    const menu = Menu.buildFromTemplate(template);
-    menu.popup({ window: mainWindow! });
-  });
+      const menu = Menu.buildFromTemplate(template);
+      menu.popup({ window: mainWindow! });
+    },
+  );
 };
 
 const gotTheLock = app.requestSingleInstanceLock();
@@ -318,7 +330,7 @@ app.on("open-url", (event, url) => {
 });
 
 async function handleDeepLinkReturn(url: string) {
-  // example url: "dyad://supabase-oauth-return?token=a&refreshToken=b"
+  // example url: "blaze://supabase-oauth-return?token=a&refreshToken=b"
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -334,10 +346,10 @@ async function handleDeepLinkReturn(url: string) {
     "hostname",
     parsed.hostname,
   );
-  if (parsed.protocol !== "dyad:") {
+  if (parsed.protocol !== "blaze:") {
     dialog.showErrorBox(
       "Invalid Protocol",
-      `Expected dyad://, got ${parsed.protocol}. Full URL: ${url}`,
+      `Expected blaze://, got ${parsed.protocol}. Full URL: ${url}`,
     );
     return;
   }
@@ -377,14 +389,14 @@ async function handleDeepLinkReturn(url: string) {
     });
     return;
   }
-  // dyad://dyad-pro-return?key=123&budget_reset_at=2025-05-26T16:31:13.492000Z&max_budget=100
-  if (parsed.hostname === "dyad-pro-return") {
+  // blaze://blaze-pro-return?key=123&budget_reset_at=2025-05-26T16:31:13.492000Z&max_budget=100
+  if (parsed.hostname === "blaze-pro-return") {
     const apiKey = parsed.searchParams.get("key");
     if (!apiKey) {
       dialog.showErrorBox("Invalid URL", "Expected key");
       return;
     }
-    handleDyadProReturn({
+    handleBlazeProReturn({
       apiKey,
     });
     // Send message to renderer to trigger re-render
@@ -393,7 +405,7 @@ async function handleDeepLinkReturn(url: string) {
     });
     return;
   }
-  // dyad://add-mcp-server?name=Chrome%20DevTools&config=eyJjb21tYW5kIjpudWxsLCJ0eXBlIjoic3RkaW8ifQ%3D%3D
+  // blaze://add-mcp-server?name=Chrome%20DevTools&config=eyJjb21tYW5kIjpudWxsLCJ0eXBlIjoic3RkaW8ifQ%3D%3D
   if (parsed.hostname === "add-mcp-server") {
     const name = parsed.searchParams.get("name");
     const config = parsed.searchParams.get("config");
@@ -423,7 +435,7 @@ async function handleDeepLinkReturn(url: string) {
     }
     return;
   }
-  // dyad://add-prompt?data=<base64-encoded-json>
+  // blaze://add-prompt?data=<base64-encoded-json>
   if (parsed.hostname === "add-prompt") {
     const data = parsed.searchParams.get("data");
     if (!data) {

@@ -56,7 +56,7 @@ Always include the placeholder.svg file in your output file tree.
 
 async function callWebCrawl(
   url: string,
-  ctx: Pick<AgentContext, "dyadRequestId">,
+  ctx: Pick<AgentContext, "blazeRequestId">,
 ): Promise<z.infer<typeof webCrawlResponseSchema>> {
   const response = await engineFetch(ctx, "/tools/web-crawl", {
     method: "POST",
@@ -85,9 +85,9 @@ export const webCrawlTool: ToolDefinition<z.infer<typeof webCrawlSchema>> = {
   buildXml: (args, isComplete) => {
     if (!args.url) return undefined;
 
-    let xml = `<dyad-web-crawl>${escapeXmlContent(args.url)}`;
+    let xml = `<blaze-web-crawl>${escapeXmlContent(args.url)}`;
     if (isComplete) {
-      xml += "</dyad-web-crawl>";
+      xml += "</blaze-web-crawl>";
     }
     return xml;
   },

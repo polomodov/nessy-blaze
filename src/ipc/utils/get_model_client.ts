@@ -24,8 +24,8 @@ import {
 import { getLanguageModelProviders } from "../shared/language_model_helpers";
 import { LanguageModelProvider } from "../ipc_types";
 import {
-  createDyadEngine,
-  type DyadEngineProvider,
+  createBlazeEngine,
+  type BlazeEngineProvider,
 } from "./llm_engine_provider";
 
 import { LM_STUDIO_BASE_URL } from "./lm_studio_utils";
@@ -34,7 +34,7 @@ import { getOllamaApiUrl } from "../handlers/local_model_ollama_handler";
 import { createFallback } from "./fallback_ai_model";
 import { createSelfSignedFetch } from "./self_signed_fetch";
 
-const dyadEngineUrl = process.env.DYAD_ENGINE_URL;
+const blazeEngineUrl = process.env.BLAZE_ENGINE_URL;
 
 const AUTO_MODELS = [
   {
@@ -72,7 +72,7 @@ export async function getModelClient(
 }> {
   const allProviders = await getLanguageModelProviders();
 
-  const dyadApiKey = settings.providerSettings?.auto?.apiKey?.value;
+  const blazeApiKey = settings.providerSettings?.auto?.apiKey?.value;
 
   // --- Handle specific provider ---
   const providerConfig = allProviders.find((p) => p.id === model.provider);
@@ -81,18 +81,18 @@ export async function getModelClient(
     throw new Error(`Configuration not found for provider: ${model.provider}`);
   }
 
-  // Handle Dyad Pro override
-  if (dyadApiKey && settings.enableDyadPro) {
-    // Check if the selected provider supports Dyad Pro (has a gateway prefix) OR
+  // Handle Blaze Pro override
+  if (blazeApiKey && settings.enableBlazePro) {
+    // Check if the selected provider supports Blaze Pro (has a gateway prefix) OR
     // we're using local engine.
     // IMPORTANT: some providers like OpenAI have an empty string gateway prefix,
     // so we do a nullish and not a truthy check here.
-    if (providerConfig.gatewayPrefix != null || dyadEngineUrl) {
+    if (providerConfig.gatewayPrefix != null || blazeEngineUrl) {
       const enableSmartFilesContext = settings.enableProSmartFilesContextMode;
-      const provider = createDyadEngine({
-        apiKey: dyadApiKey,
-        baseURL: dyadEngineUrl ?? "https://engine.dyad.sh/v1",
-        dyadOptions: {
+      const provider = createBlazeEngine({
+        apiKey: blazeApiKey,
+        baseURL: blazeEngineUrl ?? "https://engine.blaze.sh/v1",
+        blazeOptions: {
           enableLazyEdits:
             settings.selectedChatMode === "ask"
               ? false
@@ -105,11 +105,11 @@ export async function getModelClient(
       });
 
       logger.info(
-        `\x1b[1;97;44m Using Dyad Pro API key for model: ${model.name} \x1b[0m`,
+        `\x1b[1;97;44m Using Blaze Pro API key for model: ${model.name} \x1b[0m`,
       );
 
       logger.info(
-        `\x1b[1;30;42m Using Dyad Pro engine: ${dyadEngineUrl ?? "<prod>"} \x1b[0m`,
+        `\x1b[1;30;42m Using Blaze Pro engine: ${blazeEngineUrl ?? "<prod>"} \x1b[0m`,
       );
 
       // Do not use free variant (for openrouter).
@@ -128,7 +128,7 @@ export async function getModelClient(
       };
     } else {
       logger.warn(
-        `Dyad Pro enabled, but provider ${model.provider} does not have a gateway prefix defined. Falling back to direct provider connection.`,
+        `Blaze Pro enabled, but provider ${model.provider} does not have a gateway prefix defined. Falling back to direct provider connection.`,
       );
       // Fall through to regular provider logic if gateway prefix is missing
     }
@@ -199,7 +199,7 @@ function getProModelClient({
 }: {
   model: LargeLanguageModel;
   settings: UserSettings;
-  provider: DyadEngineProvider;
+  provider: BlazeEngineProvider;
   modelId: string;
 }): ModelClient {
   if (

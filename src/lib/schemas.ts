@@ -199,11 +199,11 @@ export const ExperimentsSchema = z.object({
 });
 export type Experiments = z.infer<typeof ExperimentsSchema>;
 
-export const DyadProBudgetSchema = z.object({
+export const BlazeProBudgetSchema = z.object({
   budgetResetAt: z.string(),
   maxBudget: z.number(),
 });
-export type DyadProBudget = z.infer<typeof DyadProBudgetSchema>;
+export type BlazeProBudget = z.infer<typeof BlazeProBudgetSchema>;
 
 export const GlobPathSchema = z.object({
   globPath: z.string(),
@@ -259,7 +259,7 @@ export const UserSettingsSchema = z
     // DEPRECATED.
     ////////////////////////////////
     enableProSaverMode: z.boolean().optional(),
-    dyadProBudget: DyadProBudgetSchema.optional(),
+    blazeProBudget: BlazeProBudgetSchema.optional(),
     runtimeMode: RuntimeModeSchema.optional(),
 
     ////////////////////////////////
@@ -277,7 +277,7 @@ export const UserSettingsSchema = z
     telemetryConsent: z.enum(["opted_in", "opted_out", "unset"]).optional(),
     telemetryUserId: z.string().optional(),
     hasRunBefore: z.boolean().optional(),
-    enableDyadPro: z.boolean().optional(),
+    enableBlazePro: z.boolean().optional(),
     experiments: ExperimentsSchema.optional(),
     lastShownReleaseNotesVersion: z.string().optional(),
     maxChatTurnsInContext: z.number().optional(),
@@ -323,11 +323,11 @@ export const UserSettingsSchema = z
  */
 export type UserSettings = z.infer<typeof UserSettingsSchema>;
 
-export function isDyadProEnabled(settings: UserSettings): boolean {
-  return settings.enableDyadPro === true && hasDyadProKey(settings);
+export function isBlazeProEnabled(settings: UserSettings): boolean {
+  return settings.enableBlazePro === true && hasBlazeProKey(settings);
 }
 
-export function hasDyadProKey(settings: UserSettings): boolean {
+export function hasBlazeProKey(settings: UserSettings): boolean {
   return !!settings.providerSettings?.auto?.apiKey?.value;
 }
 
@@ -335,7 +335,7 @@ export function hasDyadProKey(settings: UserSettings): boolean {
  * Gets the effective default chat mode based on settings and pro status.
  * - If defaultChatMode is set and valid for the user's Pro status, use it
  * - If defaultChatMode is "local-agent" but user doesn't have Pro, fall back to "build"
- * - If defaultChatMode is NOT set but user has Dyad Pro enabled, treat as "local-agent"
+ * - If defaultChatMode is NOT set but user has Blaze Pro enabled, treat as "local-agent"
  * - If not pro, treat as "build"
  */
 export function getEffectiveDefaultChatMode(settings: UserSettings): ChatMode {
@@ -343,13 +343,13 @@ export function getEffectiveDefaultChatMode(settings: UserSettings): ChatMode {
     // "local-agent" requires Pro - fall back to "build" if user lost Pro access
     if (
       settings.defaultChatMode === "local-agent" &&
-      !isDyadProEnabled(settings)
+      !isBlazeProEnabled(settings)
     ) {
       return "build";
     }
     return settings.defaultChatMode;
   }
-  return isDyadProEnabled(settings) ? "local-agent" : "build";
+  return isBlazeProEnabled(settings) ? "local-agent" : "build";
 }
 
 export function isSupabaseConnected(settings: UserSettings | null): boolean {
@@ -365,7 +365,7 @@ export function isSupabaseConnected(settings: UserSettings | null): boolean {
 
 export function isTurboEditsV2Enabled(settings: UserSettings): boolean {
   return Boolean(
-    isDyadProEnabled(settings) &&
+    isBlazeProEnabled(settings) &&
       settings.enableProLazyEditsMode === true &&
       settings.proLazyEditsMode === "v2",
   );

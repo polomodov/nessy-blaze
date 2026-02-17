@@ -6,8 +6,8 @@ import { type UserSettings } from "@/lib/schemas";
 import { usePostHog } from "posthog-js/react";
 import { useAppVersion } from "./useAppVersion";
 
-const TELEMETRY_CONSENT_KEY = "dyadTelemetryConsent";
-const TELEMETRY_USER_ID_KEY = "dyadTelemetryUserId";
+const TELEMETRY_CONSENT_KEY = "blazeTelemetryConsent";
+const TELEMETRY_USER_ID_KEY = "blazeTelemetryUserId";
 
 export function isTelemetryOptedIn() {
   return window.localStorage.getItem(TELEMETRY_CONSENT_KEY) === "opted_in";

@@ -55,7 +55,7 @@ describe("IpcClient startup read errors", () => {
   });
 
   it("parses getChats date fields from HTTP payload", async () => {
-    window.__DYAD_REMOTE_CONFIG__ = {
+    window.__BLAZE_REMOTE_CONFIG__ = {
       backendClient: {
         mode: "http",
         baseUrl: "https://api.example.com",

@@ -10,7 +10,7 @@ test("release channel - change from stable to beta and back", async ({
   const beforeSettings1 = po.recordSettings();
   await po.changeReleaseChannel("beta");
   await expect(
-    po.page.getByRole("button", { name: "Restart Dyad" }),
+    po.page.getByRole("button", { name: "Restart Blaze" }),
   ).toBeVisible();
   po.snapshotSettingsDelta(beforeSettings1);
 

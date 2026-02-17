@@ -36,12 +36,12 @@ let rememberedOrigin = null; // e.g. "http://localhost:5173"
 /* ---------- optional resources for HTML injection ---------------------- */
 
 let stacktraceJsContent = null;
-let dyadShimContent = null;
-let dyadComponentSelectorClientContent = null;
-let dyadScreenshotClientContent = null;
+let blazeShimContent = null;
+let blazeComponentSelectorClientContent = null;
+let blazeScreenshotClientContent = null;
 let htmlToImageContent = null;
-let dyadVisualEditorClientContent = null;
-let dyadLogsContent = null;
+let blazeVisualEditorClientContent = null;
+let blazeLogsContent = null;
 
 try {
   const htmlToImagePath = path.join(
@@ -80,98 +80,98 @@ try {
 }
 
 try {
-  const dyadShimPath = path.join(__dirname, "dyad-shim.js");
-  dyadShimContent = fs.readFileSync(dyadShimPath, "utf-8");
-  parentPort?.postMessage("[proxy-worker] dyad-shim.js loaded.");
+  const blazeShimPath = path.join(__dirname, "blaze-shim.js");
+  blazeShimContent = fs.readFileSync(blazeShimPath, "utf-8");
+  parentPort?.postMessage("[proxy-worker] blaze-shim.js loaded.");
 } catch (error) {
   parentPort?.postMessage(
-    `[proxy-worker] Failed to read dyad-shim.js: ${error.message}`,
+    `[proxy-worker] Failed to read blaze-shim.js: ${error.message}`,
   );
 }
 
 try {
-  const dyadComponentSelectorClientPath = path.join(
+  const blazeComponentSelectorClientPath = path.join(
     __dirname,
-    "dyad-component-selector-client.js",
+    "blaze-component-selector-client.js",
   );
-  dyadComponentSelectorClientContent = fs.readFileSync(
-    dyadComponentSelectorClientPath,
+  blazeComponentSelectorClientContent = fs.readFileSync(
+    blazeComponentSelectorClientPath,
     "utf-8",
   );
   parentPort?.postMessage(
-    "[proxy-worker] dyad-component-selector-client.js loaded.",
+    "[proxy-worker] blaze-component-selector-client.js loaded.",
   );
 } catch (error) {
   parentPort?.postMessage(
-    `[proxy-worker] Failed to read dyad-component-selector-client.js: ${error.message}`,
+    `[proxy-worker] Failed to read blaze-component-selector-client.js: ${error.message}`,
   );
 }
 
 try {
-  const dyadScreenshotClientPath = path.join(
+  const blazeScreenshotClientPath = path.join(
     __dirname,
-    "dyad-screenshot-client.js",
+    "blaze-screenshot-client.js",
   );
-  dyadScreenshotClientContent = fs.readFileSync(
-    dyadScreenshotClientPath,
+  blazeScreenshotClientContent = fs.readFileSync(
+    blazeScreenshotClientPath,
     "utf-8",
   );
-  parentPort?.postMessage("[proxy-worker] dyad-screenshot-client.js loaded.");
+  parentPort?.postMessage("[proxy-worker] blaze-screenshot-client.js loaded.");
 } catch (error) {
   parentPort?.postMessage(
-    `[proxy-worker] Failed to read dyad-screenshot-client.js: ${error.message}`,
+    `[proxy-worker] Failed to read blaze-screenshot-client.js: ${error.message}`,
   );
 }
 
 try {
-  const dyadVisualEditorClientPath = path.join(
+  const blazeVisualEditorClientPath = path.join(
     __dirname,
-    "dyad-visual-editor-client.js",
+    "blaze-visual-editor-client.js",
   );
-  dyadVisualEditorClientContent = fs.readFileSync(
-    dyadVisualEditorClientPath,
+  blazeVisualEditorClientContent = fs.readFileSync(
+    blazeVisualEditorClientPath,
     "utf-8",
   );
   parentPort?.postMessage(
-    "[proxy-worker] dyad-visual-editor-client.js loaded.",
+    "[proxy-worker] blaze-visual-editor-client.js loaded.",
   );
 } catch (error) {
   parentPort?.postMessage(
-    `[proxy-worker] Failed to read dyad-visual-editor-client.js: ${error.message}`,
+    `[proxy-worker] Failed to read blaze-visual-editor-client.js: ${error.message}`,
   );
 }
 
 try {
-  const dyadLogsPath = path.join(__dirname, "dyad_logs.js");
-  dyadLogsContent = fs.readFileSync(dyadLogsPath, "utf-8");
-  parentPort?.postMessage("[proxy-worker] dyad_logs.js loaded.");
+  const blazeLogsPath = path.join(__dirname, "blaze_logs.js");
+  blazeLogsContent = fs.readFileSync(blazeLogsPath, "utf-8");
+  parentPort?.postMessage("[proxy-worker] blaze_logs.js loaded.");
 } catch (error) {
   parentPort?.postMessage(
-    `[proxy-worker] Failed to read dyad_logs.js: ${error.message}`,
+    `[proxy-worker] Failed to read blaze_logs.js: ${error.message}`,
   );
 }
 
 // Load Service Worker files
-let dyadSwContent = null;
-let dyadSwRegisterContent = null;
+let blazeSwContent = null;
+let blazeSwRegisterContent = null;
 
 try {
-  const dyadSwPath = path.join(__dirname, "dyad-sw.js");
-  dyadSwContent = fs.readFileSync(dyadSwPath, "utf-8");
-  parentPort?.postMessage("[proxy-worker] dyad-sw.js loaded.");
+  const blazeSwPath = path.join(__dirname, "blaze-sw.js");
+  blazeSwContent = fs.readFileSync(blazeSwPath, "utf-8");
+  parentPort?.postMessage("[proxy-worker] blaze-sw.js loaded.");
 } catch (error) {
   parentPort?.postMessage(
-    `[proxy-worker] Failed to read dyad-sw.js: ${error.message}`,
+    `[proxy-worker] Failed to read blaze-sw.js: ${error.message}`,
   );
 }
 
 try {
-  const dyadSwRegisterPath = path.join(__dirname, "dyad-sw-register.js");
-  dyadSwRegisterContent = fs.readFileSync(dyadSwRegisterPath, "utf-8");
-  parentPort?.postMessage("[proxy-worker] dyad-sw-register.js loaded.");
+  const blazeSwRegisterPath = path.join(__dirname, "blaze-sw-register.js");
+  blazeSwRegisterContent = fs.readFileSync(blazeSwRegisterPath, "utf-8");
+  parentPort?.postMessage("[proxy-worker] blaze-sw-register.js loaded.");
 } catch (error) {
   parentPort?.postMessage(
-    `[proxy-worker] Failed to read dyad-sw-register.js: ${error.message}`,
+    `[proxy-worker] Failed to read blaze-sw-register.js: ${error.message}`,
   );
 }
 
@@ -184,8 +184,8 @@ function needsInjection(pathname) {
 
 function injectHTML(buf) {
   let txt = buf.toString("utf8");
-  // These are strings that were used since the first version of the dyad shim.
-  // If the dyad shim is used from legacy apps which came pre-baked with the shim
+  // These are strings that were used since the first version of the blaze shim.
+  // If the blaze shim is used from legacy apps which came pre-baked with the shim
   // as a vite plugin, then do not inject the shim twice to avoid weird behaviors.
   const legacyAppWithShim =
     txt.includes("window-error") && txt.includes("unhandled-rejection");
@@ -201,19 +201,19 @@ function injectHTML(buf) {
       );
     }
 
-    if (dyadShimContent) {
-      scripts.push(`<script>${dyadShimContent}</script>`);
+    if (blazeShimContent) {
+      scripts.push(`<script>${blazeShimContent}</script>`);
     } else {
       scripts.push(
-        '<script>console.warn("[proxy-worker] dyad shim was not injected.");</script>',
+        '<script>console.warn("[proxy-worker] blaze shim was not injected.");</script>',
       );
     }
   }
-  if (dyadComponentSelectorClientContent) {
-    scripts.push(`<script>${dyadComponentSelectorClientContent}</script>`);
+  if (blazeComponentSelectorClientContent) {
+    scripts.push(`<script>${blazeComponentSelectorClientContent}</script>`);
   } else {
     scripts.push(
-      '<script>console.warn("[proxy-worker] dyad component selector client was not injected.");</script>',
+      '<script>console.warn("[proxy-worker] blaze component selector client was not injected.");</script>',
     );
   }
   if (htmlToImageContent) {
@@ -229,32 +229,32 @@ function injectHTML(buf) {
       "[proxy-worker] WARNING: html-to-image not injected!",
     );
   }
-  if (dyadScreenshotClientContent) {
-    scripts.push(`<script>${dyadScreenshotClientContent}</script>`);
+  if (blazeScreenshotClientContent) {
+    scripts.push(`<script>${blazeScreenshotClientContent}</script>`);
   } else {
     scripts.push(
-      '<script>console.warn("[proxy-worker] dyad screenshot client was not injected.");</script>',
+      '<script>console.warn("[proxy-worker] blaze screenshot client was not injected.");</script>',
     );
   }
-  if (dyadVisualEditorClientContent) {
-    scripts.push(`<script>${dyadVisualEditorClientContent}</script>`);
+  if (blazeVisualEditorClientContent) {
+    scripts.push(`<script>${blazeVisualEditorClientContent}</script>`);
   } else {
     scripts.push(
-      '<script>console.warn("[proxy-worker] dyad visual editor client was not injected.");</script>',
+      '<script>console.warn("[proxy-worker] blaze visual editor client was not injected.");</script>',
     );
   }
-  if (dyadLogsContent) {
-    scripts.push(`<script>${dyadLogsContent}</script>`);
+  if (blazeLogsContent) {
+    scripts.push(`<script>${blazeLogsContent}</script>`);
   } else {
     scripts.push(
-      '<script>console.warn("[proxy-worker] dyad_logs.js was not injected.");</script>',
+      '<script>console.warn("[proxy-worker] blaze_logs.js was not injected.");</script>',
     );
   }
-  if (dyadSwRegisterContent) {
-    scripts.push(`<script>${dyadSwRegisterContent}</script>`);
+  if (blazeSwRegisterContent) {
+    scripts.push(`<script>${blazeSwRegisterContent}</script>`);
   } else {
     scripts.push(
-      '<script>console.warn("[proxy-worker] dyad-sw-register.js was not injected.");</script>',
+      '<script>console.warn("[proxy-worker] blaze-sw-register.js was not injected.");</script>',
     );
   }
   const allScripts = scripts.join("\n");
@@ -285,14 +285,14 @@ function buildTargetURL(clientReq) {
 
 const server = http.createServer((clientReq, clientRes) => {
   // Special handling for Service Worker file
-  if (clientReq.url === "/dyad-sw.js") {
-    if (dyadSwContent) {
+  if (clientReq.url === "/blaze-sw.js") {
+    if (blazeSwContent) {
       clientRes.writeHead(200, {
         "content-type": "application/javascript",
         "service-worker-allowed": "/",
         "cache-control": "no-cache",
       });
-      clientRes.end(dyadSwContent);
+      clientRes.end(blazeSwContent);
       return;
     } else {
       clientRes.writeHead(404, { "content-type": "text/plain" });

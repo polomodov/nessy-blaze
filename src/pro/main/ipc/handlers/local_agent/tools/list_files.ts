@@ -46,7 +46,7 @@ export const listFilesTool: ToolDefinition<ListFilesArgs> = {
     if (isComplete) {
       return undefined;
     }
-    return `<dyad-list-files${getXmlAttributes(args)}></dyad-list-files>`;
+    return `<blaze-list-files${getXmlAttributes(args)}></blaze-list-files>`;
   },
 
   execute: async (args, ctx: AgentContext) => {
@@ -100,7 +100,7 @@ export const listFilesTool: ToolDefinition<ListFilesArgs> = {
 
     // Write abbreviated list to UI
     ctx.onXmlComplete(
-      `<dyad-list-files${getXmlAttributes(args)}>${escapeXmlContent(abbreviatedList + countInfo)}</dyad-list-files>`,
+      `<blaze-list-files${getXmlAttributes(args)}>${escapeXmlContent(abbreviatedList + countInfo)}</blaze-list-files>`,
     );
 
     // Return full file list for LLM

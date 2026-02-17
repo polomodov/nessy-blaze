@@ -1,12 +1,12 @@
 {
-  "name": "dyad",
-  "productName": "dyad",
+  "name": "blaze",
+  "productName": "blaze",
   "version": "0.34.0-beta.1",
   "description": "Free, local, open-source AI app builder",
   "main": ".vite/build/main.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/dyad-sh/dyad.git"
+    "url": "https://github.com/blaze-sh/blaze.git"
   },
   "engines": {
     "node": ">=20"
@@ -16,13 +16,13 @@
     "start": "npm run start:client",
     "dev": "npm run dev:client",
     "build": "npm run build:client",
-    "start:client": "cross-env VITE_DYAD_BACKEND_MODE=http vite --config vite.renderer.config.mts",
-    "dev:client": "cross-env VITE_DYAD_BACKEND_MODE=http vite --config vite.renderer.config.mts",
-    "build:client": "cross-env VITE_DYAD_BACKEND_MODE=http vite build --config vite.renderer.config.mts",
+    "start:client": "cross-env VITE_BLAZE_BACKEND_MODE=http vite --config vite.renderer.config.mts",
+    "dev:client": "cross-env VITE_BLAZE_BACKEND_MODE=http vite --config vite.renderer.config.mts",
+    "build:client": "cross-env VITE_BLAZE_BACKEND_MODE=http vite build --config vite.renderer.config.mts",
     "start:desktop": "electron-forge start",
     "dev:desktop": "electron-forge start",
-    "dev:engine": "cross-env DYAD_ENGINE_URL=http://localhost:8080/v1 npm run start:desktop",
-    "staging:engine": "cross-env DYAD_ENGINE_URL=https://staging---dyad-llm-engine-kq7pivehnq-uc.a.run.app/v1 npm run start:desktop",
+    "dev:engine": "cross-env BLAZE_ENGINE_URL=http://localhost:8080/v1 npm run start:desktop",
+    "staging:engine": "cross-env BLAZE_ENGINE_URL=https://staging---blaze-llm-engine-kq7pivehnq-uc.a.run.app/v1 npm run start:desktop",
     "package": "npm run build:client",
     "make": "npm run build:client",
     "publish": "npm run build:client",
@@ -109,7 +109,7 @@
     "@ai-sdk/xai": "^3.0.10",
     "@babel/parser": "^7.28.5",
     "@biomejs/biome": "^1.9.4",
-    "@dyad-sh/supabase-management-js": "v1.0.1",
+    "@blaze-sh/supabase-management-js": "file:packages/@blaze-sh/supabase-management-js",
     "@lexical/react": "^0.33.1",
     "@modelcontextprotocol/sdk": "^1.17.5",
     "@monaco-editor/react": "^4.7.0-rc.0",

@@ -7,6 +7,6 @@
 - img
 - text: Approved
 - paragraph: "[dump] hi"
-- paragraph: "[[dyad-dump-path=*]]"
+- paragraph: "[[blaze-dump-path=*]]"
 - button "Retry":
   - img

@@ -53,7 +53,7 @@ export function ImportAppDialog({ isOpen, onClose }: ImportAppDialogProps) {
   const [isCheckingName, setIsCheckingName] = useState<boolean>(false);
   const [installCommand, setInstallCommand] = useState("");
   const [startCommand, setStartCommand] = useState("");
-  const [copyToDyadApps, setCopyToDyadApps] = useState(true);
+  const [copyToBlazeApps, setCopyToBlazeApps] = useState(true);
   const navigate = useNavigate();
   const { streamMessage } = useStreamChat({ hasChatId: false });
   const { refreshApps } = useLoadApps();
@@ -80,12 +80,12 @@ export function ImportAppDialog({ isOpen, onClose }: ImportAppDialogProps) {
     }
   }, [isOpen, isAuthenticated]);
 
-  // Re-check app name when copyToDyadApps changes
+  // Re-check app name when copyToBlazeApps changes
   useEffect(() => {
     if (customAppName.trim() && selectedPath) {
-      checkAppName({ name: customAppName, skipCopy: !copyToDyadApps });
+      checkAppName({ name: customAppName, skipCopy: !copyToBlazeApps });
     }
-  }, [copyToDyadApps]);
+  }, [copyToBlazeApps]);
 
   const fetchRepos = async () => {
     setLoading(true);
@@ -244,7 +244,7 @@ export function ImportAppDialog({ isOpen, onClose }: ImportAppDialogProps) {
       // Use the folder name from the IPC response
       setCustomAppName(result.name);
       // Check if the app name already exists
-      await checkAppName({ name: result.name, skipCopy: !copyToDyadApps });
+      await checkAppName({ name: result.name, skipCopy: !copyToBlazeApps });
       return result;
     },
     onError: (error: Error) => {
@@ -260,13 +260,13 @@ export function ImportAppDialog({ isOpen, onClose }: ImportAppDialogProps) {
         appName: customAppName,
         installCommand: installCommand || undefined,
         startCommand: startCommand || undefined,
-        skipCopy: !copyToDyadApps,
+        skipCopy: !copyToBlazeApps,
       });
     },
     onSuccess: async (result) => {
       showSuccess(
         !hasAiRules
-          ? "App imported successfully. Dyad will automatically generate an AI_RULES.md now."
+          ? "App imported successfully. Blaze will automatically generate an AI_RULES.md now."
           : "App imported successfully",
       );
       onClose();
@@ -301,7 +301,7 @@ export function ImportAppDialog({ isOpen, onClose }: ImportAppDialogProps) {
     setNameExists(false);
     setInstallCommand("");
     setStartCommand("");
-    setCopyToDyadApps(true);
+    setCopyToBlazeApps(true);
   };
 
   const handleAppNameChange = async (
@@ -310,7 +310,7 @@ export function ImportAppDialog({ isOpen, onClose }: ImportAppDialogProps) {
     const newName = e.target.value;
     setCustomAppName(newName);
     if (newName.trim()) {
-      await checkAppName({ name: newName, skipCopy: !copyToDyadApps });
+      await checkAppName({ name: newName, skipCopy: !copyToBlazeApps });
     }
   };
 
@@ -401,20 +401,20 @@ export function ImportAppDialog({ isOpen, onClose }: ImportAppDialogProps) {
 
                     <div className="flex items-center space-x-2">
                       <Checkbox
-                        id="copy-to-dyad-apps"
-                        checked={copyToDyadApps}
+                        id="copy-to-blaze-apps"
+                        checked={copyToBlazeApps}
                         onCheckedChange={(checked) =>
-                          setCopyToDyadApps(checked === true)
+                          setCopyToBlazeApps(checked === true)
                         }
                         disabled={importAppMutation.isPending}
                       />
                       <label
-                        htmlFor="copy-to-dyad-apps"
+                        htmlFor="copy-to-blaze-apps"
                         className="text-xs sm:text-sm cursor-pointer"
                       >
                         Copy to the{" "}
                         <code className="bg-muted px-1 py-0.5 rounded text-xs">
-                          dyad-apps
+                          blaze-apps
                         </code>{" "}
                         folder
                       </label>
@@ -496,15 +496,15 @@ export function ImportAppDialog({ isOpen, onClose }: ImportAppDialogProps) {
                             </TooltipTrigger>
                             <TooltipContent>
                               <p className="text-xs">
-                                AI_RULES.md lets Dyad know which tech stack to
+                                AI_RULES.md lets Blaze know which tech stack to
                                 use for editing the app
                               </p>
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
                         <AlertDescription className="text-xs sm:text-sm">
-                          No AI_RULES.md found. Dyad will automatically generate
-                          one after importing.
+                          No AI_RULES.md found. Blaze will automatically
+                          generate one after importing.
                         </AlertDescription>
                       </Alert>
                     )}

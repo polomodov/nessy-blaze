@@ -1,8 +1,9 @@
-import { BrowserWindow, ipcMain } from "electron";
+import electron from "electron";
 import log from "electron-log";
 import { platform } from "os";
 
 const logger = log.scope("window-handlers");
+const { BrowserWindow, ipcMain } = electron;
 
 // Handler for minimizing the window
 const handleMinimize = (event: Electron.IpcMainInvokeEvent) => {

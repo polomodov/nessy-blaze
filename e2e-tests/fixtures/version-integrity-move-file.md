@@ -1,2 +1,2 @@
 Moving a file
-<dyad-rename from="dir/c.txt" to="new-dir/d.txt"></dyad-rename>
+<blaze-rename from="dir/c.txt" to="new-dir/d.txt"></blaze-rename>

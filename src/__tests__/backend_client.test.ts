@@ -1,4 +1,7 @@
 import {
+  BACKEND_BASE_URL_STORAGE_KEY,
+  BACKEND_IPC_FALLBACK_STORAGE_KEY,
+  BACKEND_MODE_STORAGE_KEY,
   BrowserBackendClient,
   createBackendClientTransport,
   HttpBackendClient,
@@ -28,9 +31,20 @@ class MockIpcRenderer implements BackendClient {
 
 describe("backend_client transport", () => {
   beforeEach(() => {
-    delete window.__DYAD_REMOTE_CONFIG__;
+    delete window.__BLAZE_REMOTE_CONFIG__;
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    const storage = window.localStorage as Partial<Storage> &
+      Record<string, unknown>;
+    if (typeof storage.removeItem === "function") {
+      storage.removeItem(BACKEND_MODE_STORAGE_KEY);
+      storage.removeItem(BACKEND_BASE_URL_STORAGE_KEY);
+      storage.removeItem(BACKEND_IPC_FALLBACK_STORAGE_KEY);
+    } else {
+      delete storage[BACKEND_MODE_STORAGE_KEY];
+      delete storage[BACKEND_BASE_URL_STORAGE_KEY];
+      delete storage[BACKEND_IPC_FALLBACK_STORAGE_KEY];
+    }
   });
 
   it("uses IPC transport by default", async () => {
@@ -48,7 +62,7 @@ describe("backend_client transport", () => {
   });
 
   it("uses HTTP transport when mode is http", async () => {
-    window.__DYAD_REMOTE_CONFIG__ = {
+    window.__BLAZE_REMOTE_CONFIG__ = {
       backendClient: {
         mode: "http",
         baseUrl: "https://api.example.com",
@@ -82,7 +96,7 @@ describe("backend_client transport", () => {
   });
 
   it("uses API route mapping for settings reads", async () => {
-    window.__DYAD_REMOTE_CONFIG__ = {
+    window.__BLAZE_REMOTE_CONFIG__ = {
       backendClient: {
         mode: "http",
         baseUrl: "https://api.example.com",
@@ -114,7 +128,7 @@ describe("backend_client transport", () => {
   });
 
   it("falls back to IPC when HTTP request fails", async () => {
-    window.__DYAD_REMOTE_CONFIG__ = {
+    window.__BLAZE_REMOTE_CONFIG__ = {
       backendClient: {
         mode: "http",
         baseUrl: "https://api.example.com",
@@ -137,8 +151,50 @@ describe("backend_client transport", () => {
     });
   });
 
+  it("retries browser requests with window origin when configured backend URL is unreachable", async () => {
+    const storage = window.localStorage as Partial<Storage> &
+      Record<string, unknown>;
+    if (typeof storage.setItem === "function") {
+      storage.setItem(BACKEND_BASE_URL_STORAGE_KEY, "https://api.example.com");
+    } else {
+      storage[BACKEND_BASE_URL_STORAGE_KEY] = "https://api.example.com";
+    }
+
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: { ok: true } }), {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new BrowserBackendClient();
+    const result = await client.invoke("list-apps");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "https://api.example.com/api/v1/apps",
+      expect.objectContaining({
+        method: "GET",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      `${window.location.origin}/api/v1/apps`,
+      expect.objectContaining({
+        method: "GET",
+      }),
+    );
+    expect(result).toEqual({ ok: true });
+  });
+
   it("forces IPC for streaming channels in HTTP mode", async () => {
-    window.__DYAD_REMOTE_CONFIG__ = {
+    window.__BLAZE_REMOTE_CONFIG__ = {
       backendClient: {
         mode: "http",
         baseUrl: "https://api.example.com",

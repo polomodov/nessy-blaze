@@ -99,7 +99,7 @@ async function callWebSearchSSE(
   query: string,
   ctx: AgentContext,
 ): Promise<string> {
-  ctx.onXmlStream(`<dyad-web-search query="${escapeXmlAttr(query)}">`);
+  ctx.onXmlStream(`<blaze-web-search query="${escapeXmlAttr(query)}">`);
 
   const response = await engineFetch(ctx, "/tools/web-search", {
     method: "POST",
@@ -135,9 +135,9 @@ async function callWebSearchSSE(
       // Parse SSE events and accumulate content
       buffer = parseSSEEvents(buffer, (content) => {
         accumulated += content;
-        // Stream intermediate results to UI with dyad-web-search prefix
+        // Stream intermediate results to UI with blaze-web-search prefix
         ctx.onXmlStream(
-          `<dyad-web-search query="${escapeXmlAttr(query)}">${escapeXmlContent(accumulated)}`,
+          `<blaze-web-search query="${escapeXmlAttr(query)}">${escapeXmlContent(accumulated)}`,
         );
       });
     }
@@ -172,9 +172,9 @@ export const webSearchTool: ToolDefinition<z.infer<typeof webSearchSchema>> = {
       throw new Error("Web search returned no results");
     }
 
-    // Write final result to UI and DB with dyad-web-search wrapper
+    // Write final result to UI and DB with blaze-web-search wrapper
     ctx.onXmlComplete(
-      `<dyad-web-search query="${escapeXmlAttr(args.query)}">${escapeXmlContent(result)}</dyad-web-search>`,
+      `<blaze-web-search query="${escapeXmlAttr(args.query)}">${escapeXmlContent(result)}</blaze-web-search>`,
     );
 
     logger.log(`Web search completed for query: ${args.query}`);

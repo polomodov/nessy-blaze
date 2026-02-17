@@ -40,7 +40,7 @@ or to provide a custom fetch implementation for e.g. testing.
 */
   fetch?: FetchFunction;
 
-  dyadOptions: {
+  blazeOptions: {
     enableLazyEdits?: boolean;
     enableSmartFilesContext?: boolean;
     enableWebSearch?: boolean;
@@ -48,7 +48,7 @@ or to provide a custom fetch implementation for e.g. testing.
   settings: UserSettings;
 }
 
-export interface DyadEngineProvider {
+export interface BlazeEngineProvider {
   /**
 Creates a model for text generation.
 */
@@ -62,11 +62,11 @@ Creates a chat model for text generation.
   responses(modelId: ExampleChatModelId, chatParams: ChatParams): LanguageModel;
 }
 
-export function createDyadEngine(
+export function createBlazeEngine(
   options: ExampleProviderSettings,
-): DyadEngineProvider {
+): BlazeEngineProvider {
   const baseURL = withoutTrailingSlash(options.baseURL);
-  logger.info("creating dyad engine with baseURL", baseURL);
+  logger.info("creating blaze engine with baseURL", baseURL);
 
   // Track request ID attempts
   const requestIdAttempts = new Map<string, number>();
@@ -74,7 +74,7 @@ export function createDyadEngine(
   const getHeaders = () => ({
     Authorization: `Bearer ${loadApiKey({
       apiKey: options.apiKey,
-      environmentVariableName: "DYAD_PRO_API_KEY",
+      environmentVariableName: "BLAZE_PRO_API_KEY",
       description: "Example API key",
     })}`,
     ...options.headers,
@@ -88,7 +88,7 @@ export function createDyadEngine(
   }
 
   const getCommonModelConfig = (): CommonModelConfig => ({
-    provider: `dyad-engine`,
+    provider: `blaze-engine`,
     url: ({ path }) => {
       const url = new URL(`${baseURL}${path}`);
       if (options.queryParams) {
@@ -100,8 +100,8 @@ export function createDyadEngine(
     fetch: options.fetch,
   });
 
-  // Custom fetch implementation that adds dyad-specific options to the request
-  const createDyadFetch = ({
+  // Custom fetch implementation that adds blaze-specific options to the request
+  const createBlazeFetch = ({
     providerId,
   }: {
     providerId: string;
@@ -118,33 +118,33 @@ export function createDyadEngine(
           ...JSON.parse(init.body),
           ...getExtraProviderOptions(providerId, options.settings),
         };
-        const dyadVersionedFiles = parsedBody.dyadVersionedFiles;
-        if ("dyadVersionedFiles" in parsedBody) {
-          delete parsedBody.dyadVersionedFiles;
+        const blazeVersionedFiles = parsedBody.blazeVersionedFiles;
+        if ("blazeVersionedFiles" in parsedBody) {
+          delete parsedBody.blazeVersionedFiles;
         }
-        const dyadFiles = parsedBody.dyadFiles;
-        if ("dyadFiles" in parsedBody) {
-          delete parsedBody.dyadFiles;
+        const blazeFiles = parsedBody.blazeFiles;
+        if ("blazeFiles" in parsedBody) {
+          delete parsedBody.blazeFiles;
         }
-        const requestId = parsedBody.dyadRequestId;
-        if ("dyadRequestId" in parsedBody) {
-          delete parsedBody.dyadRequestId;
+        const requestId = parsedBody.blazeRequestId;
+        if ("blazeRequestId" in parsedBody) {
+          delete parsedBody.blazeRequestId;
         }
-        const dyadAppId = parsedBody.dyadAppId;
-        if ("dyadAppId" in parsedBody) {
-          delete parsedBody.dyadAppId;
+        const blazeAppId = parsedBody.blazeAppId;
+        if ("blazeAppId" in parsedBody) {
+          delete parsedBody.blazeAppId;
         }
-        const dyadDisableFiles = parsedBody.dyadDisableFiles;
-        if ("dyadDisableFiles" in parsedBody) {
-          delete parsedBody.dyadDisableFiles;
+        const blazeDisableFiles = parsedBody.blazeDisableFiles;
+        if ("blazeDisableFiles" in parsedBody) {
+          delete parsedBody.blazeDisableFiles;
         }
-        const dyadMentionedApps = parsedBody.dyadMentionedApps;
-        if ("dyadMentionedApps" in parsedBody) {
-          delete parsedBody.dyadMentionedApps;
+        const blazeMentionedApps = parsedBody.blazeMentionedApps;
+        if ("blazeMentionedApps" in parsedBody) {
+          delete parsedBody.blazeMentionedApps;
         }
-        const dyadSmartContextMode = parsedBody.dyadSmartContextMode;
-        if ("dyadSmartContextMode" in parsedBody) {
-          delete parsedBody.dyadSmartContextMode;
+        const blazeSmartContextMode = parsedBody.blazeSmartContextMode;
+        if ("blazeSmartContextMode" in parsedBody) {
+          delete parsedBody.blazeSmartContextMode;
         }
 
         // Track and modify requestId with attempt number
@@ -156,19 +156,19 @@ export function createDyadEngine(
         }
 
         // Add files to the request if they exist
-        if (!dyadDisableFiles) {
-          parsedBody.dyad_options = {
-            files: dyadFiles,
-            versioned_files: dyadVersionedFiles,
-            enable_lazy_edits: options.dyadOptions.enableLazyEdits,
+        if (!blazeDisableFiles) {
+          parsedBody.blaze_options = {
+            files: blazeFiles,
+            versioned_files: blazeVersionedFiles,
+            enable_lazy_edits: options.blazeOptions.enableLazyEdits,
             enable_smart_files_context:
-              options.dyadOptions.enableSmartFilesContext,
-            smart_context_mode: dyadSmartContextMode,
-            enable_web_search: options.dyadOptions.enableWebSearch,
-            app_id: dyadAppId,
+              options.blazeOptions.enableSmartFilesContext,
+            smart_context_mode: blazeSmartContextMode,
+            enable_web_search: options.blazeOptions.enableWebSearch,
+            app_id: blazeAppId,
           };
-          if (dyadMentionedApps?.length) {
-            parsedBody.dyad_options.mentioned_apps = dyadMentionedApps;
+          if (blazeMentionedApps?.length) {
+            parsedBody.blaze_options.mentioned_apps = blazeMentionedApps;
           }
         }
 
@@ -178,7 +178,7 @@ export function createDyadEngine(
           headers: {
             ...init.headers,
             ...(modifiedRequestId && {
-              "X-Dyad-Request-Id": modifiedRequestId,
+              "X-Blaze-Request-Id": modifiedRequestId,
             }),
           },
           body: JSON.stringify(parsedBody),
@@ -200,7 +200,7 @@ export function createDyadEngine(
   ) => {
     const config = {
       ...getCommonModelConfig(),
-      fetch: createDyadFetch({ providerId: chatParams.providerId }),
+      fetch: createBlazeFetch({ providerId: chatParams.providerId }),
     };
 
     return new OpenAICompatibleChatLanguageModel(modelId, config);
@@ -212,7 +212,7 @@ export function createDyadEngine(
   ) => {
     const config = {
       ...getCommonModelConfig(),
-      fetch: createDyadFetch({ providerId: chatParams.providerId }),
+      fetch: createBlazeFetch({ providerId: chatParams.providerId }),
     };
 
     return new OpenAIResponsesLanguageModel(modelId, config);

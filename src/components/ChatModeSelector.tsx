@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useSettings } from "@/hooks/useSettings";
 import type { ChatMode } from "@/lib/schemas";
-import { isDyadProEnabled } from "@/lib/schemas";
+import { isBlazeProEnabled } from "@/lib/schemas";
 import { cn } from "@/lib/utils";
 import { detectIsMac } from "@/hooks/useChatModeToggle";
 import { useRouterState } from "@tanstack/react-router";
@@ -38,7 +38,7 @@ export function ChatModeSelector() {
   const currentChatMessages = chatId ? (messagesById.get(chatId) ?? []) : [];
 
   const selectedMode = settings?.selectedChatMode || "build";
-  const isProEnabled = settings ? isDyadProEnabled(settings) : false;
+  const isProEnabled = settings ? isBlazeProEnabled(settings) : false;
 
   const handleModeChange = (value: string) => {
     const newMode = value as ChatMode;

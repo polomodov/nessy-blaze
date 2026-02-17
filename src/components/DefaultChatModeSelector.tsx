@@ -7,7 +7,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { ChatMode } from "@/lib/schemas";
-import { isDyadProEnabled, getEffectiveDefaultChatMode } from "@/lib/schemas";
+import { isBlazeProEnabled, getEffectiveDefaultChatMode } from "@/lib/schemas";
 
 export function DefaultChatModeSelector() {
   const { settings, updateSettings } = useSettings();
@@ -16,7 +16,7 @@ export function DefaultChatModeSelector() {
     return null;
   }
 
-  const isProEnabled = isDyadProEnabled(settings);
+  const isProEnabled = isBlazeProEnabled(settings);
   const effectiveDefault = getEffectiveDefaultChatMode(settings);
 
   const handleDefaultChatModeChange = (value: ChatMode) => {

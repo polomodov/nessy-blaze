@@ -13,7 +13,7 @@ import path from "path";
 
 // Path to signtool.exe bundled with electron-winstaller
 // On GitHub Actions, this is the full path:
-// D:\a\dyad\dyad\node_modules\electron-winstaller\vendor\signtool.exe
+// D:\a\blaze\blaze\node_modules\electron-winstaller\vendor\signtool.exe
 const SIGNTOOL_PATH = path.join(
   __dirname,
   "node_modules",
@@ -96,8 +96,8 @@ const config: ForgeConfig = {
   packagerConfig: {
     protocols: [
       {
-        name: "Dyad",
-        schemes: ["dyad"],
+        name: "Blaze",
+        schemes: ["blaze"],
       },
     ],
     icon: "./assets/icon/logo",
@@ -151,7 +151,7 @@ const config: ForgeConfig = {
     new MakerRpm({}),
     new MakerDeb({
       options: {
-        mimeType: ["x-scheme-handler/dyad"],
+        mimeType: ["x-scheme-handler/blaze"],
       },
     }),
     new MakerAppImage({
@@ -163,8 +163,8 @@ const config: ForgeConfig = {
       name: "@electron-forge/publisher-github",
       config: {
         repository: {
-          owner: "dyad-sh",
-          name: "dyad",
+          owner: "blaze-sh",
+          name: "blaze",
         },
         draft: true,
         force: true,

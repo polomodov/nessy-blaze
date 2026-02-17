@@ -171,7 +171,7 @@ export interface SystemDebugInfo {
   telemetryId: string;
   telemetryConsent: string;
   telemetryUrl: string;
-  dyadVersion: string;
+  blazeVersion: string;
   platform: string;
   architecture: string;
   logs: string;

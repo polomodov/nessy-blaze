@@ -6,7 +6,7 @@ import { testSkipIfWindows } from "./helpers/test_helper";
  */
 
 testSkipIfWindows("local-agent - code search", async ({ po }) => {
-  await po.setUpDyadPro({ localAgent: true });
+  await po.setUpBlazePro({ localAgent: true });
   await po.importApp("minimal");
   await po.selectLocalAgentMode();
 

@@ -16,7 +16,7 @@
   - img
 - paragraph: tc=local-agent/upload-to-codebase
 - paragraph: "Attachments:"
-- paragraph: "File to upload to codebase: logo.png (file id: DYAD_ATTACHMENT_0)"
+- paragraph: "File to upload to codebase: logo.png (file id: BLAZE_ATTACHMENT_0)"
 - paragraph: I'll upload your file to the codebase.
 - img
 - text: uploaded-file.png

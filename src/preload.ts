@@ -135,7 +135,7 @@ const validInvokeChannels = [
   "open-ios",
   "open-android",
   "check-problems",
-  "restart-dyad",
+  "restart-blaze",
   "get-templates",
   "portal:migrate-create",
   // MCP

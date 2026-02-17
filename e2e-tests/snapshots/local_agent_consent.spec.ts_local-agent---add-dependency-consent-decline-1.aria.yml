@@ -15,7 +15,7 @@
 - paragraph: tc=local-agent/add-dependency
 - paragraph: I'll add a dependency to your project.
 - img
-- text: Do you want to install these packages? @dyad-sh/supabase-management-js Make sure these packages are what you want.
+- text: Do you want to install these packages? @blaze-sh/supabase-management-js Make sure these packages are what you want.
 - img
 - text: "Error Tool 'add_dependency' failed: User denied permission for add_dependency..."
 - img

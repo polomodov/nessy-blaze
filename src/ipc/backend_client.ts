@@ -2,9 +2,9 @@ type IpcChannelListener = (...args: unknown[]) => void;
 
 export type BackendMode = "ipc" | "http";
 
-export const BACKEND_MODE_STORAGE_KEY = "dyad.backend.mode";
-export const BACKEND_BASE_URL_STORAGE_KEY = "dyad.backend.base_url";
-export const BACKEND_IPC_FALLBACK_STORAGE_KEY = "dyad.backend.ipc_fallback";
+export const BACKEND_MODE_STORAGE_KEY = "blaze.backend.mode";
+export const BACKEND_BASE_URL_STORAGE_KEY = "blaze.backend.base_url";
+export const BACKEND_IPC_FALLBACK_STORAGE_KEY = "blaze.backend.ipc_fallback";
 
 export interface BackendClient {
   invoke<T = any>(channel: string, ...args: unknown[]): Promise<T>;
@@ -21,7 +21,7 @@ interface RemoteBackendConfig {
 
 declare global {
   interface Window {
-    __DYAD_REMOTE_CONFIG__?: {
+    __BLAZE_REMOTE_CONFIG__?: {
       backendClient?: RemoteBackendConfig;
     };
   }
@@ -70,6 +70,15 @@ function normalizeBackendMode(value: string | null | undefined): BackendMode {
 
 function trimTrailingSlash(url: string): string {
   return url.replace(/\/+$/, "");
+}
+
+function isLikelyNetworkFetchError(error: unknown): boolean {
+  if (error instanceof TypeError) {
+    return true;
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  return /failed to fetch|fetch failed|networkerror/i.test(message);
 }
 
 function getFirstArg<T>(args: unknown[]): T | undefined {
@@ -189,10 +198,10 @@ function resolveApiRoute(
 
 export function getConfiguredBackendMode(): BackendMode {
   const envMode = normalizeBackendMode(
-    import.meta.env.VITE_DYAD_BACKEND_MODE as string | undefined,
+    import.meta.env.VITE_BLAZE_BACKEND_MODE as string | undefined,
   );
 
-  const remoteMode = window.__DYAD_REMOTE_CONFIG__?.backendClient?.mode;
+  const remoteMode = window.__BLAZE_REMOTE_CONFIG__?.backendClient?.mode;
   const localMode = normalizeBackendMode(
     getLocalStorageValue(BACKEND_MODE_STORAGE_KEY),
   );
@@ -212,12 +221,12 @@ export function getConfiguredBackendBaseUrl(): string | null {
     return trimTrailingSlash(localUrl.trim());
   }
 
-  const remoteUrl = window.__DYAD_REMOTE_CONFIG__?.backendClient?.baseUrl;
+  const remoteUrl = window.__BLAZE_REMOTE_CONFIG__?.backendClient?.baseUrl;
   if (remoteUrl?.trim()) {
     return trimTrailingSlash(remoteUrl.trim());
   }
 
-  const envUrl = import.meta.env.VITE_DYAD_BACKEND_URL as string | undefined;
+  const envUrl = import.meta.env.VITE_BLAZE_BACKEND_URL as string | undefined;
   if (envUrl?.trim()) {
     return trimTrailingSlash(envUrl.trim());
   }
@@ -225,19 +234,19 @@ export function getConfiguredBackendBaseUrl(): string | null {
   return null;
 }
 
-function getAllowIpcFallback(): boolean {
+export function getAllowIpcFallback(): boolean {
   const localValue = getLocalStorageValue(BACKEND_IPC_FALLBACK_STORAGE_KEY);
   if (localValue != null) {
     return localValue !== "false";
   }
 
   const remoteValue =
-    window.__DYAD_REMOTE_CONFIG__?.backendClient?.allowIpcFallback;
+    window.__BLAZE_REMOTE_CONFIG__?.backendClient?.allowIpcFallback;
   if (typeof remoteValue === "boolean") {
     return remoteValue;
   }
 
-  const envValue = import.meta.env.VITE_DYAD_BACKEND_ALLOW_IPC_FALLBACK as
+  const envValue = import.meta.env.VITE_BLAZE_BACKEND_ALLOW_IPC_FALLBACK as
     | string
     | undefined;
   if (envValue != null) {
@@ -327,35 +336,68 @@ export class HttpBackendClient implements BackendClient {
 }
 
 export class BrowserBackendClient implements BackendClient {
-  private readonly baseUrl: string;
+  private readonly baseUrls: string[];
 
   constructor() {
-    this.baseUrl =
-      getConfiguredBackendBaseUrl() ||
-      (typeof window !== "undefined" ? window.location.origin : "");
+    const configuredBaseUrl = getConfiguredBackendBaseUrl();
+    const originBaseUrl =
+      typeof window !== "undefined" && window.location?.origin
+        ? trimTrailingSlash(window.location.origin)
+        : "";
+
+    const urls: string[] = [];
+    if (configuredBaseUrl) {
+      urls.push(configuredBaseUrl);
+    }
+    if (originBaseUrl && !urls.includes(originBaseUrl)) {
+      urls.push(originBaseUrl);
+    }
+
+    this.baseUrls = urls;
   }
 
-  public invoke<T = any>(channel: string, ...args: unknown[]): Promise<T> {
-    if (!this.baseUrl) {
+  public async invoke<T = any>(
+    channel: string,
+    ...args: unknown[]
+  ): Promise<T> {
+    if (this.baseUrls.length === 0) {
       throw new Error(
-        `Backend URL is not configured for channel "${channel}". Set VITE_DYAD_BACKEND_URL or remote config.`,
+        `Backend URL is not configured for channel "${channel}". Set VITE_BLAZE_BACKEND_URL or remote config.`,
       );
     }
 
     const apiRoute = resolveApiRoute(channel, args);
-    if (apiRoute) {
-      return invokeApiRoute<T>({
-        baseUrl: this.baseUrl,
-        channel,
-        request: apiRoute,
-      });
+    for (let index = 0; index < this.baseUrls.length; index += 1) {
+      const baseUrl = this.baseUrls[index];
+      const hasNextBaseUrl = index < this.baseUrls.length - 1;
+
+      try {
+        if (apiRoute) {
+          return await invokeApiRoute<T>({
+            baseUrl,
+            channel,
+            request: apiRoute,
+          });
+        }
+
+        return await invokeOverHttp<T>({
+          baseUrl,
+          channel,
+          args,
+        });
+      } catch (error) {
+        if (!hasNextBaseUrl || !isLikelyNetworkFetchError(error)) {
+          throw error;
+        }
+
+        console.warn(
+          `[BackendClient] Request for "${channel}" failed against "${baseUrl}". Retrying with "${this.baseUrls[index + 1]}".`,
+          error,
+        );
+      }
     }
 
-    return invokeOverHttp<T>({
-      baseUrl: this.baseUrl,
-      channel,
-      args,
-    });
+    throw new Error(`Failed to invoke backend channel "${channel}".`);
   }
 
   public on(_channel: string, _listener: IpcChannelListener): () => void {
@@ -398,7 +440,7 @@ async function invokeApiRoute<T>({
     method: request.method,
     headers: {
       "Content-Type": "application/json",
-      "X-Dyad-Channel": channel,
+      "X-Blaze-Channel": channel,
     },
     body: request.body === undefined ? undefined : JSON.stringify(request.body),
   });
@@ -445,7 +487,7 @@ async function invokeOverHttp<T>({
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Dyad-Channel": channel,
+      "X-Blaze-Channel": channel,
     },
     body: JSON.stringify({ channel, args }),
   });

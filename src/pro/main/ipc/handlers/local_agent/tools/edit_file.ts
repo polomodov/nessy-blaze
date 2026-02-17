@@ -141,9 +141,9 @@ export const editFileTool: ToolDefinition<z.infer<typeof editFileSchema>> = {
   buildXml: (args, isComplete) => {
     if (!args.path) return undefined;
 
-    let xml = `<dyad-edit path="${escapeXmlAttr(args.path)}" description="${escapeXmlAttr(args.description ?? "")}">\n${args.content ?? ""}`;
+    let xml = `<blaze-edit path="${escapeXmlAttr(args.path)}" description="${escapeXmlAttr(args.description ?? "")}">\n${args.content ?? ""}`;
     if (isComplete) {
-      xml += "\n</dyad-edit>";
+      xml += "\n</blaze-edit>";
     }
     return xml;
   },

@@ -3,23 +3,23 @@ import os from "node:os";
 import { IS_TEST_BUILD } from "../ipc/utils/test_utils";
 
 /**
- * Gets the base dyad-apps directory path (without a specific app subdirectory)
+ * Gets the base blaze-apps directory path (without a specific app subdirectory)
  */
-export function getDyadAppsBaseDirectory(): string {
+export function getBlazeAppsBaseDirectory(): string {
   if (IS_TEST_BUILD) {
     const electron = getElectron();
-    return path.join(electron!.app.getPath("userData"), "dyad-apps");
+    return path.join(electron!.app.getPath("userData"), "blaze-apps");
   }
-  return path.join(os.homedir(), "dyad-apps");
+  return path.join(os.homedir(), "blaze-apps");
 }
 
-export function getDyadAppPath(appPath: string): string {
+export function getBlazeAppPath(appPath: string): string {
   // If appPath is already absolute, use it as-is
   if (path.isAbsolute(appPath)) {
     return appPath;
   }
   // Otherwise, use the default base path
-  return path.join(getDyadAppsBaseDirectory(), appPath);
+  return path.join(getBlazeAppsBaseDirectory(), appPath);
 }
 
 export function getTypeScriptCachePath(): string {

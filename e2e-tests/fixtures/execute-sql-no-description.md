@@ -1,7 +1,7 @@
 No description!
 
-<dyad-execute-sql>
+<blaze-execute-sql>
 DROP TABLE users;
-</dyad-execute-sql>
+</blaze-execute-sql>
 
 Done.

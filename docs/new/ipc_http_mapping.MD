@@ -54,12 +54,12 @@
 
 ## Feature flags / runtime config
 
-- `VITE_DYAD_BACKEND_MODE=http` (целевой режим по умолчанию для client-server)
-- `VITE_DYAD_BACKEND_URL=https://...`
-- `VITE_DYAD_BACKEND_ALLOW_IPC_FALLBACK=false` для production client-server профиля
+- `VITE_BLAZE_BACKEND_MODE=http` (целевой режим по умолчанию для client-server)
+- `VITE_BLAZE_BACKEND_URL=https://...`
+- `VITE_BLAZE_BACKEND_ALLOW_IPC_FALLBACK=false` для production client-server профиля
 
 Local override (dev):
 
-- `localStorage["dyad.backend.mode"]`
-- `localStorage["dyad.backend.base_url"]`
-- `localStorage["dyad.backend.ipc_fallback"]`
+- `localStorage["blaze.backend.mode"]`
+- `localStorage["blaze.backend.base_url"]`
+- `localStorage["blaze.backend.ipc_fallback"]`

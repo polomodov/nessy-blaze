@@ -1,3 +1,3 @@
 chat1
 
-<dyad-chat-summary>Chat 1</dyad-chat-summary>
+<blaze-chat-summary>Chat 1</blaze-chat-summary>

@@ -1,4 +1,4 @@
-# План миграции Dyad из local-first в client-service
+# План миграции Blaze из local-first в client-service
 
 Дата: 13 февраля 2026  
 Обновлено: 16 февраля 2026  
@@ -82,7 +82,7 @@
 - Скрипты миграции и валидации данных.
 
 ### Критерий завершения
-- CRUD-функции Dyad работают через backend для pilot tenant.
+- CRUD-функции Blaze работают через backend для pilot tenant.
 
 ---
 

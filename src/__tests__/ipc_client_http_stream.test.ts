@@ -30,7 +30,7 @@ describe("IpcClient HTTP stream", () => {
     vi.clearAllMocks();
     vi.unstubAllGlobals();
     delete (window as any).electron;
-    delete window.__DYAD_REMOTE_CONFIG__;
+    delete window.__BLAZE_REMOTE_CONFIG__;
     const storage = window.localStorage as Partial<Storage> &
       Record<string, unknown>;
     if (typeof storage.removeItem === "function") {
@@ -46,29 +46,31 @@ describe("IpcClient HTTP stream", () => {
   });
 
   it("parses SSE chunk/end events in HTTP mode", async () => {
-    window.__DYAD_REMOTE_CONFIG__ = {
+    window.__BLAZE_REMOTE_CONFIG__ = {
       backendClient: {
         mode: "http",
         baseUrl: "https://api.example.com",
       },
     };
 
-    const fetchMock = vi.fn().mockResolvedValue(
-      createSseResponse([
-        [
-          "event: chat:response:chunk",
-          'data: {"chatId":77,"messages":[{"id":1,"role":"user","content":"Build a page"},{"id":2,"role":"assistant","content":"Drafting..."}]}',
-          "",
-          "",
-        ].join("\n"),
-        [
-          "event: chat:response:end",
-          'data: {"chatId":77,"updatedFiles":false}',
-          "",
-          "",
-        ].join("\n"),
-      ]),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        createSseResponse([
+          [
+            "event: chat:response:chunk",
+            'data: {"chatId":77,"messages":[{"id":1,"role":"user","content":"Build a page"},{"id":2,"role":"assistant","content":"Drafting..."}]}',
+            "",
+            "",
+          ].join("\n"),
+          [
+            "event: chat:response:end",
+            'data: {"chatId":77,"updatedFiles":false}',
+            "",
+            "",
+          ].join("\n"),
+        ]),
+      );
     vi.stubGlobal("fetch", fetchMock);
 
     const client = IpcClient.getInstance();
@@ -98,5 +100,49 @@ describe("IpcClient HTTP stream", () => {
       { id: 2, role: "assistant", content: "Drafting..." },
     ]);
     expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("falls back to IPC stream when HTTP fetch fails in desktop mode", async () => {
+    window.__BLAZE_REMOTE_CONFIG__ = {
+      backendClient: {
+        mode: "http",
+        baseUrl: "https://api.example.com",
+      },
+    };
+
+    const invokeMock = vi.fn().mockResolvedValue(undefined);
+    const onMock = vi.fn().mockReturnValue(() => {});
+
+    (window as any).electron = {
+      ipcRenderer: {
+        invoke: invokeMock,
+        on: onMock,
+        removeAllListeners: vi.fn(),
+        removeListener: vi.fn(),
+      },
+    };
+
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValue(new TypeError("Failed to fetch"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = IpcClient.getInstance();
+    client.streamMessage("Build a page", {
+      chatId: 99,
+      onUpdate: vi.fn(),
+      onEnd: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    await vi.waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith(
+        "chat:stream",
+        expect.objectContaining({
+          prompt: "Build a page",
+          chatId: 99,
+        }),
+      );
+    });
   });
 });

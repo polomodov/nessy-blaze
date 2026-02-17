@@ -1,4 +1,4 @@
-import { BrowserWindow, clipboard, ipcMain } from "electron";
+import electron from "electron";
 import { platform, arch } from "os";
 import { SystemDebugInfo, ChatLogsData } from "../ipc_types";
 import { readSettings } from "../../main/settings";
@@ -11,9 +11,11 @@ import { extractCodebase } from "../../utils/codebase";
 import { db } from "../../db";
 import { chats, apps } from "../../db/schema";
 import { eq } from "drizzle-orm";
-import { getDyadAppPath } from "../../paths/paths";
-import { LargeLanguageModel } from "@/lib/schemas";
+import { getBlazeAppPath } from "../../paths/paths";
+import { LargeLanguageModel } from "../../lib/schemas";
 import { validateChatContext } from "../utils/context_paths_utils";
+
+const { BrowserWindow, clipboard, ipcMain } = electron;
 
 // Shared function to get system debug info
 async function getSystemDebugInfo({
@@ -51,12 +53,12 @@ async function getSystemDebugInfo({
     console.error("Failed to get node path:", err);
   }
 
-  // Get Dyad version from package.json
+  // Get Blaze version from package.json
   const packageJsonPath = path.resolve(__dirname, "..", "..", "package.json");
-  let dyadVersion = "unknown";
+  let blazeVersion = "unknown";
   try {
     const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
-    dyadVersion = packageJson.version;
+    blazeVersion = packageJson.version;
   } catch (err) {
     console.error("Failed to read package.json:", err);
   }
@@ -107,7 +109,7 @@ async function getSystemDebugInfo({
       serializeModelForDebug(settings.selectedModel) || "unknown",
     telemetryConsent: settings.telemetryConsent || "unknown",
     telemetryUrl: "disabled",
-    dyadVersion,
+    blazeVersion,
     platform: process.platform,
     architecture: arch(),
     logs,
@@ -175,7 +177,7 @@ export function registerDebugHandlers() {
         }
 
         // Extract codebase
-        const appPath = getDyadAppPath(app.path);
+        const appPath = getBlazeAppPath(app.path);
         const codebase = (
           await extractCodebase({
             appPath,

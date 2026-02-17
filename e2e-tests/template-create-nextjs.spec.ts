@@ -8,7 +8,7 @@ test("create next.js app", async ({ po }) => {
   po.snapshotSettingsDelta(beforeSettings);
 
   // Create an app
-  await po.sendPrompt("tc=edit-made-with-dyad");
+  await po.sendPrompt("tc=edit-made-with-blaze");
   await po.approveProposal();
 
   await po.clickRestart();

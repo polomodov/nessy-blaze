@@ -1,4 +1,4 @@
-import { CodebaseFile, CodebaseFileReference } from "@/utils/codebase";
+import { CodebaseFile, CodebaseFileReference } from "../../utils/codebase";
 import { ModelMessage } from "@ai-sdk/provider-utils";
 import crypto from "node:crypto";
 import log from "electron-log";
@@ -19,14 +19,14 @@ export interface VersionedFiles {
   hasExternalChanges: boolean;
 }
 
-interface DyadEngineProviderOptions {
+interface BlazeEngineProviderOptions {
   sourceCommitHash: string | null;
   commitHash: string | null;
 }
 
 /**
  * Parse file paths from assistant message content.
- * Extracts files from <dyad-read> and <dyad-code-search-result> tags.
+ * Extracts files from <blaze-read> and <blaze-code-search-result> tags.
  */
 export function parseFilesFromMessage(content: string): string[] {
   const filePaths: string[] = [];
@@ -39,10 +39,10 @@ export function parseFilesFromMessage(content: string): string[] {
   }
   const matches: TagMatch[] = [];
 
-  // Parse <dyad-read path="$filePath"></dyad-read>
-  const dyadReadRegex = /<dyad-read\s+path="([^"]+)"\s*><\/dyad-read>/gs;
+  // Parse <blaze-read path="$filePath"></blaze-read>
+  const blazeReadRegex = /<blaze-read\s+path="([^"]+)"\s*><\/blaze-read>/gs;
   let match: RegExpExecArray | null;
-  while ((match = dyadReadRegex.exec(content)) !== null) {
+  while ((match = blazeReadRegex.exec(content)) !== null) {
     const filePath = normalizePath(match[1].trim());
     if (filePath) {
       matches.push({
@@ -52,9 +52,9 @@ export function parseFilesFromMessage(content: string): string[] {
     }
   }
 
-  // Parse <dyad-code-search-result>...</dyad-code-search-result>
+  // Parse <blaze-code-search-result>...</blaze-code-search-result>
   const codeSearchRegex =
-    /<dyad-code-search-result>(.*?)<\/dyad-code-search-result>/gs;
+    /<blaze-code-search-result>(.*?)<\/blaze-code-search-result>/gs;
   while ((match = codeSearchRegex.exec(content)) !== null) {
     const innerContent = match[1];
     const paths: string[] = [];
@@ -139,8 +139,8 @@ export async function processChatMessagesWithVersionedFiles({
 
     // Extract sourceCommitHash from providerOptions
     const engineOptions = message.providerOptions?.[
-      "dyad-engine"
-    ] as unknown as DyadEngineProviderOptions;
+      "blaze-engine"
+    ] as unknown as BlazeEngineProviderOptions;
     const sourceCommitHash = engineOptions?.sourceCommitHash;
 
     // Skip messages without sourceCommitHash
@@ -225,8 +225,8 @@ export async function processChatMessagesWithVersionedFiles({
     const message = chatMessages[i];
     if (message.role === "assistant") {
       const engineOptions = message.providerOptions?.[
-        "dyad-engine"
-      ] as unknown as DyadEngineProviderOptions;
+        "blaze-engine"
+      ] as unknown as BlazeEngineProviderOptions;
       if (engineOptions?.commitHash) {
         latestCommitHash = engineOptions.commitHash;
         break;

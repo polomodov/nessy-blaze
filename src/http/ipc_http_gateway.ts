@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
-import { getDyadAppPath, getUserDataPath } from "../paths/paths";
+import { getBlazeAppPath, getUserDataPath } from "../paths/paths";
 import { getEnvVar } from "../ipc/utils/read_env";
 import {
   CLOUD_PROVIDERS,
@@ -14,10 +14,24 @@ import { DEFAULT_TEMPLATE_ID } from "../shared/templates";
 import { DEFAULT_THEME_ID } from "../shared/themes";
 
 type InvokeHandler = (args: unknown[]) => Promise<unknown>;
-type NodeSqliteModule = typeof import("node:sqlite");
-type DatabaseSync = import("node:sqlite").DatabaseSync;
+type SqliteStatement = {
+  get(...params: unknown[]): unknown;
+  all(...params: unknown[]): unknown[];
+  run(...params: unknown[]): { lastInsertRowid: number | bigint };
+};
 
-let sqlite: DatabaseSync | null = null;
+type SqliteDatabase = {
+  exec(sql: string): unknown;
+  prepare(sql: string): SqliteStatement;
+};
+
+type SqliteDatabaseConstructor = new (filename: string) => SqliteDatabase;
+
+type NodeSqliteModule = {
+  DatabaseSync: SqliteDatabaseConstructor;
+};
+
+let sqlite: SqliteDatabase | null = null;
 const require = createRequire(import.meta.url);
 
 const DEFAULT_USER_SETTINGS: UserSettings = UserSettingsSchema.parse({
@@ -81,7 +95,7 @@ function getDatabasePath(): string {
   return path.join(getUserDataPath(), "sqlite.db");
 }
 
-function ensureSchema(database: DatabaseSync) {
+function ensureSchema(database: SqliteDatabase) {
   database.exec(`
     CREATE TABLE IF NOT EXISTS apps (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -146,12 +160,43 @@ function ensureSchema(database: DatabaseSync) {
   `);
 }
 
-function getSqlite(): DatabaseSync {
+function isNodeSqliteUnavailableError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return (
+    error.message.includes("No such built-in module: node:sqlite") ||
+    error.message.includes("Cannot find module 'node:sqlite'")
+  );
+}
+
+function resolveSqliteConstructor(): SqliteDatabaseConstructor {
+  try {
+    const sqliteModule = require("node:sqlite") as NodeSqliteModule;
+    if (typeof sqliteModule.DatabaseSync === "function") {
+      return sqliteModule.DatabaseSync;
+    }
+    throw new Error('Unexpected "node:sqlite" module shape');
+  } catch (error) {
+    if (!isNodeSqliteUnavailableError(error)) {
+      throw error;
+    }
+  }
+
+  const BetterSqlite3 = require("better-sqlite3") as SqliteDatabaseConstructor;
+  if (typeof BetterSqlite3 !== "function") {
+    throw new Error('Unexpected "better-sqlite3" module shape');
+  }
+  return BetterSqlite3;
+}
+
+function getSqlite(): SqliteDatabase {
   if (sqlite) {
     return sqlite;
   }
 
-  const { DatabaseSync } = require("node:sqlite") as NodeSqliteModule;
+  const DatabaseSync = resolveSqliteConstructor();
   const databasePath = getDatabasePath();
   fs.mkdirSync(path.dirname(databasePath), { recursive: true });
   sqlite = new DatabaseSync(databasePath);
@@ -227,7 +272,7 @@ function mapAppRow(row: Record<string, unknown>) {
     installCommand: (row.install_command as string | null) ?? null,
     startCommand: (row.start_command as string | null) ?? null,
     isFavorite: Boolean(row.is_favorite),
-    resolvedPath: getDyadAppPath(appPath),
+    resolvedPath: getBlazeAppPath(appPath),
   };
 }
 

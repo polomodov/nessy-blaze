@@ -24,7 +24,7 @@ export const addIntegrationTool: ToolDefinition<
 
   buildXml: (args, _isComplete) => {
     if (!args.provider) return undefined;
-    return `<dyad-add-integration provider="${escapeXmlAttr(args.provider)}"></dyad-add-integration>`;
+    return `<blaze-add-integration provider="${escapeXmlAttr(args.provider)}"></blaze-add-integration>`;
   },
 
   execute: async (args) => {

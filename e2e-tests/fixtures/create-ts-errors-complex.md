@@ -1,9 +1,9 @@
 Tests delete-rename-write order
-<dyad-delete path="src/main.tsx">
-</dyad-delete>
-<dyad-rename from="src/App.tsx" to="src/main.tsx">
-</dyad-rename>
-<dyad-write path="src/main.tsx" description="final main.tsx file.">
+<blaze-delete path="src/main.tsx">
+</blaze-delete>
+<blaze-rename from="src/App.tsx" to="src/main.tsx">
+</blaze-rename>
+<blaze-write path="src/main.tsx" description="final main.tsx file.">
 finalMainTsxFileWithError();
-</dyad-write>
+</blaze-write>
 EOM
