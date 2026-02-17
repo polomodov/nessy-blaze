@@ -3,7 +3,7 @@
  * Main orchestrator for tool-based agent mode with parallel execution
  */
 
-import { IpcMainInvokeEvent } from "electron";
+import type { IpcMainInvokeEvent } from "electron";
 import {
   streamText,
   ToolSet,
@@ -18,9 +18,9 @@ import { db } from "@/db";
 import { chats, messages } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
-import { isDyadProEnabled } from "@/lib/schemas";
+import { isBlazeProEnabled } from "@/lib/schemas";
 import { readSettings } from "@/main/settings";
-import { getDyadAppPath } from "@/paths/paths";
+import { getBlazeAppPath } from "@/paths/paths";
 import { getModelClient } from "@/ipc/utils/get_model_client";
 import { safeSend } from "@/ipc/utils/safe_sender";
 import { getMaxTokens, getTemperature } from "@/ipc/utils/token_utils";
@@ -106,12 +106,12 @@ export async function handleLocalAgentStream(
   {
     placeholderMessageId,
     systemPrompt,
-    dyadRequestId,
+    blazeRequestId,
     readOnly = false,
   }: {
     placeholderMessageId: number;
     systemPrompt: string;
-    dyadRequestId: string;
+    blazeRequestId: string;
     /**
      * If true, the agent operates in read-only mode (e.g., ask mode).
      * State-modifying tools are disabled, and no commits/deploys are made.
@@ -122,11 +122,11 @@ export async function handleLocalAgentStream(
   const settings = readSettings();
 
   // Check Pro status
-  if (!isDyadProEnabled(settings)) {
+  if (!isBlazeProEnabled(settings)) {
     safeSend(event.sender, "chat:response:error", {
       chatId: req.chatId,
       error:
-        "Agent v2 requires Dyad Pro. Please enable Dyad Pro in Settings → Pro.",
+        "Agent v2 requires Blaze Pro. Please enable Blaze Pro in Settings → Pro.",
     });
     return;
   }
@@ -146,7 +146,7 @@ export async function handleLocalAgentStream(
     throw new Error(`Chat not found: ${req.chatId}`);
   }
 
-  const appPath = getDyadAppPath(chat.app.path);
+  const appPath = getBlazeAppPath(chat.app.path);
 
   // Send initial message update
   safeSend(event.sender, "chat:response:chunk", {
@@ -180,7 +180,7 @@ export async function handleLocalAgentStream(
       messageId: placeholderMessageId,
       isSharedModulesChanged: false,
       todos: [],
-      dyadRequestId,
+      blazeRequestId,
       onXmlStream: (accumulatedXml: string) => {
         // Stream accumulated XML to UI without persisting
         streamingPreview = accumulatedXml;
@@ -240,9 +240,9 @@ export async function handleLocalAgentStream(
         builtinProviderId: modelClient.builtinProviderId,
       }),
       providerOptions: getProviderOptions({
-        dyadAppId: chat.app.id,
-        dyadRequestId,
-        dyadDisableFiles: true, // Local agent uses tools, not file injection
+        blazeAppId: chat.app.id,
+        blazeRequestId,
+        blazeDisableFiles: true, // Local agent uses tools, not file injection
         files: [],
         mentionedAppsCodebases: [],
         builtinProviderId: modelClient.builtinProviderId,
@@ -547,7 +547,7 @@ async function getMcpTools(
               const { serverName, toolName } = parseMcpToolKey(key);
               const content = JSON.stringify(args, null, 2);
               ctx.onXmlComplete(
-                `<dyad-mcp-tool-call server="${serverName}" tool="${toolName}">\n${content}\n</dyad-mcp-tool-call>`,
+                `<blaze-mcp-tool-call server="${serverName}" tool="${toolName}">\n${content}\n</blaze-mcp-tool-call>`,
               );
 
               const res = await mcpTool.execute(args, execCtx);
@@ -555,7 +555,7 @@ async function getMcpTools(
                 typeof res === "string" ? res : JSON.stringify(res);
 
               ctx.onXmlComplete(
-                `<dyad-mcp-tool-result server="${serverName}" tool="${toolName}">\n${resultStr}\n</dyad-mcp-tool-result>`,
+                `<blaze-mcp-tool-result server="${serverName}" tool="${toolName}">\n${resultStr}\n</blaze-mcp-tool-result>`,
               );
 
               return resultStr;
@@ -565,7 +565,7 @@ async function getMcpTools(
               const errorStack =
                 error instanceof Error && error.stack ? error.stack : "";
               ctx.onXmlComplete(
-                `<dyad-output type="error" message="MCP tool '${key}' failed: ${escapeXmlAttr(errorMessage)}">${escapeXmlContent(errorStack || errorMessage)}</dyad-output>`,
+                `<blaze-output type="error" message="MCP tool '${key}' failed: ${escapeXmlAttr(errorMessage)}">${escapeXmlContent(errorStack || errorMessage)}</blaze-output>`,
               );
               throw error;
             }

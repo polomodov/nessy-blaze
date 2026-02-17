@@ -7,12 +7,14 @@ import {
   Secret,
   VertexProviderSetting,
 } from "../lib/schemas";
-import { safeStorage } from "electron";
+import electron from "electron";
 import { v4 as uuidv4 } from "uuid";
 import log from "electron-log";
-import { DEFAULT_TEMPLATE_ID } from "@/shared/templates";
-import { DEFAULT_THEME_ID } from "@/shared/themes";
-import { IS_TEST_BUILD } from "@/ipc/utils/test_utils";
+import { DEFAULT_TEMPLATE_ID } from "../shared/templates";
+import { DEFAULT_THEME_ID } from "../shared/themes";
+import { IS_TEST_BUILD } from "../ipc/utils/test_utils";
+
+const { safeStorage } = electron;
 
 const logger = log.scope("settings");
 

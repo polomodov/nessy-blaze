@@ -1,8 +1,27 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ChatStreamParams } from "../ipc/ipc_types";
 import { createChatStreamMiddleware } from "./chat_stream_middleware";
-import { invokeIpcChannelOverHttp } from "./ipc_http_gateway";
+
+const {
+  mockHandleChatStreamRequest,
+  mockHandleChatCancelRequest,
+  mockInitializeDatabase,
+} = vi.hoisted(() => ({
+  mockHandleChatStreamRequest: vi.fn(),
+  mockHandleChatCancelRequest: vi.fn(),
+  mockInitializeDatabase: vi.fn(),
+}));
+
+vi.mock("../db", () => ({
+  initializeDatabase: mockInitializeDatabase,
+}));
+
+vi.mock("../ipc/handlers/chat_stream_handlers", () => ({
+  handleChatStreamRequest: mockHandleChatStreamRequest,
+  handleChatCancelRequest: mockHandleChatCancelRequest,
+}));
 
 function createMockRequest({
   method,
@@ -70,6 +89,15 @@ function createMockResponse() {
 }
 
 describe("createChatStreamMiddleware", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("initializes database once when middleware is created", () => {
+    createChatStreamMiddleware();
+    expect(mockInitializeDatabase).toHaveBeenCalledOnce();
+  });
+
   it("passes through unknown routes", async () => {
     const middleware = createChatStreamMiddleware();
     const req = createMockRequest({
@@ -85,16 +113,10 @@ describe("createChatStreamMiddleware", () => {
   });
 
   it("returns 400 for invalid prompt payload", async () => {
-    const createResult = (await invokeIpcChannelOverHttp("create-app", [
-      { name: `stream-invalid-prompt-${Date.now()}` },
-    ])) as {
-      chatId: number;
-    };
-
     const middleware = createChatStreamMiddleware();
     const req = createMockRequest({
       method: "POST",
-      url: `/api/v1/chats/${createResult.chatId}/stream`,
+      url: "/api/v1/chats/22/stream",
       body: JSON.stringify({ prompt: "" }),
     });
     const { response, getBody } = createMockResponse();
@@ -109,17 +131,24 @@ describe("createChatStreamMiddleware", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it("streams chat updates over SSE and persists assistant message", async () => {
-    const createResult = (await invokeIpcChannelOverHttp("create-app", [
-      { name: `stream-chat-${Date.now()}` },
-    ])) as {
-      chatId: number;
-    };
+  it("streams chat updates over SSE", async () => {
+    mockHandleChatStreamRequest.mockImplementationOnce(
+      async (event: any, request: ChatStreamParams) => {
+        event.sender.send("chat:response:chunk", {
+          chatId: request.chatId,
+          chunk: "hello",
+        });
+        event.sender.send("chat:response:end", {
+          chatId: request.chatId,
+          updatedFiles: false,
+        });
+      },
+    );
 
     const middleware = createChatStreamMiddleware();
     const req = createMockRequest({
       method: "POST",
-      url: `/api/v1/chats/${createResult.chatId}/stream`,
+      url: "/api/v1/chats/22/stream",
       body: JSON.stringify({ prompt: "Build a landing page" }),
     });
     const { response, headers, getBody } = createMockResponse();
@@ -131,30 +160,22 @@ describe("createChatStreamMiddleware", () => {
     expect(headers["content-type"]).toBe("text/event-stream");
     expect(getBody()).toContain("event: chat:response:chunk");
     expect(getBody()).toContain("event: chat:response:end");
-    expect(next).not.toHaveBeenCalled();
-
-    const chat = (await invokeIpcChannelOverHttp("get-chat", [
-      createResult.chatId,
-    ])) as {
-      messages: Array<{ role: string; content: string }>;
-    };
-
-    expect(chat.messages.some((message) => message.role === "assistant")).toBe(
-      true,
+    expect(mockHandleChatStreamRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        chatId: 22,
+        prompt: "Build a landing page",
+      }),
     );
+    expect(next).not.toHaveBeenCalled();
   });
 
   it("supports stream cancellation endpoint", async () => {
-    const createResult = (await invokeIpcChannelOverHttp("create-app", [
-      { name: `stream-cancel-${Date.now()}` },
-    ])) as {
-      chatId: number;
-    };
-
+    mockHandleChatCancelRequest.mockResolvedValueOnce(undefined);
     const middleware = createChatStreamMiddleware();
     const req = createMockRequest({
       method: "POST",
-      url: `/api/v1/chats/${createResult.chatId}/stream/cancel`,
+      url: "/api/v1/chats/23/stream/cancel",
     });
     const { response, getBody } = createMockResponse();
     const next = vi.fn();
@@ -163,6 +184,10 @@ describe("createChatStreamMiddleware", () => {
 
     expect(response.statusCode).toBe(204);
     expect(getBody()).toBe("");
+    expect(mockHandleChatCancelRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      23,
+    );
     expect(next).not.toHaveBeenCalled();
   });
 });

@@ -1,4 +1,4 @@
-import { LargeLanguageModel } from "@/lib/schemas";
+import { LargeLanguageModel } from "../../lib/schemas";
 import { LanguageModel } from "../ipc_types";
 import { getLanguageModels } from "../shared/language_model_helpers";
 

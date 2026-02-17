@@ -5,7 +5,7 @@ import log from "electron-log";
 import { IS_TEST_BUILD } from "../ipc/utils/test_utils";
 import { glob } from "glob";
 import { AppChatContext } from "../lib/schemas";
-import { readSettings } from "@/main/settings";
+import { readSettings } from "../main/settings";
 import { AsyncVirtualFileSystem } from "../../shared/VirtualFilesystem";
 
 const logger = log.scope("utils/codebase");
@@ -43,9 +43,9 @@ const ALLOWED_EXTENSIONS = [
   ".gradle",
   ".swift",
   // Edge cases
-  // https://github.com/dyad-sh/dyad/issues/880
+  // https://github.com/blaze-sh/blaze/issues/880
   ".py",
-  // https://github.com/dyad-sh/dyad/issues/1221
+  // https://github.com/blaze-sh/blaze/issues/1221
   ".php",
 ];
 
@@ -54,7 +54,7 @@ const ALLOWED_EXTENSIONS = [
 // people don't have their gitignore setup correctly so we want to
 // be conservative and never include these directories.
 //
-// ex: https://github.com/dyad-sh/dyad/issues/727
+// ex: https://github.com/blaze-sh/blaze/issues/727
 const EXCLUDED_DIRS = [
   "node_modules",
   ".git",
@@ -377,9 +377,9 @@ async function formatFile({
   try {
     // Check if we should read file contents
     if (!shouldReadFileContents({ filePath, normalizedRelativePath })) {
-      return `<dyad-file path="${normalizedRelativePath}">
+      return `<blaze-file path="${normalizedRelativePath}">
 ${OMITTED_FILE_CONTENT}
-</dyad-file>
+</blaze-file>
 
 `;
     }
@@ -387,23 +387,23 @@ ${OMITTED_FILE_CONTENT}
     const content = await readFileWithCache(filePath, virtualFileSystem);
 
     if (content == null) {
-      return `<dyad-file path="${normalizedRelativePath}">
+      return `<blaze-file path="${normalizedRelativePath}">
 // Error reading file
-</dyad-file>
+</blaze-file>
 
 `;
     }
 
-    return `<dyad-file path="${normalizedRelativePath}">
+    return `<blaze-file path="${normalizedRelativePath}">
 ${content}
-</dyad-file>
+</blaze-file>
 
 `;
   } catch (error) {
     logger.error(`Error reading file: ${filePath}`, error);
-    return `<dyad-file path="${normalizedRelativePath}">
+    return `<blaze-file path="${normalizedRelativePath}">
 // Error reading file: ${error}
-</dyad-file>
+</blaze-file>
 
 `;
   }
@@ -443,7 +443,7 @@ export async function extractCodebase({
 }> {
   const settings = readSettings();
   const isSmartContextEnabled =
-    settings?.enableDyadPro && settings?.enableProSmartFilesContextMode;
+    settings?.enableBlazePro && settings?.enableProSmartFilesContextMode;
 
   try {
     await fsAsync.access(appPath);

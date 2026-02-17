@@ -1,4 +1,4 @@
-import { AppChatContext, AppChatContextSchema } from "@/lib/schemas";
+import { AppChatContext, AppChatContextSchema } from "../../lib/schemas";
 import log from "electron-log";
 
 const logger = log.scope("context_paths_utils");

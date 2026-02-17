@@ -1,4 +1,4 @@
-import { LargeLanguageModel } from "@/lib/schemas";
+import { LargeLanguageModel } from "../../lib/schemas";
 import { readSettings } from "../../main/settings";
 import { Message } from "../ipc_types";
 

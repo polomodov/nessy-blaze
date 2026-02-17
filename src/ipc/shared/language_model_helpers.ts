@@ -1,9 +1,9 @@
-import { db } from "@/db";
+import { db } from "../../db";
 import {
   language_model_providers as languageModelProvidersSchema,
   language_models as languageModelsSchema,
-} from "@/db/schema";
-import type { LanguageModelProvider, LanguageModel } from "@/ipc/ipc_types";
+} from "../../db/schema";
+import type { LanguageModelProvider, LanguageModel } from "../ipc_types";
 import { eq } from "drizzle-orm";
 import {
   LOCAL_PROVIDERS,

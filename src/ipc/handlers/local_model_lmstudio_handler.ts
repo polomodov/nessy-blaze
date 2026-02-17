@@ -1,7 +1,9 @@
-import { ipcMain } from "electron";
+import electron from "electron";
 import log from "electron-log";
 import type { LocalModelListResponse, LocalModel } from "../ipc_types";
 import { LM_STUDIO_BASE_URL } from "../utils/lm_studio_utils";
+
+const { ipcMain } = electron;
 
 const logger = log.scope("lmstudio_handler");
 

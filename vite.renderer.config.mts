@@ -7,23 +7,61 @@ const ReactCompilerConfig = {};
 
 function ipcHttpGatewayPlugin(): Plugin {
   return {
-    name: "dyad-ipc-http-gateway",
+    name: "blaze-ipc-http-gateway",
     apply: "serve",
     async configureServer(server) {
-      const [
-        { createChatStreamMiddleware },
-        { createApiV1Middleware },
-        { createIpcInvokeMiddleware },
-        { invokeIpcChannelOverHttp },
-      ] =
-        await Promise.all([
-          import("./src/http/chat_stream_middleware"),
-          import("./src/http/api_v1_middleware"),
-          import("./src/http/ipc_http_middleware"),
-          import("./src/http/ipc_http_gateway"),
-        ]);
-      const chatStreamMiddleware =
-        createChatStreamMiddleware();
+      let chatStreamModule;
+      let apiV1Module;
+      let ipcHttpMiddlewareModule;
+      let ipcGatewayModule;
+
+      try {
+        chatStreamModule = await import("./src/http/chat_stream_middleware");
+      } catch (error) {
+        console.error(
+          "[blaze-ipc-http-gateway] failed importing chat_stream_middleware",
+          error,
+        );
+        throw error;
+      }
+      try {
+        apiV1Module = await import("./src/http/api_v1_middleware");
+      } catch (error) {
+        console.error(
+          "[blaze-ipc-http-gateway] failed importing api_v1_middleware",
+          error,
+        );
+        throw error;
+      }
+      try {
+        ipcHttpMiddlewareModule = await import(
+          "./src/http/ipc_http_middleware"
+        );
+      } catch (error) {
+        console.error(
+          "[blaze-ipc-http-gateway] failed importing ipc_http_middleware",
+          error,
+        );
+        throw error;
+      }
+      try {
+        ipcGatewayModule = await import("./src/http/ipc_http_gateway");
+      } catch (error) {
+        console.error(
+          "[blaze-ipc-http-gateway] failed importing ipc_http_gateway",
+          error,
+        );
+        throw error;
+      }
+
+      const { createChatStreamMiddleware } = chatStreamModule;
+      const { createApiV1Middleware } = apiV1Module;
+      const { createIpcInvokeMiddleware } = ipcHttpMiddlewareModule;
+      const { invokeIpcChannelOverHttp } = ipcGatewayModule;
+      const chatStreamMiddleware = createChatStreamMiddleware({
+        loadChatStreamHandlers: () =>
+          server.ssrLoadModule("/src/ipc/handlers/chat_stream_handlers.ts"),
+      });
       const apiMiddleware = createApiV1Middleware(invokeIpcChannelOverHttp);
       const middleware = createIpcInvokeMiddleware(invokeIpcChannelOverHttp);
       server.middlewares.use(chatStreamMiddleware);
@@ -45,8 +83,11 @@ export default defineConfig({
     tailwindcss(),
   ],
   resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
-    },
+    alias: [
+      {
+        find: /^@\//,
+        replacement: `${path.resolve(__dirname, "./src")}/`,
+      },
+    ],
   },
 });

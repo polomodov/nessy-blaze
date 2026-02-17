@@ -3,7 +3,7 @@
  * Each tool includes a zod schema, description, and execute function
  */
 
-import { IpcMainInvokeEvent } from "electron";
+import type { IpcMainInvokeEvent } from "electron";
 import crypto from "node:crypto";
 import { readSettings, writeSettings } from "@/main/settings";
 import { writeFileTool } from "./tools/write_file";
@@ -36,6 +36,11 @@ import {
 } from "./tools/types";
 import { AgentToolConsent } from "@/lib/schemas";
 import { getSupabaseClientCode } from "@/supabase_admin/supabase_context";
+import { waitForAgentToolConsent } from "./agent_tool_consent";
+export {
+  clearPendingConsentsForChat,
+  resolveAgentToolConsent,
+} from "./agent_tool_consent";
 // Combined tool definitions array
 export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   writeFileTool,
@@ -65,52 +70,6 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
 // ============================================================================
 
 export type AgentToolName = (typeof TOOL_DEFINITIONS)[number]["name"];
-
-// ============================================================================
-// Agent Tool Consent Management
-// ============================================================================
-
-interface PendingConsentEntry {
-  chatId: number;
-  resolve: (d: "accept-once" | "accept-always" | "decline") => void;
-}
-
-const pendingConsentResolvers = new Map<string, PendingConsentEntry>();
-
-export function waitForAgentToolConsent(
-  requestId: string,
-  chatId: number,
-): Promise<"accept-once" | "accept-always" | "decline"> {
-  return new Promise((resolve) => {
-    pendingConsentResolvers.set(requestId, { chatId, resolve });
-  });
-}
-
-export function resolveAgentToolConsent(
-  requestId: string,
-  decision: "accept-once" | "accept-always" | "decline",
-) {
-  const entry = pendingConsentResolvers.get(requestId);
-  if (entry) {
-    pendingConsentResolvers.delete(requestId);
-    entry.resolve(decision);
-  }
-}
-
-/**
- * Clean up all pending consent requests for a given chat.
- * Called when a stream is cancelled/aborted to prevent orphaned promises
- * and stale UI banners.
- */
-export function clearPendingConsentsForChat(chatId: number): void {
-  for (const [requestId, entry] of pendingConsentResolvers) {
-    if (entry.chatId === chatId) {
-      pendingConsentResolvers.delete(requestId);
-      // Resolve with decline so the tool execution fails gracefully
-      entry.resolve("decline");
-    }
-  }
-}
 
 export function getDefaultConsent(toolName: AgentToolName): AgentToolConsent {
   const tool = TOOL_DEFINITIONS.find((t) => t.name === toolName);
@@ -311,7 +270,7 @@ export function buildAgentToolSet(
             error instanceof Error ? error.message : String(error);
 
           ctx.onXmlComplete(
-            `<dyad-output type="error" message="Tool '${tool.name}' failed: ${escapeXmlAttr(errorMessage)}">${escapeXmlContent(errorMessage)}</dyad-output>`,
+            `<blaze-output type="error" message="Tool '${tool.name}' failed: ${escapeXmlAttr(errorMessage)}">${escapeXmlContent(errorMessage)}</blaze-output>`,
           );
           throw error;
         }

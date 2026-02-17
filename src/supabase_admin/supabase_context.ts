@@ -1,5 +1,5 @@
-import { IS_TEST_BUILD } from "@/ipc/utils/test_utils";
-import { retryWithRateLimit } from "@/ipc/utils/retryWithRateLimit";
+import { IS_TEST_BUILD } from "../ipc/utils/test_utils";
+import { retryWithRateLimit } from "../ipc/utils/retryWithRateLimit";
 import { getSupabaseClient } from "./supabase_management_client";
 import {
   SUPABASE_SCHEMA_QUERY,
@@ -40,7 +40,7 @@ async function getPublishableKey({
 
   if (!publishableKey) {
     throw new Error(
-      "No publishable key found for project. Make sure you are connected to the correct Supabase account and project. See https://dyad.sh/docs/integrations/supabase#no-publishable-keys",
+      "No publishable key found for project. Make sure you are connected to the correct Supabase account and project. See https://blaze.sh/docs/integrations/supabase#no-publishable-keys",
     );
   }
   return publishableKey.api_key;

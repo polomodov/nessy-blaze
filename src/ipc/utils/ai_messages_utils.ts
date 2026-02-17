@@ -1,4 +1,4 @@
-import { AI_MESSAGES_SDK_VERSION, AiMessagesJsonV6 } from "@/db/schema";
+import { AI_MESSAGES_SDK_VERSION, AiMessagesJsonV6 } from "../../db/schema";
 import type { ModelMessage } from "ai";
 import log from "electron-log";
 

@@ -1,18 +1,36 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import {
-  doesHttpChatExist,
-  insertHttpChatMessage,
-  listHttpChatMessages,
-  type HttpChatMessage,
-} from "./ipc_http_gateway";
+import type { IpcMainInvokeEvent } from "electron";
+import { initializeDatabase } from "../db";
+import type { ChatResponseEnd, ChatStreamParams } from "../ipc/ipc_types";
+import { resolveConsent } from "../ipc/utils/mcp_consent";
+import { resolveAgentToolConsent } from "../pro/main/ipc/handlers/local_agent/agent_tool_consent";
 
 type Next = (error?: unknown) => void;
 
 const STREAM_ROUTE = /^\/api\/v1\/chats\/(\d+)\/stream$/;
 const CANCEL_STREAM_ROUTE = /^\/api\/v1\/chats\/(\d+)\/stream\/cancel$/;
-const STREAM_CHUNK_DELAY_MS = 40;
+const activeHttpEvents = new Map<number, IpcMainInvokeEvent>();
 
-const activeStreams = new Map<number, AbortController>();
+type ChatStreamHandlerModule =
+  typeof import("../ipc/handlers/chat_stream_handlers");
+
+export type ChatStreamHandlersLoader = () => Promise<ChatStreamHandlerModule>;
+
+function dynamicImportModule<T>(modulePath: string): Promise<T> {
+  return new Function("modulePath", "return import(modulePath);")(
+    modulePath,
+  ) as Promise<T>;
+}
+
+function defaultLoadChatStreamHandlers(): Promise<ChatStreamHandlerModule> {
+  return dynamicImportModule<ChatStreamHandlerModule>(
+    "../ipc/handlers/chat_stream_handlers",
+  );
+}
+
+interface ChatStreamMiddlewareOptions {
+  loadChatStreamHandlers?: ChatStreamHandlersLoader;
+}
 
 async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   let rawBody = "";
@@ -38,48 +56,11 @@ function writeSseEvent(
   event: "chat:response:chunk" | "chat:response:end" | "chat:response:error",
   payload: unknown,
 ) {
+  if (res.writableEnded || res.destroyed) {
+    return;
+  }
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
-}
-
-function createAssistantDraft(prompt: string): string {
-  return `Understood. I am generating the first draft for: "${prompt}". I will structure the page, prepare content blocks, and then apply refinements.`;
-}
-
-function splitIntoStreamingChunks(text: string): string[] {
-  const words = text.split(/\s+/).filter(Boolean);
-  if (words.length === 0) {
-    return [];
-  }
-
-  const result: string[] = [];
-  const chunkSize = 6;
-  for (let index = 0; index < words.length; index += chunkSize) {
-    result.push(words.slice(index, index + chunkSize).join(" "));
-  }
-  return result;
-}
-
-function delay(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-
-    const onAbort = () => {
-      clearTimeout(timeout);
-      reject(new Error("Stream aborted"));
-    };
-
-    if (signal.aborted) {
-      clearTimeout(timeout);
-      reject(new Error("Stream aborted"));
-      return;
-    }
-
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
 }
 
 function resolveChatId(pathName: string, route: RegExp): number | null {
@@ -96,25 +77,92 @@ function resolveChatId(pathName: string, route: RegExp): number | null {
   return chatId;
 }
 
-function withStreamingAssistant(
-  messages: HttpChatMessage[],
-  assistantText: string,
-): HttpChatMessage[] {
-  if (!assistantText.trim()) {
-    return messages;
-  }
-
-  return [
-    ...messages,
-    {
-      id: -1,
-      role: "assistant",
-      content: assistantText,
-    },
-  ];
+function createNoopEvent(): IpcMainInvokeEvent {
+  return {
+    sender: {
+      send: () => {},
+      isDestroyed: () => false,
+      isCrashed: () => false,
+    } as any,
+  } as IpcMainInvokeEvent;
 }
 
-export function createChatStreamMiddleware() {
+function createHttpEvent(
+  res: ServerResponse,
+  onEnd: (payload: ChatResponseEnd) => void,
+): IpcMainInvokeEvent {
+  return {
+    sender: {
+      send: (channel: string, ...args: unknown[]) => {
+        const payload = args[0];
+        if (
+          channel === "chat:response:chunk" ||
+          channel === "chat:response:error" ||
+          channel === "chat:response:end"
+        ) {
+          writeSseEvent(
+            res,
+            channel as
+              | "chat:response:chunk"
+              | "chat:response:error"
+              | "chat:response:end",
+            payload,
+          );
+
+          if (channel === "chat:response:end") {
+            onEnd(
+              (payload as ChatResponseEnd) ?? {
+                chatId: 0,
+                updatedFiles: false,
+              },
+            );
+          }
+          return;
+        }
+
+        if (
+          channel === "mcp:tool-consent-request" &&
+          payload &&
+          typeof payload === "object" &&
+          "requestId" in (payload as Record<string, unknown>)
+        ) {
+          const requestId = String(
+            (payload as Record<string, unknown>).requestId ?? "",
+          );
+          if (requestId) {
+            resolveConsent(requestId, "decline");
+          }
+          return;
+        }
+
+        if (
+          channel === "agent-tool:consent-request" &&
+          payload &&
+          typeof payload === "object" &&
+          "requestId" in (payload as Record<string, unknown>)
+        ) {
+          const requestId = String(
+            (payload as Record<string, unknown>).requestId ?? "",
+          );
+          if (requestId) {
+            resolveAgentToolConsent(requestId, "decline");
+          }
+        }
+      },
+      isDestroyed: () => false,
+      isCrashed: () => false,
+    } as any,
+  } as IpcMainInvokeEvent;
+}
+
+export function createChatStreamMiddleware(
+  options?: ChatStreamMiddlewareOptions,
+) {
+  // Shared chat streaming logic depends on the drizzle database connection.
+  initializeDatabase();
+  const loadChatStreamHandlers =
+    options?.loadChatStreamHandlers ?? defaultLoadChatStreamHandlers;
+
   return async (req: IncomingMessage, res: ServerResponse, next: Next) => {
     const method = req.method?.toUpperCase();
     const requestUrl = new URL(req.url || "/", "http://localhost");
@@ -136,10 +184,15 @@ export function createChatStreamMiddleware() {
         return;
       }
 
-      const controller = activeStreams.get(chatId);
-      if (controller) {
-        controller.abort();
-        activeStreams.delete(chatId);
+      try {
+        const { handleChatCancelRequest } = await loadChatStreamHandlers();
+        const event = activeHttpEvents.get(chatId) ?? createNoopEvent();
+        await handleChatCancelRequest(event, chatId);
+      } catch (error) {
+        writeJson(res, 500, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return;
       }
 
       res.statusCode = 204;
@@ -153,9 +206,9 @@ export function createChatStreamMiddleware() {
       return;
     }
 
-    let payload: { prompt?: unknown };
+    let payload: Partial<ChatStreamParams>;
     try {
-      payload = (await readJsonBody(req)) as { prompt?: unknown };
+      payload = (await readJsonBody(req)) as Partial<ChatStreamParams>;
     } catch {
       writeJson(res, 400, { error: "Invalid JSON body" });
       return;
@@ -164,37 +217,21 @@ export function createChatStreamMiddleware() {
     const prompt =
       typeof payload.prompt === "string" ? payload.prompt.trim() : "";
     if (!prompt) {
-      writeJson(res, 400, { error: "Invalid payload: \"prompt\" is required" });
+      writeJson(res, 400, { error: 'Invalid payload: "prompt" is required' });
       return;
     }
 
-    if (!doesHttpChatExist(chatId)) {
-      writeJson(res, 404, { error: `Chat not found: ${chatId}` });
-      return;
-    }
-
-    const previousController = activeStreams.get(chatId);
-    if (previousController) {
-      previousController.abort();
-    }
-
-    const abortController = new AbortController();
-    activeStreams.set(chatId, abortController);
-
-    req.on("close", () => {
-      const activeController = activeStreams.get(chatId);
-      if (activeController === abortController) {
-        activeController.abort();
-        activeStreams.delete(chatId);
-      }
-    });
-
-    insertHttpChatMessage({
+    const streamRequest: ChatStreamParams = {
       chatId,
-      role: "user",
-      content: prompt,
-    });
-    const chatMessages = listHttpChatMessages(chatId);
+      prompt,
+      redo: payload.redo === true ? true : undefined,
+      attachments: Array.isArray(payload.attachments)
+        ? (payload.attachments as ChatStreamParams["attachments"])
+        : undefined,
+      selectedComponents: Array.isArray(payload.selectedComponents)
+        ? (payload.selectedComponents as ChatStreamParams["selectedComponents"])
+        : undefined,
+    };
 
     res.statusCode = 200;
     res.setHeader("Content-Type", "text/event-stream");
@@ -205,54 +242,41 @@ export function createChatStreamMiddleware() {
       res.flushHeaders();
     }
 
-    try {
-      const assistantDraft = createAssistantDraft(prompt);
-      const chunks = splitIntoStreamingChunks(assistantDraft);
-      let incrementalText = "";
-
-      for (const chunk of chunks) {
-        if (abortController.signal.aborted) {
-          break;
-        }
-
-        incrementalText = `${incrementalText} ${chunk}`.trim();
-        writeSseEvent(res, "chat:response:chunk", {
-          chatId,
-          messages: withStreamingAssistant(chatMessages, incrementalText),
-        });
-        await delay(STREAM_CHUNK_DELAY_MS, abortController.signal);
-      }
-
-      if (incrementalText.trim()) {
-        insertHttpChatMessage({
-          chatId,
-          role: "assistant",
-          content: incrementalText,
-        });
-      }
-
-      writeSseEvent(res, "chat:response:chunk", {
-        chatId,
-        messages: listHttpChatMessages(chatId),
-      });
-      writeSseEvent(res, "chat:response:end", {
-        chatId,
-        updatedFiles: false,
-      });
-      res.end();
-    } catch (error) {
-      if (abortController.signal.aborted) {
-        writeSseEvent(res, "chat:response:end", {
-          chatId,
-          updatedFiles: false,
-        });
-        res.end();
+    let streamEnded = false;
+    const onStreamEnd = (payload: ChatResponseEnd) => {
+      if (streamEnded) {
         return;
       }
+      streamEnded = true;
+      activeHttpEvents.delete(chatId);
+      if (!res.writableEnded && !res.destroyed) {
+        if (!payload || typeof payload.chatId !== "number") {
+          writeSseEvent(res, "chat:response:end", {
+            chatId,
+            updatedFiles: false,
+          } satisfies ChatResponseEnd);
+        }
+        res.end();
+      }
+    };
 
+    const event = createHttpEvent(res, onStreamEnd);
+    activeHttpEvents.set(chatId, event);
+
+    let handleChatCancelRequest:
+      | ((event: IpcMainInvokeEvent, chatId: number) => Promise<unknown>)
+      | null = null;
+    let handleChatStreamRequest:
+      | ((event: IpcMainInvokeEvent, req: ChatStreamParams) => Promise<unknown>)
+      | null = null;
+
+    try {
+      const handlers = await loadChatStreamHandlers();
+      handleChatCancelRequest = handlers.handleChatCancelRequest;
+      handleChatStreamRequest = handlers.handleChatStreamRequest;
+    } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-
       writeSseEvent(res, "chat:response:error", {
         chatId,
         error: errorMessage,
@@ -262,11 +286,41 @@ export function createChatStreamMiddleware() {
         updatedFiles: false,
       });
       res.end();
-    } finally {
-      const activeController = activeStreams.get(chatId);
-      if (activeController === abortController) {
-        activeStreams.delete(chatId);
+      activeHttpEvents.delete(chatId);
+      return;
+    }
+
+    req.on("close", () => {
+      if (streamEnded) {
+        return;
       }
+      if (handleChatCancelRequest) {
+        void handleChatCancelRequest(event, chatId);
+      }
+      activeHttpEvents.delete(chatId);
+    });
+
+    try {
+      if (!handleChatStreamRequest) {
+        throw new Error("chat stream handlers are not initialized");
+      }
+      await handleChatStreamRequest(event, streamRequest);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      writeSseEvent(res, "chat:response:error", {
+        chatId,
+        error: errorMessage,
+      });
+    } finally {
+      if (!streamEnded && !res.writableEnded && !res.destroyed) {
+        writeSseEvent(res, "chat:response:end", {
+          chatId,
+          updatedFiles: false,
+        });
+        res.end();
+      }
+      activeHttpEvents.delete(chatId);
     }
   };
 }
