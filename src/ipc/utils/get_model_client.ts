@@ -28,7 +28,10 @@ import {
   type BlazeEngineProvider,
 } from "./llm_engine_provider";
 
-import { LM_STUDIO_BASE_URL } from "./lm_studio_utils";
+import {
+  getPreferredLMStudioModelName,
+  LM_STUDIO_BASE_URL,
+} from "./lm_studio_utils";
 import { createOllamaProvider } from "./ollama_provider";
 import { getOllamaApiUrl } from "../handlers/local_model_ollama_handler";
 import { createFallback } from "./fallback_ai_model";
@@ -90,6 +93,49 @@ export function resolveAutoModelCandidates({
       });
     }
   }
+
+  return resolved;
+}
+
+export async function resolveAutoFallbackCandidates({
+  settings,
+  providers,
+  envLookup = getEnvVar,
+  candidates = AUTO_MODELS,
+  getPreferredLmStudioModelName = getPreferredLMStudioModelName,
+}: {
+  settings: UserSettings;
+  providers: LanguageModelProvider[];
+  envLookup?: (key: string) => string | undefined;
+  candidates?: AutoModelCandidate[];
+  getPreferredLmStudioModelName?: () => Promise<string | null>;
+}): Promise<ResolvedAutoModel[]> {
+  const resolved: ResolvedAutoModel[] = [];
+  const lmStudioProvider = providers.find(
+    (provider) => provider.id === "lmstudio",
+  );
+
+  if (lmStudioProvider) {
+    const preferredModelName = await getPreferredLmStudioModelName();
+    if (preferredModelName) {
+      resolved.push({
+        model: {
+          provider: "lmstudio",
+          name: preferredModelName,
+        },
+        provider: lmStudioProvider,
+      });
+    }
+  }
+
+  resolved.push(
+    ...resolveAutoModelCandidates({
+      settings,
+      providers,
+      envLookup,
+      candidates,
+    }),
+  );
 
   return resolved;
 }
@@ -198,7 +244,7 @@ export async function getModelClient(
         isEngineEnabled: false,
       };
     }
-    const autoCandidates = resolveAutoModelCandidates({
+    const autoCandidates = await resolveAutoFallbackCandidates({
       settings,
       providers: allProviders,
     });

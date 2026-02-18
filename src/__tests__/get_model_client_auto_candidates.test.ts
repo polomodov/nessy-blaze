@@ -3,6 +3,7 @@ import type { UserSettings } from "@/lib/schemas";
 import type { LanguageModelProvider } from "@/ipc/ipc_types";
 import {
   AUTO_MODELS,
+  resolveAutoFallbackCandidates,
   resolveAutoModelCandidates,
 } from "@/ipc/utils/get_model_client";
 
@@ -85,5 +86,53 @@ describe("resolveAutoModelCandidates", () => {
     });
 
     expect(result).toEqual([]);
+  });
+});
+
+describe("resolveAutoFallbackCandidates", () => {
+  const openRouterProvider: LanguageModelProvider = {
+    id: "openrouter",
+    name: "OpenRouter",
+    type: "cloud",
+    envVarName: "OPENROUTER_API_KEY",
+  };
+
+  const lmStudioProvider: LanguageModelProvider = {
+    id: "lmstudio",
+    name: "LM Studio",
+    type: "local",
+  };
+
+  it("prioritizes LM Studio model before cloud auto candidates", async () => {
+    const settings = createSettings();
+
+    const result = await resolveAutoFallbackCandidates({
+      settings,
+      providers: [lmStudioProvider, openRouterProvider],
+      envLookup: (key) => (key === "OPENROUTER_API_KEY" ? "or-key" : undefined),
+      getPreferredLmStudioModelName: async () => "qwen2.5-coder-7b-instruct",
+    });
+
+    expect(result[0]).toEqual({
+      model: {
+        provider: "lmstudio",
+        name: "qwen2.5-coder-7b-instruct",
+      },
+      provider: lmStudioProvider,
+    });
+    expect(result.slice(1).map((item) => item.model)).toEqual(AUTO_MODELS);
+  });
+
+  it("uses cloud auto candidates when LM Studio is unavailable", async () => {
+    const settings = createSettings();
+
+    const result = await resolveAutoFallbackCandidates({
+      settings,
+      providers: [lmStudioProvider, openRouterProvider],
+      envLookup: (key) => (key === "OPENROUTER_API_KEY" ? "or-key" : undefined),
+      getPreferredLmStudioModelName: async () => null,
+    });
+
+    expect(result.map((item) => item.model)).toEqual(AUTO_MODELS);
   });
 });
