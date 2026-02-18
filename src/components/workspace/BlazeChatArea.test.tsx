@@ -112,6 +112,118 @@ describe("BlazeChatArea", () => {
     });
   });
 
+  it("strips blaze control markup from assistant output", async () => {
+    render(<BlazeChatArea />);
+
+    const input = screen.getByPlaceholderText(
+      "Describe what should be built...",
+    );
+    fireEvent.change(input, { target: { value: "Create About page" } });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => {
+      expect(streamMessageMock).toHaveBeenCalledTimes(1);
+    });
+
+    const streamOptions = streamMessageMock.mock.calls[0][1];
+    act(() => {
+      streamOptions.onUpdate([
+        { id: 1, role: "user", content: "Create About page" },
+        {
+          id: 2,
+          role: "assistant",
+          content: `I'll create a modern page.\n<blaze-write path="src/pages/About.tsx">const x = 1;</blaze-write>\nNow adding route.\n<blaze-chat-summary>About page</blaze-chat-summary>`,
+        },
+      ]);
+      streamOptions.onEnd({ chatId: 77, updatedFiles: true });
+    });
+
+    expect(screen.getByText(/I'll create a modern page\./)).toBeTruthy();
+    expect(screen.getByText(/Now adding route\./)).toBeTruthy();
+    expect(screen.queryByText(/blaze-write/i)).toBeNull();
+    expect(screen.queryByText(/blaze-chat-summary/i)).toBeNull();
+  });
+
+  it("hides assistant messages that only contain control markup", async () => {
+    render(<BlazeChatArea />);
+
+    const input = screen.getByPlaceholderText(
+      "Describe what should be built...",
+    );
+    fireEvent.change(input, { target: { value: "Create About page" } });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => {
+      expect(streamMessageMock).toHaveBeenCalledTimes(1);
+    });
+
+    const streamOptions = streamMessageMock.mock.calls[0][1];
+    act(() => {
+      streamOptions.onUpdate([
+        { id: 1, role: "user", content: "Create About page" },
+        {
+          id: 2,
+          role: "assistant",
+          content:
+            '<blaze-write path="src/pages/About.tsx">const x = 1;</blaze-write><blaze-chat-summary>About page</blaze-chat-summary>',
+        },
+      ]);
+      streamOptions.onEnd({ chatId: 77, updatedFiles: true });
+    });
+
+    expect(screen.getByText("Create About page")).toBeTruthy();
+    expect(screen.queryByText(/const x = 1/)).toBeNull();
+    expect(screen.queryByText(/blaze-write/i)).toBeNull();
+  });
+
+  it("does not show code from an unclosed blaze block during streaming", async () => {
+    render(<BlazeChatArea />);
+
+    const input = screen.getByPlaceholderText(
+      "Describe what should be built...",
+    );
+    fireEvent.change(input, { target: { value: "Create About page" } });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => {
+      expect(streamMessageMock).toHaveBeenCalledTimes(1);
+    });
+
+    const streamOptions = streamMessageMock.mock.calls[0][1];
+    act(() => {
+      streamOptions.onUpdate([
+        { id: 1, role: "user", content: "Create About page" },
+        {
+          id: 2,
+          role: "assistant",
+          content:
+            'Starting update...\n<blaze-write path="src/pages/About.tsx">const hidden = "code";',
+        },
+      ]);
+    });
+
+    expect(screen.getByText(/Starting update/)).toBeTruthy();
+    expect(screen.queryByText(/const hidden = "code"/)).toBeNull();
+    expect(screen.queryByText(/blaze-write/i)).toBeNull();
+
+    act(() => {
+      streamOptions.onUpdate([
+        { id: 1, role: "user", content: "Create About page" },
+        {
+          id: 2,
+          role: "assistant",
+          content:
+            'Starting update...\n<blaze-write path="src/pages/About.tsx">const hidden = "code";</blaze-write>\nDone.',
+        },
+      ]);
+      streamOptions.onEnd({ chatId: 77, updatedFiles: true });
+    });
+
+    expect(screen.getByText(/Done\./)).toBeTruthy();
+    expect(screen.queryByText(/const hidden = "code"/)).toBeNull();
+    expect(screen.queryByText(/blaze-write/i)).toBeNull();
+  });
+
   it("auto-resizes the main chat textarea while typing", async () => {
     render(<BlazeChatArea />);
 
@@ -141,7 +253,7 @@ describe("BlazeChatArea", () => {
     });
 
     fireEvent.change(input, {
-      target: { value: new Array(10).fill("line").join("\n") },
+      target: { value: Array.from({ length: 10 }, () => "line").join("\n") },
     });
 
     await waitFor(() => {

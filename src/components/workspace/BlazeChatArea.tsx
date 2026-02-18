@@ -40,6 +40,65 @@ const starterPrompts = [
 const MIN_INPUT_HEIGHT = 40;
 const MAX_INPUT_HEIGHT = 120;
 
+function findFirstUnclosedControlTagIndex(content: string): number {
+  const tagPattern = /<(\/?)(blaze-[\w-]+|think)(?:\s[^>]*)?>/gi;
+  const openStack: Array<{ name: string; index: number }> = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = tagPattern.exec(content)) !== null) {
+    const isClosing = match[1] === "/";
+    const name = (match[2] || "").toLowerCase();
+    const index = match.index;
+
+    if (!isClosing) {
+      openStack.push({ name, index });
+      continue;
+    }
+
+    for (let i = openStack.length - 1; i >= 0; i--) {
+      if (openStack[i].name === name) {
+        openStack.splice(i, 1);
+        break;
+      }
+    }
+  }
+
+  if (openStack.length === 0) {
+    return -1;
+  }
+
+  return openStack.reduce(
+    (minIndex, entry) => Math.min(minIndex, entry.index),
+    Number.POSITIVE_INFINITY,
+  );
+}
+
+function stripControlMarkup(content: string): string {
+  if (!content) {
+    return "";
+  }
+
+  // Remove complete control blocks such as <blaze-write>...</blaze-write>.
+  let cleaned = content.replace(
+    /<(?<tag>blaze-[\w-]+|think)(?:\s[^>]*)?>[\s\S]*?<\/\k<tag>>/gi,
+    "",
+  );
+
+  // If stream currently contains an unclosed control block, hide the full tail.
+  const firstUnclosedTagIndex = findFirstUnclosedControlTagIndex(cleaned);
+  if (firstUnclosedTagIndex >= 0) {
+    cleaned = cleaned.slice(0, firstUnclosedTagIndex);
+  }
+
+  // Remove dangling opening/closing control tags in partial streams.
+  cleaned = cleaned
+    .replace(/<\/?(?:blaze-[\w-]+|think)(?:\s[^>]*)?>/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  return cleaned;
+}
+
 function generateAppName(prompt: string): string {
   const baseName = prompt
     .trim()
@@ -60,14 +119,20 @@ function mapBackendMessages(messages: BackendMessage[]): Message[] {
     .filter(
       (message) => message.role === "user" || message.role === "assistant",
     )
-    .filter(
-      (message) => message.role === "user" || message.content.trim().length > 0,
-    )
-    .map((message) => ({
-      id: String(message.id),
-      role: message.role === "assistant" ? "agent" : "user",
-      content: message.content,
-    }));
+    .map((message) => {
+      const isAssistant = message.role === "assistant";
+      const content = isAssistant
+        ? stripControlMarkup(message.content)
+        : message.content;
+      const role: Message["role"] = isAssistant ? "agent" : "user";
+
+      return {
+        id: String(message.id),
+        role,
+        content,
+      };
+    })
+    .filter((message) => message.role === "user" || message.content.length > 0);
 }
 
 function resolveErrorMessage(error: unknown): string {
