@@ -623,6 +623,29 @@ export type CloneRepoReturnType =
       error: string;
     };
 
+export type MembershipRole = "owner" | "admin" | "member" | "viewer";
+
+export interface TenantOrganization {
+  id: string;
+  slug: string;
+  name: string;
+  role: MembershipRole;
+  status: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface TenantWorkspace {
+  id: string;
+  organizationId: string;
+  slug: string;
+  name: string;
+  type: "personal" | "team";
+  createdByUserId: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
 export interface SupabaseBranch {
   id: string;
   name: string;

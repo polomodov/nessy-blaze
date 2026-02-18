@@ -93,6 +93,7 @@ import {
 } from "../utils/versioned_codebase_context";
 import { getAiMessagesJsonIfWithinLimit } from "../utils/ai_messages_utils";
 import { initializeDatabase } from "../../db";
+import { resolveMessageTenantScope } from "../utils/message_tenant_scope";
 
 type AsyncIterableStream<T> = AsyncIterable<T> & ReadableStream<T>;
 
@@ -276,6 +277,10 @@ export async function handleChatStreamRequest(
     if (!initialChatApp) {
       throw new Error(`App not found for chat: ${req.chatId}`);
     }
+    const messageTenantScope = resolveMessageTenantScope({
+      chat,
+      app: initialChatApp,
+    });
 
     // Handle redo option: remove the most recent messages if needed
     if (req.redo) {
@@ -433,6 +438,7 @@ ${componentSnippet}
     const [insertedUserMessage] = await db
       .insert(messages)
       .values({
+        ...messageTenantScope,
         chatId: req.chatId,
         role: "user",
         content: userPrompt,
@@ -450,6 +456,7 @@ ${componentSnippet}
     const [placeholderAssistantMessage] = await db
       .insert(messages)
       .values({
+        ...messageTenantScope,
         chatId: req.chatId,
         role: "assistant",
         content: "", // Start with empty content

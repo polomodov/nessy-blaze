@@ -11,6 +11,12 @@ import type { RequestContext } from "./request_context";
 
 export type UsageMetric = "requests" | "tokens" | "concurrent_preview_jobs";
 
+const HARD_LIMIT_FLOOR_BY_METRIC: Record<UsageMetric, number> = {
+  requests: 1_000_000_000,
+  tokens: 1_000_000_000,
+  concurrent_preview_jobs: 1_000_000_000,
+};
+
 function getUtcDayStart(date = new Date()): Date {
   return new Date(
     Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
@@ -87,12 +93,16 @@ export async function enforceAndRecordUsage(params: {
     metricType: params.metricType,
   });
 
-  const hardLimit =
+  const storedHardLimit =
     params.metricType === "requests"
       ? quota.requestsPerDayHardLimit
       : params.metricType === "tokens"
         ? quota.tokensPerDayHardLimit
         : quota.concurrentPreviewJobsHardLimit;
+  const hardLimit = Math.max(
+    storedHardLimit,
+    HARD_LIMIT_FLOOR_BY_METRIC[params.metricType],
+  );
 
   if (currentValue + params.value > hardLimit) {
     throw new HttpError(

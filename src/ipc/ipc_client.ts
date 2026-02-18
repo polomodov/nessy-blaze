@@ -95,6 +95,8 @@ import type {
   SetAppThemeParams,
   GetAppThemeParams,
   UncommittedFile,
+  TenantOrganization,
+  TenantWorkspace,
 } from "./ipc_types";
 import type { Template } from "../shared/templates";
 import type { Theme } from "../shared/themes";
@@ -595,6 +597,16 @@ export class IpcClient {
   // Get all apps
   public async listApps(): Promise<ListAppsResponse> {
     return this.ipcRenderer.invoke("list-apps");
+  }
+
+  public async listOrganizations(): Promise<TenantOrganization[]> {
+    return this.ipcRenderer.invoke("list-orgs");
+  }
+
+  public async listWorkspaces(params?: {
+    orgId?: string;
+  }): Promise<TenantWorkspace[]> {
+    return this.ipcRenderer.invoke("list-workspaces", params);
   }
 
   // Search apps by name

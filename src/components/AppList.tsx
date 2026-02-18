@@ -15,11 +15,15 @@ import { useMemo, useState } from "react";
 import { AppSearchDialog } from "./AppSearchDialog";
 import { useAddAppToFavorite } from "@/hooks/useAddAppToFavorite";
 import { AppItem } from "./appItem";
+import { TenantScopePicker } from "./TenantScopePicker";
+import { useQueryClient } from "@tanstack/react-query";
+import { CHATS_QUERY_KEY } from "@/hooks/useChats";
 export function AppList({ show }: { show?: boolean }) {
   const navigate = useNavigate();
   const [selectedAppId, setSelectedAppId] = useAtom(selectedAppIdAtom);
   const setSelectedChatId = useSetAtom(selectedChatIdAtom);
-  const { apps, loading, error } = useLoadApps();
+  const queryClient = useQueryClient();
+  const { apps, loading, error, refreshApps } = useLoadApps();
   const { toggleFavorite, isLoading: isFavoriteLoading } =
     useAddAppToFavorite();
   // search dialog state
@@ -71,6 +75,16 @@ export function AppList({ show }: { show?: boolean }) {
     toggleFavorite(appId);
   };
 
+  const handleTenantScopeChange = async () => {
+    setSelectedAppId(null);
+    setSelectedChatId(null);
+    navigate({ to: "/" });
+    await refreshApps();
+    await queryClient.invalidateQueries({ queryKey: [CHATS_QUERY_KEY] });
+    await queryClient.invalidateQueries({ queryKey: ["search-apps"] });
+    await queryClient.invalidateQueries({ queryKey: ["search-chats"] });
+  };
+
   return (
     <>
       <SidebarGroup
@@ -80,6 +94,7 @@ export function AppList({ show }: { show?: boolean }) {
         <SidebarGroupLabel>Your Apps</SidebarGroupLabel>
         <SidebarGroupContent>
           <div className="flex flex-col space-y-2">
+            <TenantScopePicker onScopeChange={handleTenantScopeChange} />
             <Button
               onClick={handleNewApp}
               variant="outline"

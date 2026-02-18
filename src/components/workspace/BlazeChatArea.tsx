@@ -135,6 +135,21 @@ function mapBackendMessages(messages: BackendMessage[]): Message[] {
     .filter((message) => message.role === "user" || message.content.length > 0);
 }
 
+function hasHiddenAssistantActivity(messages: BackendMessage[]): boolean {
+  return messages.some((message) => {
+    if (message.role !== "assistant") {
+      return false;
+    }
+
+    const rawContent = message.content ?? "";
+    if (rawContent.trim().length === 0) {
+      return false;
+    }
+
+    return stripControlMarkup(rawContent).length === 0;
+  });
+}
+
 function resolveErrorMessage(error: unknown): string {
   if (typeof error === "string") {
     return error;
@@ -146,16 +161,21 @@ function resolveErrorMessage(error: unknown): string {
 }
 
 interface BlazeChatAreaProps {
+  activeAppId?: number | null;
   onAppCreated?: (appId: number) => void;
 }
 
-export function BlazeChatArea({ onAppCreated }: BlazeChatAreaProps) {
+export function BlazeChatArea({
+  activeAppId,
+  onAppCreated,
+}: BlazeChatAreaProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [appId, setAppId] = useState<number | null>(null);
   const [chatId, setChatId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
+  const [isHiddenAgentActivity, setIsHiddenAgentActivity] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -183,6 +203,93 @@ export function BlazeChatArea({ onAppCreated }: BlazeChatAreaProps) {
     resizeInput();
   }, [input, resizeInput]);
 
+  useEffect(() => {
+    if (typeof activeAppId === "undefined") {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadInteractionHistory = async () => {
+      setError(null);
+      setIsTyping(false);
+      setIsHiddenAgentActivity(false);
+
+      if (activeAppId === null) {
+        setAppId(null);
+        setChatId(null);
+        setMessages([]);
+        return;
+      }
+
+      setAppId(activeAppId);
+      const chats = await IpcClient.getInstance().getChats(activeAppId);
+      if (cancelled) {
+        return;
+      }
+
+      if (chats.length === 0) {
+        setChatId(null);
+        setMessages([]);
+        return;
+      }
+
+      const chatsByRecency = [...chats].sort(
+        (left, right) => right.createdAt.getTime() - left.createdAt.getTime(),
+      );
+      const fallbackLatestChat = chatsByRecency[0];
+      if (!fallbackLatestChat) {
+        setChatId(null);
+        setMessages([]);
+        return;
+      }
+
+      let selectedChatId: number | null = null;
+      let selectedMessages: Message[] = [];
+
+      for (const chatSummary of chatsByRecency) {
+        const chat = await IpcClient.getInstance().getChat(chatSummary.id);
+        if (cancelled) {
+          return;
+        }
+
+        const mappedMessages = mapBackendMessages(chat.messages);
+        if (mappedMessages.length > 0) {
+          selectedChatId = chat.id;
+          selectedMessages = mappedMessages;
+          break;
+        }
+      }
+
+      if (selectedChatId === null) {
+        const latestChat = await IpcClient.getInstance().getChat(
+          fallbackLatestChat.id,
+        );
+        if (cancelled) {
+          return;
+        }
+        selectedChatId = latestChat.id;
+        selectedMessages = mapBackendMessages(latestChat.messages);
+      }
+
+      setChatId(selectedChatId);
+      setMessages(selectedMessages);
+    };
+
+    void loadInteractionHistory().catch((historyError) => {
+      if (cancelled) {
+        return;
+      }
+      setError(resolveErrorMessage(historyError));
+      setChatId(null);
+      setMessages([]);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeAppId]);
+
   const sendMessage = async () => {
     if (!input.trim()) return;
     if (isTyping) return;
@@ -199,34 +306,45 @@ export function BlazeChatArea({ onAppCreated }: BlazeChatAreaProps) {
     setMessages((previous) => [...previous, userMessage]);
     setInput("");
     setIsTyping(true);
+    setIsHiddenAgentActivity(false);
     let activeChatId = chatId;
-    let activeAppId = appId;
+    let appIdForMessage = appId;
 
     try {
       if (activeChatId === null) {
-        const createAppResult = await IpcClient.getInstance().createApp({
-          name: generateAppName(prompt),
-        });
-        activeChatId = createAppResult.chatId;
-        activeAppId = createAppResult.app.id;
-        setChatId(createAppResult.chatId);
-        setAppId(createAppResult.app.id);
-        onAppCreated?.(createAppResult.app.id);
-      } else if (activeAppId !== null) {
-        onAppCreated?.(activeAppId);
+        if (appIdForMessage !== null) {
+          const createdChatId =
+            await IpcClient.getInstance().createChat(appIdForMessage);
+          activeChatId = createdChatId;
+          setChatId(createdChatId);
+        } else {
+          const createAppResult = await IpcClient.getInstance().createApp({
+            name: generateAppName(prompt),
+          });
+          activeChatId = createAppResult.chatId;
+          appIdForMessage = createAppResult.app.id;
+          setChatId(createAppResult.chatId);
+          setAppId(createAppResult.app.id);
+          onAppCreated?.(createAppResult.app.id);
+        }
+      } else if (appIdForMessage !== null) {
+        onAppCreated?.(appIdForMessage);
       }
 
       IpcClient.getInstance().streamMessage(prompt, {
         chatId: activeChatId,
         onUpdate: (updatedMessages) => {
           setMessages(mapBackendMessages(updatedMessages));
+          setIsHiddenAgentActivity(hasHiddenAssistantActivity(updatedMessages));
         },
         onEnd: () => {
           setIsTyping(false);
+          setIsHiddenAgentActivity(false);
         },
         onError: (streamError) => {
           setError(streamError);
           setIsTyping(false);
+          setIsHiddenAgentActivity(false);
         },
       });
     } catch (sendError) {
@@ -324,10 +442,17 @@ export function BlazeChatArea({ onAppCreated }: BlazeChatAreaProps) {
                 animate={{ opacity: 1 }}
                 className="mb-4 flex justify-start"
               >
-                <div className="flex items-center gap-1.5 rounded-2xl bg-agent-bubble px-4 py-3">
-                  <span className="h-2 w-2 animate-pulse-dot rounded-full bg-muted-foreground" />
-                  <span className="h-2 w-2 animate-pulse-dot rounded-full bg-muted-foreground [animation-delay:0.2s]" />
-                  <span className="h-2 w-2 animate-pulse-dot rounded-full bg-muted-foreground [animation-delay:0.4s]" />
+                <div className="rounded-2xl bg-agent-bubble px-4 py-3">
+                  <div className="flex items-center gap-1.5">
+                    <span className="h-2 w-2 animate-pulse-dot rounded-full bg-muted-foreground" />
+                    <span className="h-2 w-2 animate-pulse-dot rounded-full bg-muted-foreground [animation-delay:0.2s]" />
+                    <span className="h-2 w-2 animate-pulse-dot rounded-full bg-muted-foreground [animation-delay:0.4s]" />
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {isHiddenAgentActivity
+                      ? "Agent is thinking and applying changes..."
+                      : "Agent is drafting a response..."}
+                  </p>
                 </div>
               </motion.div>
             )}

@@ -7,30 +7,37 @@ import { BlazeSidebar } from "./BlazeSidebar";
 
 export function BlazeWorkspace() {
   const { isDarkMode, setTheme } = useTheme();
-  const [activePageId, setActivePageId] = useState<string | null>("1-1");
+  const [activeProjectId, setActiveProjectId] = useState<number | null>(null);
   const [activeAppId, setActiveAppId] = useState<number | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   return (
     <div className="flex h-full w-full overflow-hidden">
       <BlazeSidebar
-        activePageId={activePageId}
+        activeProjectId={activeProjectId}
         collapsed={isSidebarCollapsed}
         isDarkMode={isDarkMode}
         onToggleTheme={() => setTheme(isDarkMode ? "light" : "dark")}
         onToggleCollapse={() => setIsSidebarCollapsed((previous) => !previous)}
         onNewProject={() => {
-          setActivePageId(null);
+          setActiveProjectId(null);
           setActiveAppId(null);
         }}
-        onSelectPage={(pageId) => {
-          setActivePageId(pageId);
+        onSelectProject={(projectId) => {
+          setActiveProjectId(projectId);
+          setActiveAppId(projectId);
         }}
       />
 
       <PanelGroup direction="horizontal" className="flex-1">
         <Panel defaultSize={45} minSize={30} maxSize={70}>
-          <BlazeChatArea onAppCreated={setActiveAppId} />
+          <BlazeChatArea
+            activeAppId={activeAppId}
+            onAppCreated={(appId) => {
+              setActiveProjectId(appId);
+              setActiveAppId(appId);
+            }}
+          />
         </Panel>
         <PanelResizeHandle className="w-1 cursor-col-resize bg-gray-200 transition-colors hover:bg-gray-300 dark:bg-gray-800 dark:hover:bg-gray-700" />
         <Panel defaultSize={55} minSize={30}>

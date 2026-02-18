@@ -1,12 +1,10 @@
-import { useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { useMemo, useState } from "react";
+import { motion } from "framer-motion";
 import {
-  ChevronRight,
-  ExternalLink,
-  FileText,
+  AppWindow,
+  CalendarClock,
   Flame,
   Folder,
-  Globe,
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
@@ -14,154 +12,125 @@ import {
   Search,
   Sun,
 } from "lucide-react";
-
-type PageStatus = "draft" | "generating" | "ready";
-
-type WorkspacePage = {
-  id: string;
-  title: string;
-  status: PageStatus;
-};
+import { useQuery } from "@tanstack/react-query";
+import { formatDistanceToNow } from "date-fns";
+import { IpcClient } from "@/ipc/ipc_client";
+import { getConfiguredTenantScope } from "@/ipc/backend_client";
+import { TenantScopePicker } from "@/components/TenantScopePicker";
 
 type WorkspaceProject = {
-  id: string;
+  id: number;
   title: string;
-  date: string;
-  pages: WorkspacePage[];
-};
-
-const workspaceProjects: WorkspaceProject[] = [
-  {
-    id: "1",
-    title: "Spring Cashback Campaign",
-    date: "Today",
-    pages: [
-      { id: "1-1", title: "Landing", status: "ready" },
-      { id: "1-2", title: "Terms", status: "ready" },
-      { id: "1-3", title: "FAQ", status: "generating" },
-    ],
-  },
-  {
-    id: "2",
-    title: "Premium Plan Update",
-    date: "Today",
-    pages: [
-      { id: "2-1", title: "Product Page", status: "generating" },
-      { id: "2-2", title: "Plan Comparison", status: "draft" },
-    ],
-  },
-  {
-    id: "3",
-    title: "Refer a Friend",
-    date: "Yesterday",
-    pages: [
-      { id: "3-1", title: "Campaign Page", status: "ready" },
-      { id: "3-2", title: "Program Rules", status: "ready" },
-    ],
-  },
-];
-
-const companySites = [
-  { id: "s1", name: "company.com", env: "prod" },
-  { id: "s2", name: "business.company.com", env: "prod" },
-  { id: "s3", name: "staging.company.com", env: "staging" },
-  { id: "s4", name: "promo.company.com", env: "prod" },
-];
-
-const statusClassByPageStatus: Record<PageStatus, string> = {
-  draft: "bg-muted-foreground/30",
-  generating: "bg-primary",
-  ready: "bg-emerald-400",
+  createdAt: Date | null;
 };
 
 interface BlazeSidebarProps {
-  activePageId: string | null;
+  activeProjectId: number | null;
   collapsed: boolean;
   isDarkMode: boolean;
   onToggleTheme: () => void;
   onToggleCollapse: () => void;
-  onSelectPage: (pageId: string, projectId: string) => void;
+  onSelectProject: (projectId: number) => void;
   onNewProject: () => void;
 }
 
-function SiteSearchBlock() {
-  const [query, setQuery] = useState("");
-  const visibleSites = companySites.filter((site) =>
-    site.name.toLowerCase().includes(query.toLowerCase()),
-  );
+const PROJECTS_QUERY_KEY = "workspace-project-history";
 
-  return (
-    <div>
-      <div className="mb-1 flex items-center gap-2 rounded-lg bg-muted px-2.5 py-1.5">
-        <Search size={12} className="text-muted-foreground" />
-        <input
-          type="text"
-          placeholder="Search site..."
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          className="w-full bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none"
-        />
-      </div>
-      <div className="max-h-28 overflow-y-auto scrollbar-thin">
-        {visibleSites.map((site) => (
-          <div
-            key={site.id}
-            className="group flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground"
-          >
-            <Globe size={13} className="flex-shrink-0" />
-            <span className="flex-1 truncate text-xs">{site.name}</span>
-            <span
-              className={`rounded px-1 py-0.5 text-[10px] ${
-                site.env === "staging"
-                  ? "bg-primary/20 text-primary-foreground"
-                  : "bg-emerald-400/20 text-emerald-600"
-              }`}
-            >
-              {site.env}
-            </span>
-            <ExternalLink
-              size={11}
-              className="flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
-            />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+function normalizeProjectDate(value: unknown): Date | null {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  if (typeof value === "string" || typeof value === "number") {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  return null;
+}
+
+function getDateLabel(value: Date | null): string {
+  if (!value) {
+    return "Unknown date";
+  }
+
+  const now = new Date();
+  const isSameDate =
+    now.getFullYear() === value.getFullYear() &&
+    now.getMonth() === value.getMonth() &&
+    now.getDate() === value.getDate();
+
+  if (isSameDate) {
+    return "Today";
+  }
+
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const isYesterday =
+    yesterday.getFullYear() === value.getFullYear() &&
+    yesterday.getMonth() === value.getMonth() &&
+    yesterday.getDate() === value.getDate();
+
+  if (isYesterday) {
+    return "Yesterday";
+  }
+
+  return value.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 export function BlazeSidebar({
-  activePageId,
+  activeProjectId,
   collapsed,
   isDarkMode,
   onToggleTheme,
   onToggleCollapse,
-  onSelectPage,
+  onSelectProject,
   onNewProject,
 }: BlazeSidebarProps) {
   const [query, setQuery] = useState("");
-  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(
-    new Set(["1"]),
-  );
+  const [scope, setScope] = useState(() => getConfiguredTenantScope());
 
-  const filteredProjects = workspaceProjects.filter(
-    (project) =>
-      project.title.toLowerCase().includes(query.toLowerCase()) ||
-      project.pages.some((page) =>
-        page.title.toLowerCase().includes(query.toLowerCase()),
-      ),
-  );
+  const projectsQuery = useQuery<
+    { apps: Array<{ id: number; name: string; createdAt: unknown }> },
+    Error
+  >({
+    queryKey: [PROJECTS_QUERY_KEY, scope.orgId, scope.workspaceId],
+    queryFn: async () => IpcClient.getInstance().listApps(),
+    meta: { showErrorToast: false },
+  });
 
-  const toggleProject = (id: string) => {
-    setExpandedProjects((previous) => {
-      const next = new Set(previous);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
+  const projects = useMemo<WorkspaceProject[]>(() => {
+    const rawApps = projectsQuery.data?.apps ?? [];
+    return rawApps
+      .map((app) => ({
+        id: app.id,
+        title: app.name,
+        createdAt: normalizeProjectDate(app.createdAt),
+      }))
+      .sort((left, right) => {
+        const leftTs = left.createdAt?.getTime() ?? 0;
+        const rightTs = right.createdAt?.getTime() ?? 0;
+        return rightTs - leftTs;
+      });
+  }, [projectsQuery.data]);
+
+  const filteredProjects = useMemo(() => {
+    const searchQuery = query.trim().toLowerCase();
+    if (!searchQuery) {
+      return projects;
+    }
+    return projects.filter((project) =>
+      project.title.toLowerCase().includes(searchQuery),
+    );
+  }, [projects, query]);
+
+  const handleScopeChange = async () => {
+    const nextScope = getConfiguredTenantScope();
+    setScope(nextScope);
   };
 
   let previousDate = "";
@@ -225,20 +194,21 @@ export function BlazeSidebar({
 
           <div className="my-2 h-px w-6 bg-border" />
 
-          {workspaceProjects.map((project) => {
-            const hasActivePage = project.pages.some(
-              (page) => page.id === activePageId,
-            );
+          {filteredProjects.slice(0, 8).map((project) => {
+            const isActive = project.id === activeProjectId;
             return (
               <button
                 key={project.id}
-                onClick={onToggleCollapse}
+                onClick={() => {
+                  onSelectProject(project.id);
+                  onToggleCollapse();
+                }}
                 className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${
-                  hasActivePage
+                  isActive
                     ? "bg-muted text-foreground"
                     : "text-muted-foreground hover:bg-surface-hover hover:text-foreground"
                 }`}
-                title={project.title}
+                title={project.title || `Project #${project.id}`}
                 aria-label={project.title}
               >
                 <Folder size={16} />
@@ -251,7 +221,9 @@ export function BlazeSidebar({
           <button
             onClick={onToggleTheme}
             className="mb-1 flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground"
-            title={isDarkMode ? "Switch to light theme" : "Switch to dark theme"}
+            title={
+              isDarkMode ? "Switch to light theme" : "Switch to dark theme"
+            }
             aria-label={
               isDarkMode ? "Switch to light theme" : "Switch to dark theme"
             }
@@ -281,6 +253,10 @@ export function BlazeSidebar({
           </div>
 
           <div className="px-3 pt-3">
+            <TenantScopePicker onScopeChange={handleScopeChange} />
+          </div>
+
+          <div className="px-3 pt-3">
             <div className="flex items-center gap-2 rounded-lg bg-muted px-3 py-2">
               <Search size={14} className="text-muted-foreground" />
               <input
@@ -294,90 +270,60 @@ export function BlazeSidebar({
           </div>
 
           <div className="scrollbar-thin flex-1 overflow-y-auto px-3 pt-3">
-            {filteredProjects.map((project) => {
-              const shouldShowDate = project.date !== previousDate;
-              previousDate = project.date;
-              const isExpanded = expandedProjects.has(project.id);
-              const hasActivePage = project.pages.some(
-                (page) => page.id === activePageId,
-              );
+            {projectsQuery.isLoading ? (
+              <div className="rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground">
+                Loading projects...
+              </div>
+            ) : projectsQuery.error ? (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                Failed to load projects history
+              </div>
+            ) : filteredProjects.length === 0 ? (
+              <div className="rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground">
+                No projects found for this workspace
+              </div>
+            ) : (
+              filteredProjects.map((project) => {
+                const dateLabel = getDateLabel(project.createdAt);
+                const shouldShowDate = dateLabel !== previousDate;
+                previousDate = dateLabel;
+                const isActive = project.id === activeProjectId;
 
-              return (
-                <div key={project.id}>
-                  {shouldShowDate && (
-                    <p className="first:mt-0 mb-1 mt-3 px-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                      {project.date}
-                    </p>
-                  )}
-
-                  <button
-                    onClick={() => toggleProject(project.id)}
-                    className={`group mb-0.5 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors ${
-                      hasActivePage && !isExpanded
-                        ? "bg-muted text-foreground"
-                        : "text-foreground hover:bg-surface-hover"
-                    }`}
-                  >
-                    <motion.span
-                      animate={{ rotate: isExpanded ? 90 : 0 }}
-                      transition={{ duration: 0.15 }}
-                      className="flex-shrink-0 text-muted-foreground"
-                    >
-                      <ChevronRight size={14} />
-                    </motion.span>
-                    <Folder size={14} className="flex-shrink-0 text-muted-foreground" />
-                    <span className="flex-1 truncate text-sm font-medium">
-                      {project.title}
-                    </span>
-                    <span className="text-[11px] text-muted-foreground">
-                      {project.pages.length}
-                    </span>
-                  </button>
-
-                  <AnimatePresence>
-                    {isExpanded && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.2 }}
-                        className="overflow-hidden"
-                      >
-                        {project.pages.map((page) => (
-                          <button
-                            key={page.id}
-                            onClick={() => onSelectPage(page.id, project.id)}
-                            className={`mb-0.5 flex w-full items-center gap-2 rounded-lg py-1.5 pl-10 pr-2 text-left transition-colors ${
-                              activePageId === page.id
-                                ? "bg-muted text-foreground"
-                                : "text-muted-foreground hover:bg-surface-hover hover:text-foreground"
-                            }`}
-                          >
-                            <FileText size={13} className="flex-shrink-0" />
-                            <span className="flex-1 truncate text-[13px]">
-                              {page.title}
-                            </span>
-                            <span
-                              className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${
-                                statusClassByPageStatus[page.status]
-                              } ${
-                                page.status === "generating"
-                                  ? "animate-pulse-dot"
-                                  : ""
-                              }`}
-                            />
-                          </button>
-                        ))}
-                        <button className="mb-1 flex w-full items-center gap-2 rounded-lg py-1.5 pl-10 pr-2 text-left text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground">
-                          <Plus size={13} className="flex-shrink-0" />
-                          <span className="text-[13px]">Add page</span>
-                        </button>
-                      </motion.div>
+                return (
+                  <div key={project.id}>
+                    {shouldShowDate && (
+                      <p className="first:mt-0 mb-1 mt-3 px-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                        {dateLabel}
+                      </p>
                     )}
-                  </AnimatePresence>
-                </div>
-              );
-            })}
+                    <button
+                      onClick={() => onSelectProject(project.id)}
+                      className={`group mb-0.5 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors ${
+                        isActive
+                          ? "bg-muted text-foreground"
+                          : "text-foreground hover:bg-surface-hover"
+                      }`}
+                    >
+                      <Folder
+                        size={14}
+                        className="flex-shrink-0 text-muted-foreground"
+                      />
+                      <span className="flex-1 truncate text-sm font-medium">
+                        {project.title}
+                      </span>
+                      <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                        <CalendarClock size={11} />
+                        {project.createdAt
+                          ? formatDistanceToNow(project.createdAt, {
+                              addSuffix: true,
+                            })
+                          : "unknown"}
+                      </span>
+                    </button>
+                  </div>
+                );
+              })
+            )}
           </div>
 
           <div className="border-t border-border px-3 py-2">
@@ -390,9 +336,17 @@ export function BlazeSidebar({
             </button>
 
             <p className="mb-1 px-2 pt-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-              Company sites
+              Scope Summary
             </p>
-            <SiteSearchBlock />
+            <div className="rounded-lg border border-border/80 px-2.5 py-2 text-xs text-muted-foreground">
+              <div className="mb-1 flex items-center gap-1.5">
+                <AppWindow size={12} />
+                <span>{projects.length} projects in scope</span>
+              </div>
+              <div className="truncate">
+                {scope.orgId}/{scope.workspaceId}
+              </div>
+            </div>
           </div>
         </>
       )}

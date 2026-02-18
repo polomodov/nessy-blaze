@@ -8,9 +8,18 @@ import {
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BlazeChatArea } from "./BlazeChatArea";
 
-const { createAppMock, streamMessageMock } = vi.hoisted(() => ({
+const {
+  createAppMock,
+  streamMessageMock,
+  getChatsMock,
+  getChatMock,
+  createChatMock,
+} = vi.hoisted(() => ({
   createAppMock: vi.fn(),
   streamMessageMock: vi.fn(),
+  getChatsMock: vi.fn(),
+  getChatMock: vi.fn(),
+  createChatMock: vi.fn(),
 }));
 
 vi.mock("@/ipc/ipc_client", () => ({
@@ -18,6 +27,9 @@ vi.mock("@/ipc/ipc_client", () => ({
     getInstance: vi.fn(() => ({
       createApp: createAppMock,
       streamMessage: streamMessageMock,
+      getChats: getChatsMock,
+      getChat: getChatMock,
+      createChat: createChatMock,
     })),
   },
 }));
@@ -25,6 +37,15 @@ vi.mock("@/ipc/ipc_client", () => ({
 describe("BlazeChatArea", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    streamMessageMock.mockImplementation(() => {});
+    getChatsMock.mockResolvedValue([]);
+    getChatMock.mockResolvedValue({
+      id: 0,
+      appId: 0,
+      title: null,
+      messages: [],
+    });
+    createChatMock.mockResolvedValue(300);
     createAppMock.mockResolvedValue({
       app: {
         id: 42,
@@ -35,6 +56,114 @@ describe("BlazeChatArea", () => {
       },
       chatId: 77,
     });
+  });
+
+  it("loads latest interaction history for selected app", async () => {
+    getChatsMock.mockResolvedValue([
+      {
+        id: 11,
+        appId: 7,
+        title: "Older chat",
+        createdAt: new Date("2026-02-16T00:00:00.000Z"),
+      },
+      {
+        id: 12,
+        appId: 7,
+        title: "Latest chat",
+        createdAt: new Date("2026-02-17T00:00:00.000Z"),
+      },
+    ]);
+    getChatMock.mockResolvedValue({
+      id: 12,
+      appId: 7,
+      title: "Latest chat",
+      messages: [
+        { id: 1, role: "user", content: "Previous user request" },
+        { id: 2, role: "assistant", content: "Previous assistant response" },
+      ],
+    });
+
+    render(<BlazeChatArea activeAppId={7} />);
+
+    await waitFor(() => {
+      expect(getChatsMock).toHaveBeenCalledWith(7);
+      expect(getChatMock).toHaveBeenCalledWith(12);
+    });
+
+    expect(screen.getByText("Previous user request")).toBeTruthy();
+    expect(screen.getByText("Previous assistant response")).toBeTruthy();
+  });
+
+  it("falls back to latest non-empty chat when newest chat is empty", async () => {
+    getChatsMock.mockResolvedValue([
+      {
+        id: 21,
+        appId: 9,
+        title: "Newest but empty",
+        createdAt: new Date("2026-02-18T00:00:00.000Z"),
+      },
+      {
+        id: 20,
+        appId: 9,
+        title: "Older with content",
+        createdAt: new Date("2026-02-17T00:00:00.000Z"),
+      },
+    ]);
+
+    getChatMock.mockImplementation(async (chatId: number) => {
+      if (chatId === 21) {
+        return {
+          id: 21,
+          appId: 9,
+          title: "Newest but empty",
+          messages: [],
+        };
+      }
+
+      return {
+        id: 20,
+        appId: 9,
+        title: "Older with content",
+        messages: [{ id: 1, role: "user", content: "Recovered history" }],
+      };
+    });
+
+    render(<BlazeChatArea activeAppId={9} />);
+
+    await waitFor(() => {
+      expect(getChatsMock).toHaveBeenCalledWith(9);
+      expect(getChatMock).toHaveBeenCalledWith(21);
+      expect(getChatMock).toHaveBeenCalledWith(20);
+    });
+
+    expect(screen.getByText("Recovered history")).toBeTruthy();
+  });
+
+  it("creates chat in selected app without creating new app", async () => {
+    render(<BlazeChatArea activeAppId={88} />);
+
+    await waitFor(() => {
+      expect(getChatsMock).toHaveBeenCalledWith(88);
+    });
+
+    const input = screen.getByPlaceholderText(
+      "Describe what should be built...",
+    );
+    fireEvent.change(input, { target: { value: "Add account settings page" } });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => {
+      expect(createChatMock).toHaveBeenCalledWith(88);
+      expect(streamMessageMock).toHaveBeenCalledTimes(1);
+    });
+
+    expect(createAppMock).not.toHaveBeenCalled();
+    expect(streamMessageMock).toHaveBeenCalledWith(
+      "Add account settings page",
+      expect.objectContaining({
+        chatId: 300,
+      }),
+    );
   });
 
   it("creates app on first message and reuses chat on next messages", async () => {
@@ -222,6 +351,37 @@ describe("BlazeChatArea", () => {
     expect(screen.getByText(/Done\./)).toBeTruthy();
     expect(screen.queryByText(/const hidden = "code"/)).toBeNull();
     expect(screen.queryByText(/blaze-write/i)).toBeNull();
+  });
+
+  it("shows progress text when assistant emits only internal markup", async () => {
+    render(<BlazeChatArea />);
+
+    const input = screen.getByPlaceholderText(
+      "Describe what should be built...",
+    );
+    fireEvent.change(input, { target: { value: "Create settings page" } });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => {
+      expect(streamMessageMock).toHaveBeenCalledTimes(1);
+    });
+
+    const streamOptions = streamMessageMock.mock.calls[0][1];
+    act(() => {
+      streamOptions.onUpdate([
+        { id: 1, role: "user", content: "Create settings page" },
+        {
+          id: 2,
+          role: "assistant",
+          content:
+            '<think>Planning updates...</think><blaze-write path="src/pages/Settings.tsx">export default function Settings(){return null;}</blaze-write>',
+        },
+      ]);
+    });
+
+    expect(
+      screen.getByText("Agent is thinking and applying changes..."),
+    ).toBeTruthy();
   });
 
   it("auto-resizes the main chat textarea while typing", async () => {

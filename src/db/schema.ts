@@ -471,13 +471,13 @@ export const organizationQuotas = pgTable("organization_quotas", {
     .references(() => organizations.id, { onDelete: "cascade" }),
   requestsPerDayHardLimit: integer("requests_per_day_hard_limit")
     .notNull()
-    .default(500),
+    .default(1_000_000_000),
   tokensPerDayHardLimit: integer("tokens_per_day_hard_limit")
     .notNull()
-    .default(1_000_000),
+    .default(1_000_000_000),
   concurrentPreviewJobsHardLimit: integer("concurrent_preview_jobs_hard_limit")
     .notNull()
-    .default(5),
+    .default(1_000_000_000),
   createdAt: timestamp("created_at", {
     mode: "date",
     withTimezone: true,

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ilike } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, isNull, or } from "drizzle-orm";
 import { db, initializeDatabase } from "../db";
 import {
   apps,
@@ -486,6 +486,19 @@ export async function getChatForScope(context: RequestContext, chatId: number) {
   if (!chatRow) {
     throw new HttpError(404, "CHAT_NOT_FOUND", "Chat not found");
   }
+
+  await db
+    .update(messages)
+    .set({
+      organizationId: context.orgId,
+      workspaceId: context.workspaceId,
+    })
+    .where(
+      and(
+        eq(messages.chatId, chatId),
+        or(isNull(messages.organizationId), isNull(messages.workspaceId)),
+      ),
+    );
 
   const messageRows = await db
     .select()

@@ -214,6 +214,11 @@ function resolveApiRoute(
   )}/workspaces/${encodeURIComponent(tenantScope.workspaceId)}`;
 
   switch (channel) {
+    case "list-orgs":
+      return {
+        method: "GET",
+        path: "/api/v1/orgs",
+      };
     case "get-user-settings":
       return {
         method: "GET",
@@ -225,6 +230,14 @@ function resolveApiRoute(
         path: "/api/v1/user/settings",
         body: getFirstArg(args),
       };
+    case "list-workspaces": {
+      const params = getFirstArg<{ orgId?: string }>(args);
+      const orgId = params?.orgId?.trim() || tenantScope.orgId;
+      return {
+        method: "GET",
+        path: `/api/v1/orgs/${encodeURIComponent(orgId)}/workspaces`,
+      };
+    }
     case "list-apps":
       return {
         method: "GET",
