@@ -111,4 +111,42 @@ describe("BlazeChatArea", () => {
       expect(screen.getByText("Backend unavailable")).toBeTruthy();
     });
   });
+
+  it("auto-resizes the main chat textarea while typing", async () => {
+    render(<BlazeChatArea />);
+
+    const input = screen.getByPlaceholderText(
+      "Describe what should be built...",
+    ) as HTMLTextAreaElement;
+
+    Object.defineProperty(input, "scrollHeight", {
+      configurable: true,
+      get: () => {
+        const lineCount = Math.max(1, input.value.split("\n").length);
+        return lineCount * 24;
+      },
+    });
+
+    await waitFor(() => {
+      expect(input.style.height).toBe("40px");
+    });
+
+    fireEvent.change(input, {
+      target: { value: "line1\nline2\nline3\nline4" },
+    });
+
+    await waitFor(() => {
+      expect(input.style.height).toBe("96px");
+      expect(input.style.overflowY).toBe("hidden");
+    });
+
+    fireEvent.change(input, {
+      target: { value: new Array(10).fill("line").join("\n") },
+    });
+
+    await waitFor(() => {
+      expect(input.style.height).toBe("120px");
+      expect(input.style.overflowY).toBe("auto");
+    });
+  });
 });

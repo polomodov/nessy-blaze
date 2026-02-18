@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Code2, Globe, Image, RotateCcw, Send, Sparkles } from "lucide-react";
 import { IpcClient } from "@/ipc/ipc_client";
@@ -36,6 +36,9 @@ const starterPrompts = [
       "Redesign the About page in a modern and minimalist style with clear typography.",
   },
 ];
+
+const MIN_INPUT_HEIGHT = 40;
+const MAX_INPUT_HEIGHT = 120;
 
 function generateAppName(prompt: string): string {
   const baseName = prompt
@@ -91,9 +94,29 @@ export function BlazeChatArea({ onAppCreated }: BlazeChatAreaProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const resizeInput = useCallback(() => {
+    const textarea = inputRef.current;
+    if (!textarea) {
+      return;
+    }
+
+    textarea.style.height = "auto";
+    const targetHeight = Math.min(
+      MAX_INPUT_HEIGHT,
+      Math.max(MIN_INPUT_HEIGHT, textarea.scrollHeight),
+    );
+    textarea.style.height = `${targetHeight}px`;
+    textarea.style.overflowY =
+      textarea.scrollHeight > MAX_INPUT_HEIGHT ? "auto" : "hidden";
+  }, []);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
+
+  useEffect(() => {
+    resizeInput();
+  }, [input, resizeInput]);
 
   const sendMessage = async () => {
     if (!input.trim()) return;
@@ -259,7 +282,6 @@ export function BlazeChatArea({ onAppCreated }: BlazeChatAreaProps) {
               placeholder="Describe what should be built..."
               rows={1}
               className="w-full resize-none bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
-              style={{ maxHeight: 120 }}
             />
           </div>
           <button
