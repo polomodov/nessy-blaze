@@ -90,7 +90,7 @@ describe("IpcClient HTTP stream", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://api.example.com/api/v1/chats/77/stream",
+      "https://api.example.com/api/v1/orgs/me/workspaces/me/chats/77/stream",
       expect.objectContaining({
         method: "POST",
       }),

@@ -11,6 +11,7 @@ function ipcHttpGatewayPlugin(): Plugin {
     apply: "serve",
     async configureServer(server) {
       let chatStreamModule;
+      let chatWsServerModule;
       let apiV1Module;
       let ipcHttpMiddlewareModule;
       let ipcGatewayModule;
@@ -20,6 +21,15 @@ function ipcHttpGatewayPlugin(): Plugin {
       } catch (error) {
         console.error(
           "[blaze-ipc-http-gateway] failed importing chat_stream_middleware",
+          error,
+        );
+        throw error;
+      }
+      try {
+        chatWsServerModule = await import("./src/http/chat_ws_server");
+      } catch (error) {
+        console.error(
+          "[blaze-ipc-http-gateway] failed importing chat_ws_server",
           error,
         );
         throw error;
@@ -55,6 +65,7 @@ function ipcHttpGatewayPlugin(): Plugin {
       }
 
       const { createChatStreamMiddleware } = chatStreamModule;
+      const { attachChatWsServer } = chatWsServerModule;
       const { createApiV1Middleware } = apiV1Module;
       const { createIpcInvokeMiddleware } = ipcHttpMiddlewareModule;
       const { invokeIpcChannelOverHttp } = ipcGatewayModule;
@@ -62,11 +73,23 @@ function ipcHttpGatewayPlugin(): Plugin {
         loadChatStreamHandlers: () =>
           server.ssrLoadModule("/src/ipc/handlers/chat_stream_handlers.ts"),
       });
+      const wsServerHandle = server.httpServer
+        ? attachChatWsServer({
+            httpServer: server.httpServer,
+            loadChatStreamHandlers: () =>
+              server.ssrLoadModule("/src/ipc/handlers/chat_stream_handlers.ts"),
+          })
+        : null;
       const apiMiddleware = createApiV1Middleware(invokeIpcChannelOverHttp);
       const middleware = createIpcInvokeMiddleware(invokeIpcChannelOverHttp);
       server.middlewares.use(chatStreamMiddleware);
       server.middlewares.use(apiMiddleware);
       server.middlewares.use(middleware);
+      if (server.httpServer && wsServerHandle) {
+        server.httpServer.once("close", () => {
+          wsServerHandle.dispose();
+        });
+      }
     },
   };
 }

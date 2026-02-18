@@ -3,11 +3,21 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import net from "node:net";
-import { asc, desc, eq, ilike } from "drizzle-orm";
+import { and, asc, desc, eq, ilike } from "drizzle-orm";
 import git from "isomorphic-git";
 import killPort from "kill-port";
 import { initializeDatabase, db } from "../db";
-import { apps, chats, messages, language_model_providers } from "../db/schema";
+import {
+  apps,
+  chats,
+  language_model_providers,
+  messages,
+  organizationMemberships,
+  organizations,
+  workspaceModelSettings,
+  workspaceMemberships,
+  workspaces,
+} from "../db/schema";
 import { getBlazeAppPath, getUserDataPath } from "../paths/paths";
 import { getEnvVar } from "../ipc/utils/read_env";
 import { withLock } from "../ipc/utils/lock_utils";
@@ -26,8 +36,31 @@ import { UserSettingsSchema, type UserSettings } from "../lib/schemas";
 import { DEFAULT_TEMPLATE_ID } from "../shared/templates";
 import { DEFAULT_THEME_ID } from "../shared/themes";
 import { getAppPort } from "../../shared/ports";
+import { isMultitenantEnforced } from "./feature_flags";
+import { HttpError } from "./http_errors";
+import { enforceAndRecordUsage, writeAuditEvent } from "./quota_audit";
+import type { RequestContext } from "./request_context";
+import { requireRoleForMutation } from "./request_context";
+import {
+  createAppRecordForScope,
+  createChatForScope,
+  getAppByIdForScope,
+  getChatForScope,
+  getOrganizationByIdForUser,
+  insertChatMessageForScope,
+  listAppsForScope,
+  listChatsForScope,
+  listOrganizationsForUser,
+  listWorkspacesForScope,
+  searchAppsForScope,
+  toggleAppFavoriteForScope,
+} from "./scoped_repositories";
 
-type InvokeHandler = (args: unknown[]) => Promise<unknown>;
+interface InvokeMeta {
+  requestContext?: RequestContext;
+}
+
+type InvokeHandler = (args: unknown[], meta?: InvokeMeta) => Promise<unknown>;
 
 const DEFAULT_USER_SETTINGS: UserSettings = UserSettingsSchema.parse({
   selectedModel: {
@@ -187,6 +220,9 @@ function mapAppRow(row: AppRow) {
   const appPath = String(row.path ?? "");
   return {
     id: Number(row.id),
+    organizationId: row.organizationId ?? null,
+    workspaceId: row.workspaceId ?? null,
+    createdByUserId: row.createdByUserId ?? null,
     name: String(row.name ?? ""),
     path: appPath,
     createdAt: toIsoDate(row.createdAt),
@@ -215,6 +251,9 @@ function mapAppRow(row: AppRow) {
 function mapChatRow(row: ChatRow) {
   return {
     id: Number(row.id),
+    organizationId: row.organizationId ?? null,
+    workspaceId: row.workspaceId ?? null,
+    createdByUserId: row.createdByUserId ?? null,
     appId: Number(row.appId),
     title: row.title ?? null,
     createdAt: toIsoDate(row.createdAt),
@@ -224,6 +263,9 @@ function mapChatRow(row: ChatRow) {
 function mapMessageRow(row: MessageRow) {
   return {
     id: Number(row.id),
+    organizationId: row.organizationId ?? null,
+    workspaceId: row.workspaceId ?? null,
+    createdByUserId: row.createdByUserId ?? null,
     chatId: Number(row.chatId),
     role: String(row.role),
     content: String(row.content ?? ""),
@@ -238,30 +280,66 @@ function mapMessageRow(row: MessageRow) {
   };
 }
 
+function getRequestContext(meta?: InvokeMeta): RequestContext | null {
+  return meta?.requestContext ?? null;
+}
+
+function requireScopedContext(meta?: InvokeMeta): RequestContext {
+  const context = meta?.requestContext;
+  if (!context) {
+    throw new HttpError(
+      400,
+      "TENANT_SCOPE_REQUIRED",
+      "Tenant scope is required for this operation",
+    );
+  }
+  return context;
+}
+
 export type HttpChatMessage = {
   id: number;
   role: "user" | "assistant";
   content: string;
 };
 
-export async function doesHttpChatExist(chatId: number): Promise<boolean> {
+export async function doesHttpChatExist(
+  chatId: number,
+  context?: RequestContext,
+): Promise<boolean> {
   await initializeDatabase();
   const rows = await db
     .select({ id: chats.id })
     .from(chats)
-    .where(eq(chats.id, chatId))
+    .where(
+      context
+        ? and(
+            eq(chats.id, chatId),
+            eq(chats.organizationId, context.orgId),
+            eq(chats.workspaceId, context.workspaceId),
+          )
+        : eq(chats.id, chatId),
+    )
     .limit(1);
   return rows.length > 0;
 }
 
 export async function listHttpChatMessages(
   chatId: number,
+  context?: RequestContext,
 ): Promise<HttpChatMessage[]> {
   await initializeDatabase();
   const rows = await db
     .select({ id: messages.id, role: messages.role, content: messages.content })
     .from(messages)
-    .where(eq(messages.chatId, chatId))
+    .where(
+      context
+        ? and(
+            eq(messages.chatId, chatId),
+            eq(messages.organizationId, context.orgId),
+            eq(messages.workspaceId, context.workspaceId),
+          )
+        : eq(messages.chatId, chatId),
+    )
     .orderBy(asc(messages.createdAt), asc(messages.id));
 
   return rows.map((row) => ({
@@ -275,37 +353,63 @@ export async function insertHttpChatMessage(params: {
   chatId: number;
   role: "user" | "assistant";
   content: string;
+  context?: RequestContext;
 }): Promise<HttpChatMessage> {
-  const { chatId, role, content } = params;
+  const { chatId, role, content, context } = params;
   await initializeDatabase();
 
-  const [inserted] = await db
-    .insert(messages)
-    .values({ chatId, role, content })
-    .returning({
-      id: messages.id,
-      role: messages.role,
-      content: messages.content,
-    });
+  const inserted = context
+    ? await insertChatMessageForScope({
+        context,
+        chatId,
+        role,
+        content,
+      })
+    : await db
+        .insert(messages)
+        .values({ chatId, role, content })
+        .returning({
+          id: messages.id,
+          role: messages.role,
+          content: messages.content,
+        })
+        .then((rows) => rows[0]);
 
   return {
     id: Number(inserted.id),
-    role: inserted.role,
-    content: inserted.content,
+    role: inserted.role === "assistant" ? "assistant" : "user",
+    content: String(inserted.content ?? ""),
   };
 }
 
-async function listLanguageModelProviders() {
+async function listLanguageModelProviders(context?: RequestContext | null) {
   await initializeDatabase();
-  const customProviders = await db
-    .select({
-      id: language_model_providers.id,
-      name: language_model_providers.name,
-      api_base_url: language_model_providers.api_base_url,
-      env_var_name: language_model_providers.env_var_name,
-      trust_self_signed: language_model_providers.trust_self_signed,
-    })
-    .from(language_model_providers);
+  const customProviders =
+    context != null
+      ? await db
+          .select({
+            id: language_model_providers.id,
+            name: language_model_providers.name,
+            api_base_url: language_model_providers.api_base_url,
+            env_var_name: language_model_providers.env_var_name,
+            trust_self_signed: language_model_providers.trust_self_signed,
+          })
+          .from(language_model_providers)
+          .where(
+            and(
+              eq(language_model_providers.organizationId, context.orgId),
+              eq(language_model_providers.workspaceId, context.workspaceId),
+            ),
+          )
+      : await db
+          .select({
+            id: language_model_providers.id,
+            name: language_model_providers.name,
+            api_base_url: language_model_providers.api_base_url,
+            env_var_name: language_model_providers.env_var_name,
+            trust_self_signed: language_model_providers.trust_self_signed,
+          })
+          .from(language_model_providers);
 
   return [
     ...Object.entries(CLOUD_PROVIDERS).map(([providerId, provider]) => ({
@@ -443,9 +547,19 @@ async function cleanUpPort(port: number): Promise<void> {
   }
 }
 
-async function startPreviewAppForHttp(appId: number): Promise<string> {
+async function startPreviewAppForHttp(
+  appId: number,
+  context?: RequestContext | null,
+): Promise<string> {
   const app = await db.query.apps.findFirst({
-    where: eq(apps.id, appId),
+    where:
+      context != null
+        ? and(
+            eq(apps.id, appId),
+            eq(apps.organizationId, context.orgId),
+            eq(apps.workspaceId, context.workspaceId),
+          )
+        : eq(apps.id, appId),
   });
   if (!app) {
     throw new Error("App not found");
@@ -523,6 +637,53 @@ async function startPreviewAppForHttp(appId: number): Promise<string> {
   }
 }
 
+function hasConfiguredSecretValue(value: unknown): boolean {
+  if (!value) {
+    return false;
+  }
+
+  if (typeof value === "string") {
+    return value.trim().length > 0;
+  }
+
+  if (
+    typeof value === "object" &&
+    "value" in (value as Record<string, unknown>)
+  ) {
+    const nestedValue = (value as Record<string, unknown>).value;
+    return typeof nestedValue === "string" && nestedValue.trim().length > 0;
+  }
+
+  return true;
+}
+
+function maskProviderSettings(
+  input: unknown,
+): Record<string, { configured: boolean; keys: string[] }> {
+  if (!input || typeof input !== "object") {
+    return {};
+  }
+
+  const output: Record<string, { configured: boolean; keys: string[] }> = {};
+  for (const [provider, rawValue] of Object.entries(
+    input as Record<string, unknown>,
+  )) {
+    if (!rawValue || typeof rawValue !== "object") {
+      output[provider] = { configured: false, keys: [] };
+      continue;
+    }
+
+    const configObj = rawValue as Record<string, unknown>;
+    const keys = Object.keys(configObj);
+    const configured = Object.values(configObj).some((value) =>
+      hasConfiguredSecretValue(value),
+    );
+    output[provider] = { configured, keys };
+  }
+
+  return output;
+}
+
 const handlers: Record<string, InvokeHandler> = {
   async "get-user-settings"() {
     return readUserSettings();
@@ -536,24 +697,405 @@ const handlers: Record<string, InvokeHandler> = {
     return writeUserSettings(nextSettings);
   },
 
+  async "list-orgs"(_args, meta) {
+    const context = requireScopedContext(meta);
+    return listOrganizationsForUser(context.userId);
+  },
+
+  async "create-org"(args, meta) {
+    const context = requireScopedContext(meta);
+    const [payload] = args as [{ name?: string; slug?: string } | undefined];
+    const requestedName = payload?.name?.trim();
+    const requestedSlug = payload?.slug?.trim();
+    const nowSlugBase = requestedSlug
+      ? sanitizePathName(requestedSlug)
+      : `${sanitizePathName(context.displayName || "org")}-${Date.now().toString(36)}`;
+
+    const [organization] = await db
+      .insert(organizations)
+      .values({
+        name: requestedName || `${context.displayName || "My"} Organization`,
+        slug: nowSlugBase,
+        createdByUserId: context.userId,
+      })
+      .returning({
+        id: organizations.id,
+        slug: organizations.slug,
+        name: organizations.name,
+        createdAt: organizations.createdAt,
+        updatedAt: organizations.updatedAt,
+      });
+
+    await db.insert(organizationMemberships).values({
+      organizationId: organization.id,
+      userId: context.userId,
+      role: "owner",
+      status: "active",
+    });
+
+    const [workspace] = await db
+      .insert(workspaces)
+      .values({
+        organizationId: organization.id,
+        slug: "personal",
+        name: "Personal Workspace",
+        type: "personal",
+        createdByUserId: context.userId,
+      })
+      .returning({ id: workspaces.id });
+
+    await db.insert(workspaceMemberships).values({
+      workspaceId: workspace.id,
+      userId: context.userId,
+      role: "owner",
+    });
+
+    await writeAuditEvent({
+      context: {
+        userId: context.userId,
+        orgId: organization.id,
+        workspaceId: workspace.id,
+      },
+      action: "organization_create",
+      resourceType: "organization",
+      resourceId: organization.id,
+      metadata: {
+        slug: organization.slug,
+      },
+    });
+
+    return {
+      ...organization,
+      role: "owner",
+      status: "active",
+      createdAt: toIsoDate(organization.createdAt),
+      updatedAt: toIsoDate(organization.updatedAt),
+    };
+  },
+
+  async "get-org"(_args, meta) {
+    const context = requireScopedContext(meta);
+    return getOrganizationByIdForUser({
+      userId: context.userId,
+      orgId: context.orgId,
+    });
+  },
+
+  async "patch-org"(args, meta) {
+    const context = requireScopedContext(meta);
+    if (!["owner", "admin"].includes(context.organizationRole)) {
+      throw new HttpError(
+        403,
+        "FORBIDDEN",
+        "Only organization owner/admin can update organization settings",
+      );
+    }
+    const [payload] = args as [{ name?: string } | undefined];
+    const name = payload?.name?.trim();
+    if (!name) {
+      throw new HttpError(
+        400,
+        "INVALID_ORG_PAYLOAD",
+        "Organization name is required",
+      );
+    }
+    const [updated] = await db
+      .update(organizations)
+      .set({
+        name,
+        updatedAt: new Date(),
+      })
+      .where(eq(organizations.id, context.orgId))
+      .returning({
+        id: organizations.id,
+        slug: organizations.slug,
+        name: organizations.name,
+        createdAt: organizations.createdAt,
+        updatedAt: organizations.updatedAt,
+      });
+    if (!updated) {
+      throw new HttpError(404, "ORG_NOT_FOUND", "Organization not found");
+    }
+
+    await writeAuditEvent({
+      context,
+      action: "organization_update",
+      resourceType: "organization",
+      resourceId: context.orgId,
+      metadata: { fields: ["name"] },
+    });
+
+    return {
+      ...updated,
+      role: context.organizationRole,
+      status: "active",
+      createdAt: toIsoDate(updated.createdAt),
+      updatedAt: toIsoDate(updated.updatedAt),
+    };
+  },
+
+  async "list-workspaces"(_args, meta) {
+    const context = requireScopedContext(meta);
+    return listWorkspacesForScope(context);
+  },
+
+  async "create-workspace"(args, meta) {
+    const context = requireScopedContext(meta);
+    if (!["owner", "admin"].includes(context.organizationRole)) {
+      throw new HttpError(
+        403,
+        "FORBIDDEN",
+        "Only organization owner/admin can create team workspaces",
+      );
+    }
+
+    const [payload] = args as [
+      { name?: string; slug?: string; type?: "personal" | "team" } | undefined,
+    ];
+    const name = payload?.name?.trim();
+    if (!name) {
+      throw new HttpError(
+        400,
+        "INVALID_WORKSPACE_PAYLOAD",
+        "Workspace name is required",
+      );
+    }
+    const slug = sanitizePathName(payload?.slug || name);
+    const workspaceType = payload?.type === "personal" ? "personal" : "team";
+
+    const [workspace] = await db
+      .insert(workspaces)
+      .values({
+        organizationId: context.orgId,
+        slug,
+        name,
+        type: workspaceType,
+        createdByUserId: context.userId,
+      })
+      .returning({
+        id: workspaces.id,
+        organizationId: workspaces.organizationId,
+        slug: workspaces.slug,
+        name: workspaces.name,
+        type: workspaces.type,
+        createdByUserId: workspaces.createdByUserId,
+        createdAt: workspaces.createdAt,
+        updatedAt: workspaces.updatedAt,
+      });
+
+    await db.insert(workspaceMemberships).values({
+      workspaceId: workspace.id,
+      userId: context.userId,
+      role: "owner",
+    });
+
+    await writeAuditEvent({
+      context: {
+        userId: context.userId,
+        orgId: context.orgId,
+        workspaceId: workspace.id,
+      },
+      action: "workspace_create",
+      resourceType: "workspace",
+      resourceId: workspace.id,
+      metadata: { type: workspace.type },
+    });
+
+    return {
+      ...workspace,
+      createdAt: toIsoDate(workspace.createdAt),
+      updatedAt: toIsoDate(workspace.updatedAt),
+    };
+  },
+
+  async "get-workspace"(_args, meta) {
+    const context = requireScopedContext(meta);
+    const [workspace] = await db
+      .select({
+        id: workspaces.id,
+        organizationId: workspaces.organizationId,
+        slug: workspaces.slug,
+        name: workspaces.name,
+        type: workspaces.type,
+        createdByUserId: workspaces.createdByUserId,
+        createdAt: workspaces.createdAt,
+        updatedAt: workspaces.updatedAt,
+      })
+      .from(workspaces)
+      .where(
+        and(
+          eq(workspaces.id, context.workspaceId),
+          eq(workspaces.organizationId, context.orgId),
+        ),
+      )
+      .limit(1);
+    if (!workspace) {
+      throw new HttpError(404, "WORKSPACE_NOT_FOUND", "Workspace not found");
+    }
+    return {
+      ...workspace,
+      createdAt: toIsoDate(workspace.createdAt),
+      updatedAt: toIsoDate(workspace.updatedAt),
+    };
+  },
+
+  async "patch-workspace"(args, meta) {
+    const context = requireScopedContext(meta);
+    if (
+      !["owner", "admin"].includes(context.organizationRole) &&
+      !["owner", "admin"].includes(context.workspaceRole)
+    ) {
+      throw new HttpError(
+        403,
+        "FORBIDDEN",
+        "Only owner/admin can update workspace settings",
+      );
+    }
+
+    const [payload] = args as [{ name?: string; slug?: string } | undefined];
+    const nextName = payload?.name?.trim();
+    const nextSlug = payload?.slug?.trim()
+      ? sanitizePathName(payload.slug)
+      : undefined;
+    if (!nextName && !nextSlug) {
+      throw new HttpError(
+        400,
+        "INVALID_WORKSPACE_PAYLOAD",
+        "At least one field (name, slug) is required",
+      );
+    }
+
+    const [workspace] = await db
+      .update(workspaces)
+      .set({
+        name: nextName,
+        slug: nextSlug,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(workspaces.id, context.workspaceId),
+          eq(workspaces.organizationId, context.orgId),
+        ),
+      )
+      .returning({
+        id: workspaces.id,
+        organizationId: workspaces.organizationId,
+        slug: workspaces.slug,
+        name: workspaces.name,
+        type: workspaces.type,
+        createdByUserId: workspaces.createdByUserId,
+        createdAt: workspaces.createdAt,
+        updatedAt: workspaces.updatedAt,
+      });
+    if (!workspace) {
+      throw new HttpError(404, "WORKSPACE_NOT_FOUND", "Workspace not found");
+    }
+
+    await writeAuditEvent({
+      context,
+      action: "workspace_update",
+      resourceType: "workspace",
+      resourceId: context.workspaceId,
+      metadata: { fields: Object.keys(payload ?? {}) },
+    });
+
+    return {
+      ...workspace,
+      createdAt: toIsoDate(workspace.createdAt),
+      updatedAt: toIsoDate(workspace.updatedAt),
+    };
+  },
+
+  async "delete-workspace"(_args, meta) {
+    const context = requireScopedContext(meta);
+    if (!["owner", "admin"].includes(context.organizationRole)) {
+      throw new HttpError(
+        403,
+        "FORBIDDEN",
+        "Only organization owner/admin can delete workspaces",
+      );
+    }
+
+    const [workspace] = await db
+      .select({
+        id: workspaces.id,
+        type: workspaces.type,
+      })
+      .from(workspaces)
+      .where(
+        and(
+          eq(workspaces.id, context.workspaceId),
+          eq(workspaces.organizationId, context.orgId),
+        ),
+      )
+      .limit(1);
+    if (!workspace) {
+      throw new HttpError(404, "WORKSPACE_NOT_FOUND", "Workspace not found");
+    }
+    if (workspace.type === "personal") {
+      throw new HttpError(
+        400,
+        "INVALID_WORKSPACE_DELETE",
+        "Personal workspace cannot be deleted",
+      );
+    }
+
+    await db.delete(workspaces).where(eq(workspaces.id, context.workspaceId));
+
+    await writeAuditEvent({
+      context,
+      action: "workspace_delete",
+      resourceType: "workspace",
+      resourceId: context.workspaceId,
+    });
+    return;
+  },
+
   async "get-app-version"() {
     const packageJsonPath = path.resolve(process.cwd(), "package.json");
     const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
     return { version: packageJson.version };
   },
 
-  async "list-apps"() {
-    const rows = await db.select().from(apps).orderBy(desc(apps.createdAt));
+  async "list-apps"(_args, meta) {
+    const scopedContext = getRequestContext(meta);
+    if (scopedContext) {
+      return {
+        apps: await listAppsForScope(scopedContext),
+      };
+    }
+    if (isMultitenantEnforced()) {
+      throw new HttpError(
+        400,
+        "TENANT_SCOPE_REQUIRED",
+        "list-apps requires tenant scope in enforce mode",
+      );
+    }
 
+    const rows = await db.select().from(apps).orderBy(desc(apps.createdAt));
     return {
       apps: rows.map(mapAppRow),
     };
   },
 
-  async "search-app"(args) {
+  async "search-app"(args, meta) {
     const [searchQuery] = args as [string];
     if (typeof searchQuery !== "string") {
       throw new Error("Invalid search query");
+    }
+
+    const scopedContext = getRequestContext(meta);
+    if (scopedContext) {
+      return searchAppsForScope(scopedContext, searchQuery);
+    }
+
+    if (isMultitenantEnforced()) {
+      throw new HttpError(
+        400,
+        "TENANT_SCOPE_REQUIRED",
+        "search-app requires tenant scope in enforce mode",
+      );
     }
 
     const rows = await db
@@ -571,10 +1113,27 @@ const handlers: Record<string, InvokeHandler> = {
     }));
   },
 
-  async "get-app"(args) {
+  async "get-app"(args, meta) {
     const [appId] = args as [number];
     if (typeof appId !== "number") {
       throw new Error("Invalid app ID");
+    }
+
+    const scopedContext = getRequestContext(meta);
+    if (scopedContext) {
+      const app = await getAppByIdForScope(scopedContext, appId);
+      return {
+        ...app,
+        files: [],
+      };
+    }
+
+    if (isMultitenantEnforced()) {
+      throw new HttpError(
+        400,
+        "TENANT_SCOPE_REQUIRED",
+        "get-app requires tenant scope in enforce mode",
+      );
     }
 
     const row = await db.query.apps.findFirst({
@@ -591,7 +1150,81 @@ const handlers: Record<string, InvokeHandler> = {
     };
   },
 
-  async "create-app"(args) {
+  async "patch-app"(args, meta) {
+    const context = requireScopedContext(meta);
+    requireRoleForMutation(context);
+    const [appId, payload] = args as [
+      number,
+      { name?: string; isFavorite?: boolean } | undefined,
+    ];
+    if (typeof appId !== "number") {
+      throw new HttpError(400, "INVALID_APP_ID", "Invalid app ID");
+    }
+    const updates: Record<string, unknown> = {
+      updatedAt: new Date(),
+    };
+    if (typeof payload?.name === "string") {
+      updates.name = payload.name.trim();
+    }
+    if (typeof payload?.isFavorite === "boolean") {
+      updates.isFavorite = payload.isFavorite;
+    }
+    const [updated] = await db
+      .update(apps)
+      .set(updates)
+      .where(
+        and(
+          eq(apps.id, appId),
+          eq(apps.organizationId, context.orgId),
+          eq(apps.workspaceId, context.workspaceId),
+        ),
+      )
+      .returning();
+    if (!updated) {
+      throw new HttpError(404, "APP_NOT_FOUND", "App not found");
+    }
+
+    await writeAuditEvent({
+      context,
+      action: "app_update",
+      resourceType: "app",
+      resourceId: appId,
+      metadata: { fields: Object.keys(payload ?? {}) },
+    });
+
+    return mapAppRow(updated);
+  },
+
+  async "delete-app"(args, meta) {
+    const context = requireScopedContext(meta);
+    requireRoleForMutation(context);
+    const [appId] = args as [number];
+    if (typeof appId !== "number") {
+      throw new HttpError(400, "INVALID_APP_ID", "Invalid app ID");
+    }
+    const [deleted] = await db
+      .delete(apps)
+      .where(
+        and(
+          eq(apps.id, appId),
+          eq(apps.organizationId, context.orgId),
+          eq(apps.workspaceId, context.workspaceId),
+        ),
+      )
+      .returning({ id: apps.id });
+    if (!deleted) {
+      throw new HttpError(404, "APP_NOT_FOUND", "App not found");
+    }
+    await writeAuditEvent({
+      context,
+      action: "app_delete",
+      resourceType: "app",
+      resourceId: appId,
+    });
+    return;
+  },
+
+  async "create-app"(args, meta) {
     const [params] = args as [{ name?: string }];
     const appName = params?.name?.trim();
 
@@ -601,6 +1234,43 @@ const handlers: Record<string, InvokeHandler> = {
 
     const appPath = `${sanitizePathName(appName)}-${Date.now()}`;
     const { initialCommitHash } = await ensureWorkspaceForApp(appPath);
+
+    const scopedContext = getRequestContext(meta);
+    if (scopedContext) {
+      requireRoleForMutation(scopedContext);
+      await enforceAndRecordUsage({
+        context: scopedContext,
+        metricType: "requests",
+        value: 1,
+      });
+      const result = await createAppRecordForScope({
+        context: scopedContext,
+        name: appName,
+        path: appPath,
+        initialCommitHash,
+      });
+      await writeAuditEvent({
+        context: scopedContext,
+        action: "app_create",
+        resourceType: "app",
+        resourceId: result.app.id,
+      });
+      return {
+        app: {
+          ...result.app,
+          resolvedPath: getBlazeAppPath(result.app.path),
+        },
+        chatId: result.chatId,
+      };
+    }
+
+    if (isMultitenantEnforced()) {
+      throw new HttpError(
+        400,
+        "TENANT_SCOPE_REQUIRED",
+        "create-app requires tenant scope in enforce mode",
+      );
+    }
 
     const { appRow, chatId } = await db.transaction(async (tx) => {
       const [createdApp] = await tx
@@ -633,12 +1303,26 @@ const handlers: Record<string, InvokeHandler> = {
     };
   },
 
-  async "add-to-favorite"(args) {
+  async "add-to-favorite"(args, meta) {
     const [params] = args as [{ appId?: number }];
     const appId = params?.appId;
 
     if (typeof appId !== "number") {
       throw new Error("Invalid app ID");
+    }
+
+    const scopedContext = getRequestContext(meta);
+    if (scopedContext) {
+      requireRoleForMutation(scopedContext);
+      return toggleAppFavoriteForScope(scopedContext, appId);
+    }
+
+    if (isMultitenantEnforced()) {
+      throw new HttpError(
+        400,
+        "TENANT_SCOPE_REQUIRED",
+        "add-to-favorite requires tenant scope in enforce mode",
+      );
     }
 
     const currentRow = await db.query.apps.findFirst({
@@ -665,8 +1349,20 @@ const handlers: Record<string, InvokeHandler> = {
     return { isFavorite: nextFavoriteState };
   },
 
-  async "get-chats"(args) {
+  async "get-chats"(args, meta) {
     const [appId] = args as [number | undefined];
+    const scopedContext = getRequestContext(meta);
+    if (scopedContext) {
+      return listChatsForScope(scopedContext, appId);
+    }
+
+    if (isMultitenantEnforced()) {
+      throw new HttpError(
+        400,
+        "TENANT_SCOPE_REQUIRED",
+        "get-chats requires tenant scope in enforce mode",
+      );
+    }
 
     const rows =
       typeof appId === "number"
@@ -680,10 +1376,36 @@ const handlers: Record<string, InvokeHandler> = {
     return rows.map(mapChatRow);
   },
 
-  async "create-chat"(args) {
+  async "create-chat"(args, meta) {
     const [appId] = args as [number];
     if (typeof appId !== "number") {
       throw new Error("Invalid app ID");
+    }
+
+    const scopedContext = getRequestContext(meta);
+    if (scopedContext) {
+      requireRoleForMutation(scopedContext);
+      await enforceAndRecordUsage({
+        context: scopedContext,
+        metricType: "requests",
+        value: 1,
+      });
+      const chatId = await createChatForScope(scopedContext, appId);
+      await writeAuditEvent({
+        context: scopedContext,
+        action: "chat_create",
+        resourceType: "chat",
+        resourceId: chatId,
+      });
+      return chatId;
+    }
+
+    if (isMultitenantEnforced()) {
+      throw new HttpError(
+        400,
+        "TENANT_SCOPE_REQUIRED",
+        "create-chat requires tenant scope in enforce mode",
+      );
     }
 
     const appExists = await db
@@ -708,10 +1430,23 @@ const handlers: Record<string, InvokeHandler> = {
     return Number(inserted.id);
   },
 
-  async "get-chat"(args) {
+  async "get-chat"(args, meta) {
     const [chatId] = args as [number];
     if (typeof chatId !== "number") {
       throw new Error("Invalid chat ID");
+    }
+
+    const scopedContext = getRequestContext(meta);
+    if (scopedContext) {
+      return getChatForScope(scopedContext, chatId);
+    }
+
+    if (isMultitenantEnforced()) {
+      throw new HttpError(
+        400,
+        "TENANT_SCOPE_REQUIRED",
+        "get-chat requires tenant scope in enforce mode",
+      );
     }
 
     const chatRow = await db.query.chats.findFirst({
@@ -745,8 +1480,171 @@ const handlers: Record<string, InvokeHandler> = {
     };
   },
 
-  async "get-env-vars"() {
-    const providers = await listLanguageModelProviders();
+  async "update-chat"(args, meta) {
+    const context = requireScopedContext(meta);
+    requireRoleForMutation(context);
+    const [payload] = args as [{ chatId?: number; title?: string }];
+    const chatId = payload?.chatId;
+    if (typeof chatId !== "number") {
+      throw new HttpError(400, "INVALID_CHAT_ID", "Invalid chat ID");
+    }
+
+    const [updated] = await db
+      .update(chats)
+      .set({
+        title: payload?.title?.trim() || null,
+      })
+      .where(
+        and(
+          eq(chats.id, chatId),
+          eq(chats.organizationId, context.orgId),
+          eq(chats.workspaceId, context.workspaceId),
+        ),
+      )
+      .returning({ id: chats.id, title: chats.title });
+    if (!updated) {
+      throw new HttpError(404, "CHAT_NOT_FOUND", "Chat not found");
+    }
+
+    await writeAuditEvent({
+      context,
+      action: "chat_update",
+      resourceType: "chat",
+      resourceId: chatId,
+      metadata: { fields: ["title"] },
+    });
+
+    return {
+      id: Number(updated.id),
+      title: updated.title,
+    };
+  },
+
+  async "delete-chat"(args, meta) {
+    const context = requireScopedContext(meta);
+    requireRoleForMutation(context);
+    const [chatId] = args as [number];
+    if (typeof chatId !== "number") {
+      throw new HttpError(400, "INVALID_CHAT_ID", "Invalid chat ID");
+    }
+
+    const [deleted] = await db
+      .delete(chats)
+      .where(
+        and(
+          eq(chats.id, chatId),
+          eq(chats.organizationId, context.orgId),
+          eq(chats.workspaceId, context.workspaceId),
+        ),
+      )
+      .returning({ id: chats.id });
+    if (!deleted) {
+      throw new HttpError(404, "CHAT_NOT_FOUND", "Chat not found");
+    }
+
+    await writeAuditEvent({
+      context,
+      action: "chat_delete",
+      resourceType: "chat",
+      resourceId: chatId,
+    });
+    return;
+  },
+
+  async "get-workspace-model-settings"(_args, meta) {
+    const context = requireScopedContext(meta);
+    const [row] = await db
+      .select({
+        selectedModelJson: workspaceModelSettings.selectedModelJson,
+        providerSettingsJson: workspaceModelSettings.providerSettingsJson,
+        updatedAt: workspaceModelSettings.updatedAt,
+      })
+      .from(workspaceModelSettings)
+      .where(
+        and(
+          eq(workspaceModelSettings.organizationId, context.orgId),
+          eq(workspaceModelSettings.workspaceId, context.workspaceId),
+        ),
+      )
+      .limit(1);
+
+    return {
+      selectedModel: row?.selectedModelJson ?? null,
+      providerSettings: maskProviderSettings(row?.providerSettingsJson ?? null),
+      updatedAt: toIsoDate(row?.updatedAt),
+    };
+  },
+
+  async "set-workspace-model-settings"(args, meta) {
+    const context = requireScopedContext(meta);
+    requireRoleForMutation(context);
+    const [payload] = args as [
+      | {
+          selectedModel?: Record<string, unknown>;
+          providerSettings?: Record<string, unknown>;
+        }
+      | undefined,
+    ];
+
+    const [row] = await db
+      .insert(workspaceModelSettings)
+      .values({
+        organizationId: context.orgId,
+        workspaceId: context.workspaceId,
+        selectedModelJson: payload?.selectedModel ?? null,
+        providerSettingsJson: payload?.providerSettings ?? null,
+        updatedByUserId: context.userId,
+      })
+      .onConflictDoUpdate({
+        target: workspaceModelSettings.workspaceId,
+        set: {
+          selectedModelJson: payload?.selectedModel ?? null,
+          providerSettingsJson: payload?.providerSettings ?? null,
+          updatedByUserId: context.userId,
+          updatedAt: new Date(),
+        },
+      })
+      .returning({
+        selectedModelJson: workspaceModelSettings.selectedModelJson,
+        providerSettingsJson: workspaceModelSettings.providerSettingsJson,
+        updatedAt: workspaceModelSettings.updatedAt,
+      });
+
+    await writeAuditEvent({
+      context,
+      action: "workspace_model_settings_update",
+      resourceType: "workspace_model_settings",
+      metadata: {
+        selectedModelSet: Boolean(payload?.selectedModel),
+        providerSettingsKeys: Object.keys(payload?.providerSettings ?? {}),
+      },
+    });
+
+    return {
+      selectedModel: row.selectedModelJson ?? null,
+      providerSettings: maskProviderSettings(row.providerSettingsJson ?? null),
+      updatedAt: toIsoDate(row.updatedAt),
+    };
+  },
+
+  async "get-workspace-env-providers"(_args, meta) {
+    const context = requireScopedContext(meta);
+    const providers = await listLanguageModelProviders(context);
+    return providers.map((provider) => {
+      const envVarName =
+        "envVarName" in provider ? provider.envVarName : undefined;
+      return {
+        id: provider.id,
+        name: provider.name,
+        envVarName: envVarName ?? null,
+        configured: Boolean(envVarName && getEnvVar(envVarName)),
+        type: provider.type,
+      };
+    });
+  },
+
+  async "get-env-vars"(_args, meta) {
+    const providers = await listLanguageModelProviders(getRequestContext(meta));
     const envVars: Record<string, string | undefined> = {};
     for (const provider of providers) {
       const envVarName =
@@ -758,15 +1656,24 @@ const handlers: Record<string, InvokeHandler> = {
     return envVars;
   },
 
-  async "get-language-model-providers"() {
-    return listLanguageModelProviders();
+  async "get-language-model-providers"(_args, meta) {
+    return listLanguageModelProviders(getRequestContext(meta));
   },
 
-  async "run-app"(args) {
+  async "run-app"(args, meta) {
     const [params] = args as [{ appId?: number }];
     const appId = params?.appId;
     if (typeof appId !== "number") {
       throw new Error("Invalid app ID");
+    }
+
+    const scopedContext = getRequestContext(meta);
+    if (scopedContext) {
+      await enforceAndRecordUsage({
+        context: scopedContext,
+        metricType: "concurrent_preview_jobs",
+        value: 1,
+      });
     }
 
     return withLock(appId, async () => {
@@ -782,34 +1689,55 @@ const handlers: Record<string, InvokeHandler> = {
       }
 
       await cleanUpPort(getAppPort(appId));
-      const startedPreviewUrl = await startPreviewAppForHttp(appId);
+      const startedPreviewUrl = await startPreviewAppForHttp(
+        appId,
+        scopedContext,
+      );
+      if (scopedContext) {
+        await writeAuditEvent({
+          context: scopedContext,
+          action: "preview_run",
+          resourceType: "app",
+          resourceId: appId,
+        });
+      }
       return { previewUrl: startedPreviewUrl, originalUrl: startedPreviewUrl };
     });
   },
 
-  async "stop-app"(args) {
+  async "stop-app"(args, meta) {
     const [params] = args as [{ appId?: number }];
     const appId = params?.appId;
     if (typeof appId !== "number") {
       throw new Error("Invalid app ID");
     }
 
+    const scopedContext = getRequestContext(meta);
     return withLock(appId, async () => {
       const appInfo = runningApps.get(appId);
       if (appInfo) {
         await stopAppByInfo(appId, appInfo);
       }
+      if (scopedContext) {
+        await writeAuditEvent({
+          context: scopedContext,
+          action: "preview_stop",
+          resourceType: "app",
+          resourceId: appId,
+        });
+      }
       return;
     });
   },
 
-  async "restart-app"(args) {
+  async "restart-app"(args, meta) {
     const [params] = args as [{ appId?: number; removeNodeModules?: boolean }];
     const appId = params?.appId;
     if (typeof appId !== "number") {
       throw new Error("Invalid app ID");
     }
 
+    const scopedContext = getRequestContext(meta);
     return withLock(appId, async () => {
       const appInfo = runningApps.get(appId);
       if (appInfo) {
@@ -818,7 +1746,14 @@ const handlers: Record<string, InvokeHandler> = {
 
       if (params?.removeNodeModules) {
         const app = await db.query.apps.findFirst({
-          where: eq(apps.id, appId),
+          where:
+            scopedContext != null
+              ? and(
+                  eq(apps.id, appId),
+                  eq(apps.organizationId, scopedContext.orgId),
+                  eq(apps.workspaceId, scopedContext.workspaceId),
+                )
+              : eq(apps.id, appId),
           columns: { path: true },
         });
         if (!app) {
@@ -832,7 +1767,21 @@ const handlers: Record<string, InvokeHandler> = {
       }
 
       await cleanUpPort(getAppPort(appId));
-      const startedPreviewUrl = await startPreviewAppForHttp(appId);
+      const startedPreviewUrl = await startPreviewAppForHttp(
+        appId,
+        scopedContext,
+      );
+      if (scopedContext) {
+        await writeAuditEvent({
+          context: scopedContext,
+          action: "preview_restart",
+          resourceType: "app",
+          resourceId: appId,
+          metadata: {
+            removeNodeModules: Boolean(params?.removeNodeModules),
+          },
+        });
+      }
       return {
         success: true,
         previewUrl: startedPreviewUrl,
@@ -851,6 +1800,7 @@ const NON_DATABASE_CHANNELS = new Set([
 export async function invokeIpcChannelOverHttp(
   channel: string,
   args: unknown[],
+  meta?: InvokeMeta,
 ): Promise<unknown> {
   const handler = handlers[channel];
   if (!handler) {
@@ -860,5 +1810,5 @@ export async function invokeIpcChannelOverHttp(
   if (!NON_DATABASE_CHANNELS.has(channel)) {
     await initializeDatabase();
   }
-  return handler(args);
+  return handler(args, meta);
 }

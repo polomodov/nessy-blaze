@@ -8,6 +8,13 @@
       "when": 1771407906202,
       "tag": "0000_furry_quentin_quire",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1771444471072,
+      "tag": "0001_loving_yellowjacket",
+      "breakpoints": true
     }
   ]
 }

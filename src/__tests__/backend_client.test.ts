@@ -86,7 +86,7 @@ describe("backend_client transport", () => {
     const result = await client.invoke("list-apps");
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://api.example.com/api/v1/apps",
+      "https://api.example.com/api/v1/orgs/me/workspaces/me/apps",
       expect.objectContaining({
         method: "GET",
       }),
@@ -152,13 +152,12 @@ describe("backend_client transport", () => {
   });
 
   it("retries browser requests with window origin when configured backend URL is unreachable", async () => {
-    const storage = window.localStorage as Partial<Storage> &
-      Record<string, unknown>;
-    if (typeof storage.setItem === "function") {
-      storage.setItem(BACKEND_BASE_URL_STORAGE_KEY, "https://api.example.com");
-    } else {
-      storage[BACKEND_BASE_URL_STORAGE_KEY] = "https://api.example.com";
-    }
+    window.__BLAZE_REMOTE_CONFIG__ = {
+      backendClient: {
+        mode: "http",
+        baseUrl: "https://api.example.com",
+      },
+    };
 
     const fetchMock = vi
       .fn()
@@ -178,14 +177,14 @@ describe("backend_client transport", () => {
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
-      "https://api.example.com/api/v1/apps",
+      "https://api.example.com/api/v1/orgs/me/workspaces/me/apps",
       expect.objectContaining({
         method: "GET",
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      `${window.location.origin}/api/v1/apps`,
+      `${window.location.origin}/api/v1/orgs/me/workspaces/me/apps`,
       expect.objectContaining({
         method: "GET",
       }),

@@ -1,12 +1,22 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { isMultitenantEnforced } from "./feature_flags";
+import { isHttpError } from "./http_errors";
 import type { IpcInvokeHandler } from "./ipc_http_middleware";
+import { resolveRequestContext } from "./request_context";
 
 type Next = (error?: unknown) => void;
 type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
 
+interface TenantPathParams {
+  orgId?: string;
+  workspaceId?: string;
+}
+
 interface RouteMatchResult {
   channel: string;
   args: unknown[];
+  tenantPath?: TenantPathParams;
+  requiresAuth: boolean;
 }
 
 interface RouteDefinition {
@@ -49,13 +59,388 @@ function parseNumber(value: string | undefined): number | null {
   return parsed;
 }
 
-const ROUTES: RouteDefinition[] = [
+const SCOPED_ROUTES: RouteDefinition[] = [
+  {
+    method: "GET",
+    pattern: /^\/api\/v1\/orgs$/,
+    build: () => ({
+      channel: "list-orgs",
+      args: [],
+      requiresAuth: true,
+    }),
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/v1\/orgs$/,
+    build: (_url, _match, body) => ({
+      channel: "create-org",
+      args: [body],
+      requiresAuth: true,
+    }),
+  },
+  {
+    method: "GET",
+    pattern: /^\/api\/v1\/orgs\/([^/]+)$/,
+    build: (_url, match) => ({
+      channel: "get-org",
+      args: [],
+      tenantPath: { orgId: match[1] },
+      requiresAuth: true,
+    }),
+  },
+  {
+    method: "PATCH",
+    pattern: /^\/api\/v1\/orgs\/([^/]+)$/,
+    build: (_url, match, body) => ({
+      channel: "patch-org",
+      args: [body],
+      tenantPath: { orgId: match[1] },
+      requiresAuth: true,
+    }),
+  },
+  {
+    method: "GET",
+    pattern: /^\/api\/v1\/orgs\/([^/]+)\/workspaces$/,
+    build: (_url, match) => ({
+      channel: "list-workspaces",
+      args: [],
+      tenantPath: { orgId: match[1] },
+      requiresAuth: true,
+    }),
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/v1\/orgs\/([^/]+)\/workspaces$/,
+    build: (_url, match, body) => ({
+      channel: "create-workspace",
+      args: [body],
+      tenantPath: { orgId: match[1] },
+      requiresAuth: true,
+    }),
+  },
+  {
+    method: "GET",
+    pattern: /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)$/,
+    build: (_url, match) => ({
+      channel: "get-workspace",
+      args: [],
+      tenantPath: { orgId: match[1], workspaceId: match[2] },
+      requiresAuth: true,
+    }),
+  },
+  {
+    method: "PATCH",
+    pattern: /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)$/,
+    build: (_url, match, body) => ({
+      channel: "patch-workspace",
+      args: [body],
+      tenantPath: { orgId: match[1], workspaceId: match[2] },
+      requiresAuth: true,
+    }),
+  },
+  {
+    method: "DELETE",
+    pattern: /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)$/,
+    build: (_url, match) => ({
+      channel: "delete-workspace",
+      args: [],
+      tenantPath: { orgId: match[1], workspaceId: match[2] },
+      requiresAuth: true,
+    }),
+  },
+  {
+    method: "GET",
+    pattern: /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/apps$/,
+    build: (_url, match) => ({
+      channel: "list-apps",
+      args: [],
+      tenantPath: { orgId: match[1], workspaceId: match[2] },
+      requiresAuth: true,
+    }),
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/apps$/,
+    build: (_url, match, body) => ({
+      channel: "create-app",
+      args: [body],
+      tenantPath: { orgId: match[1], workspaceId: match[2] },
+      requiresAuth: true,
+    }),
+  },
+  {
+    method: "GET",
+    pattern: /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/apps:search$/,
+    build: (url, match) => ({
+      channel: "search-app",
+      args: [url.searchParams.get("q") ?? ""],
+      tenantPath: { orgId: match[1], workspaceId: match[2] },
+      requiresAuth: true,
+    }),
+  },
+  {
+    method: "GET",
+    pattern: /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/apps\/(\d+)$/,
+    build: (_url, match) => {
+      const appId = parseNumber(match[3]);
+      if (appId == null) {
+        return null;
+      }
+      return {
+        channel: "get-app",
+        args: [appId],
+        tenantPath: { orgId: match[1], workspaceId: match[2] },
+        requiresAuth: true,
+      };
+    },
+  },
+  {
+    method: "POST",
+    pattern:
+      /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/apps\/(\d+)\/favorite\/toggle$/,
+    build: (_url, match) => {
+      const appId = parseNumber(match[3]);
+      if (appId == null) {
+        return null;
+      }
+      return {
+        channel: "add-to-favorite",
+        args: [{ appId }],
+        tenantPath: { orgId: match[1], workspaceId: match[2] },
+        requiresAuth: true,
+      };
+    },
+  },
+  {
+    method: "PATCH",
+    pattern: /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/apps\/(\d+)$/,
+    build: (_url, match, body) => {
+      const appId = parseNumber(match[3]);
+      if (appId == null) {
+        return null;
+      }
+      return {
+        channel: "patch-app",
+        args: [appId, body],
+        tenantPath: { orgId: match[1], workspaceId: match[2] },
+        requiresAuth: true,
+      };
+    },
+  },
+  {
+    method: "DELETE",
+    pattern: /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/apps\/(\d+)$/,
+    build: (_url, match) => {
+      const appId = parseNumber(match[3]);
+      if (appId == null) {
+        return null;
+      }
+      return {
+        channel: "delete-app",
+        args: [appId],
+        tenantPath: { orgId: match[1], workspaceId: match[2] },
+        requiresAuth: true,
+      };
+    },
+  },
+  {
+    method: "POST",
+    pattern:
+      /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/apps\/(\d+)\/run$/,
+    build: (_url, match) => {
+      const appId = parseNumber(match[3]);
+      if (appId == null) {
+        return null;
+      }
+      return {
+        channel: "run-app",
+        args: [{ appId }],
+        tenantPath: { orgId: match[1], workspaceId: match[2] },
+        requiresAuth: true,
+      };
+    },
+  },
+  {
+    method: "POST",
+    pattern:
+      /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/apps\/(\d+)\/stop$/,
+    build: (_url, match) => {
+      const appId = parseNumber(match[3]);
+      if (appId == null) {
+        return null;
+      }
+      return {
+        channel: "stop-app",
+        args: [{ appId }],
+        tenantPath: { orgId: match[1], workspaceId: match[2] },
+        requiresAuth: true,
+      };
+    },
+  },
+  {
+    method: "POST",
+    pattern:
+      /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/apps\/(\d+)\/restart$/,
+    build: (_url, match, body) => {
+      const appId = parseNumber(match[3]);
+      if (appId == null) {
+        return null;
+      }
+      const payload =
+        body && typeof body === "object"
+          ? (body as Record<string, unknown>)
+          : {};
+      return {
+        channel: "restart-app",
+        args: [{ appId, ...payload }],
+        tenantPath: { orgId: match[1], workspaceId: match[2] },
+        requiresAuth: true,
+      };
+    },
+  },
+  {
+    method: "GET",
+    pattern:
+      /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/apps\/(\d+)\/chats$/,
+    build: (_url, match) => {
+      const appId = parseNumber(match[3]);
+      if (appId == null) {
+        return null;
+      }
+      return {
+        channel: "get-chats",
+        args: [appId],
+        tenantPath: { orgId: match[1], workspaceId: match[2] },
+        requiresAuth: true,
+      };
+    },
+  },
+  {
+    method: "POST",
+    pattern:
+      /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/apps\/(\d+)\/chats$/,
+    build: (_url, match) => {
+      const appId = parseNumber(match[3]);
+      if (appId == null) {
+        return null;
+      }
+      return {
+        channel: "create-chat",
+        args: [appId],
+        tenantPath: { orgId: match[1], workspaceId: match[2] },
+        requiresAuth: true,
+      };
+    },
+  },
+  {
+    method: "GET",
+    pattern: /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/chats\/(\d+)$/,
+    build: (_url, match) => {
+      const chatId = parseNumber(match[3]);
+      if (chatId == null) {
+        return null;
+      }
+      return {
+        channel: "get-chat",
+        args: [chatId],
+        tenantPath: { orgId: match[1], workspaceId: match[2] },
+        requiresAuth: true,
+      };
+    },
+  },
+  {
+    method: "GET",
+    pattern: /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/chats$/,
+    build: (_url, match) => ({
+      channel: "get-chats",
+      args: [],
+      tenantPath: { orgId: match[1], workspaceId: match[2] },
+      requiresAuth: true,
+    }),
+  },
+  {
+    method: "PATCH",
+    pattern: /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/chats\/(\d+)$/,
+    build: (_url, match, body) => {
+      const chatId = parseNumber(match[3]);
+      if (chatId == null) {
+        return null;
+      }
+      return {
+        channel: "update-chat",
+        args: [{ ...(body as object), chatId }],
+        tenantPath: { orgId: match[1], workspaceId: match[2] },
+        requiresAuth: true,
+      };
+    },
+  },
+  {
+    method: "DELETE",
+    pattern: /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/chats\/(\d+)$/,
+    build: (_url, match) => {
+      const chatId = parseNumber(match[3]);
+      if (chatId == null) {
+        return null;
+      }
+      return {
+        channel: "delete-chat",
+        args: [chatId],
+        tenantPath: { orgId: match[1], workspaceId: match[2] },
+        requiresAuth: true,
+      };
+    },
+  },
+  {
+    method: "GET",
+    pattern:
+      /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/settings\/models$/,
+    build: (_url, match) => ({
+      channel: "get-workspace-model-settings",
+      args: [],
+      tenantPath: { orgId: match[1], workspaceId: match[2] },
+      requiresAuth: true,
+    }),
+  },
+  {
+    method: "PATCH",
+    pattern:
+      /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/settings\/models$/,
+    build: (_url, match, body) => ({
+      channel: "set-workspace-model-settings",
+      args: [body],
+      tenantPath: { orgId: match[1], workspaceId: match[2] },
+      requiresAuth: true,
+    }),
+  },
+  {
+    method: "GET",
+    pattern: /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/env\/providers$/,
+    build: (_url, match) => ({
+      channel: "get-workspace-env-providers",
+      args: [],
+      tenantPath: { orgId: match[1], workspaceId: match[2] },
+      requiresAuth: true,
+    }),
+  },
+  {
+    method: "GET",
+    pattern: /^\/api\/v1\/app\/version$/,
+    build: () => ({
+      channel: "get-app-version",
+      args: [],
+      requiresAuth: false,
+    }),
+  },
+];
+
+const LEGACY_ROUTES: RouteDefinition[] = [
   {
     method: "GET",
     pattern: /^\/api\/v1\/user\/settings$/,
     build: () => ({
       channel: "get-user-settings",
       args: [],
+      requiresAuth: true,
     }),
   },
   {
@@ -64,6 +449,7 @@ const ROUTES: RouteDefinition[] = [
     build: (_url, _match, body) => ({
       channel: "set-user-settings",
       args: [body],
+      requiresAuth: true,
     }),
   },
   {
@@ -72,6 +458,8 @@ const ROUTES: RouteDefinition[] = [
     build: () => ({
       channel: "list-apps",
       args: [],
+      tenantPath: { orgId: "me", workspaceId: "me" },
+      requiresAuth: true,
     }),
   },
   {
@@ -80,6 +468,8 @@ const ROUTES: RouteDefinition[] = [
     build: (_url, _match, body) => ({
       channel: "create-app",
       args: [body],
+      tenantPath: { orgId: "me", workspaceId: "me" },
+      requiresAuth: true,
     }),
   },
   {
@@ -88,6 +478,8 @@ const ROUTES: RouteDefinition[] = [
     build: (url) => ({
       channel: "search-app",
       args: [url.searchParams.get("q") ?? ""],
+      tenantPath: { orgId: "me", workspaceId: "me" },
+      requiresAuth: true,
     }),
   },
   {
@@ -101,6 +493,8 @@ const ROUTES: RouteDefinition[] = [
       return {
         channel: "get-app",
         args: [appId],
+        tenantPath: { orgId: "me", workspaceId: "me" },
+        requiresAuth: true,
       };
     },
   },
@@ -115,6 +509,8 @@ const ROUTES: RouteDefinition[] = [
       return {
         channel: "add-to-favorite",
         args: [{ appId }],
+        tenantPath: { orgId: "me", workspaceId: "me" },
+        requiresAuth: true,
       };
     },
   },
@@ -124,6 +520,8 @@ const ROUTES: RouteDefinition[] = [
     build: () => ({
       channel: "get-chats",
       args: [],
+      tenantPath: { orgId: "me", workspaceId: "me" },
+      requiresAuth: true,
     }),
   },
   {
@@ -137,6 +535,8 @@ const ROUTES: RouteDefinition[] = [
       return {
         channel: "get-chats",
         args: [appId],
+        tenantPath: { orgId: "me", workspaceId: "me" },
+        requiresAuth: true,
       };
     },
   },
@@ -151,6 +551,8 @@ const ROUTES: RouteDefinition[] = [
       return {
         channel: "create-chat",
         args: [appId],
+        tenantPath: { orgId: "me", workspaceId: "me" },
+        requiresAuth: true,
       };
     },
   },
@@ -165,6 +567,8 @@ const ROUTES: RouteDefinition[] = [
       return {
         channel: "get-chat",
         args: [chatId],
+        tenantPath: { orgId: "me", workspaceId: "me" },
+        requiresAuth: true,
       };
     },
   },
@@ -174,6 +578,8 @@ const ROUTES: RouteDefinition[] = [
     build: () => ({
       channel: "get-env-vars",
       args: [],
+      tenantPath: { orgId: "me", workspaceId: "me" },
+      requiresAuth: true,
     }),
   },
   {
@@ -182,30 +588,53 @@ const ROUTES: RouteDefinition[] = [
     build: () => ({
       channel: "get-language-model-providers",
       args: [],
-    }),
-  },
-  {
-    method: "GET",
-    pattern: /^\/api\/v1\/app\/version$/,
-    build: () => ({
-      channel: "get-app-version",
-      args: [],
+      tenantPath: { orgId: "me", workspaceId: "me" },
+      requiresAuth: true,
     }),
   },
 ];
 
-export function createApiV1Middleware(invoke: IpcInvokeHandler) {
+const LEGACY_CHANNELS_ALLOWED_IN_ENFORCE = new Set([
+  "get-user-settings",
+  "set-user-settings",
+  "get-app-version",
+  "get-env-vars",
+  "get-language-model-providers",
+]);
+
+function findRoute(
+  routes: RouteDefinition[],
+  method: HttpMethod,
+  pathName: string,
+): RouteDefinition | null {
+  return (
+    routes.find(
+      (item) => item.method === method && item.pattern.test(pathName),
+    ) ?? null
+  );
+}
+
+export function createApiV1Middleware(
+  invoke: IpcInvokeHandler,
+  options?: {
+    resolveRequestContext?: typeof resolveRequestContext;
+  },
+) {
+  const resolveContext =
+    options?.resolveRequestContext ?? resolveRequestContext;
   return async (req: IncomingMessage, res: ServerResponse, next: Next) => {
     const method = (req.method || "GET").toUpperCase() as HttpMethod;
     const requestUrl = new URL(req.url || "/", "http://localhost");
     const pathName = requestUrl.pathname;
 
-    const route = ROUTES.find((item) => {
-      if (item.method !== method) {
-        return false;
-      }
-      return item.pattern.test(pathName);
-    });
+    const scopedRoute = findRoute(SCOPED_ROUTES, method, pathName);
+    let route: RouteDefinition | null = scopedRoute;
+    let isLegacyRoute = false;
+
+    if (!route) {
+      route = findRoute(LEGACY_ROUTES, method, pathName);
+      isLegacyRoute = Boolean(route);
+    }
 
     if (!route) {
       next();
@@ -226,7 +655,26 @@ export function createApiV1Middleware(invoke: IpcInvokeHandler) {
         return;
       }
 
-      const result = await invoke(target.channel, target.args);
+      if (
+        isLegacyRoute &&
+        isMultitenantEnforced() &&
+        !LEGACY_CHANNELS_ALLOWED_IN_ENFORCE.has(target.channel)
+      ) {
+        writeJson(res, 410, {
+          error:
+            "Legacy unscoped endpoint is disabled in MULTITENANT_MODE=enforce",
+        });
+        return;
+      }
+
+      const requestContext = target.requiresAuth
+        ? await resolveContext(req, target.tenantPath)
+        : null;
+
+      const result = await invoke(target.channel, target.args, {
+        requestContext: requestContext ?? undefined,
+      });
+
       if (typeof result === "undefined") {
         res.statusCode = 204;
         res.end();
@@ -235,6 +683,14 @@ export function createApiV1Middleware(invoke: IpcInvokeHandler) {
 
       writeJson(res, 200, { data: result });
     } catch (error) {
+      if (isHttpError(error)) {
+        writeJson(res, error.statusCode, {
+          error: error.message,
+          code: error.code,
+        });
+        return;
+      }
+
       writeJson(res, 500, {
         error: error instanceof Error ? error.message : String(error),
       });

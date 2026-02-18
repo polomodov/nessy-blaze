@@ -76,6 +76,7 @@
     "@types/pg": "^8.15.5",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
+    "@types/ws": "8.18.1",
     "@typescript-eslint/eslint-plugin": "^5.62.0",
     "@typescript-eslint/parser": "^5.62.0",
     "@typescript/native-preview": "^7.0.0-dev.20260107.1",
@@ -190,6 +191,7 @@
     "tw-animate-css": "^1.2.5",
     "update-electron-app": "^3.1.2",
     "uuid": "^11.1.0",
+    "ws": "8.19.0",
     "zod": "^3.25.76"
   },
   "overrides": {

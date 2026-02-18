@@ -12,6 +12,9 @@ export type Secret = z.infer<typeof SecretSchema>;
 export const ChatSummarySchema = z.object({
   id: z.number(),
   appId: z.number(),
+  organizationId: z.string().nullable().optional(),
+  workspaceId: z.string().nullable().optional(),
+  createdByUserId: z.string().nullable().optional(),
   title: z.string().nullable(),
   createdAt: z.date(),
 });
@@ -32,6 +35,9 @@ export const ChatSummariesSchema = z.array(ChatSummarySchema);
 export const ChatSearchResultSchema = z.object({
   id: z.number(),
   appId: z.number(),
+  organizationId: z.string().nullable().optional(),
+  workspaceId: z.string().nullable().optional(),
+  createdByUserId: z.string().nullable().optional(),
   title: z.string().nullable(),
   createdAt: z.date(),
   matchedMessageContent: z.string().nullable(),
@@ -47,6 +53,9 @@ export const ChatSearchResultsSchema = z.array(ChatSearchResultSchema);
 // Zod schema for app search result objects returned by the search-app IPC
 export const AppSearchResultSchema = z.object({
   id: z.number(),
+  organizationId: z.string().nullable().optional(),
+  workspaceId: z.string().nullable().optional(),
+  createdByUserId: z.string().nullable().optional(),
   name: z.string(),
   createdAt: z.date(),
   matchedChatTitle: z.string().nullable(),

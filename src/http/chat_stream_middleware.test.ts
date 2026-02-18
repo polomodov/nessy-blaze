@@ -8,10 +8,18 @@ const {
   mockHandleChatStreamRequest,
   mockHandleChatCancelRequest,
   mockInitializeDatabase,
+  mockResolveRequestContext,
+  mockEnsureChatInScope,
+  mockEnforceAndRecordUsage,
+  mockWriteAuditEvent,
 } = vi.hoisted(() => ({
   mockHandleChatStreamRequest: vi.fn(),
   mockHandleChatCancelRequest: vi.fn(),
   mockInitializeDatabase: vi.fn(),
+  mockResolveRequestContext: vi.fn(),
+  mockEnsureChatInScope: vi.fn(),
+  mockEnforceAndRecordUsage: vi.fn(),
+  mockWriteAuditEvent: vi.fn(),
 }));
 
 vi.mock("../db", () => ({
@@ -30,6 +38,10 @@ function createMiddleware() {
         handleChatStreamRequest: mockHandleChatStreamRequest,
         handleChatCancelRequest: mockHandleChatCancelRequest,
       }) as any,
+    resolveRequestContext: mockResolveRequestContext,
+    ensureChatInScope: mockEnsureChatInScope,
+    enforceAndRecordUsage: mockEnforceAndRecordUsage,
+    writeAuditEvent: mockWriteAuditEvent,
   });
 }
 
@@ -101,6 +113,24 @@ function createMockResponse() {
 describe("createChatStreamMiddleware", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockResolveRequestContext.mockResolvedValue({
+      userId: "user-1",
+      externalSub: "dev-user",
+      email: "dev@example.com",
+      displayName: "Dev",
+      orgId: "org-1",
+      workspaceId: "ws-1",
+      organizationRole: "owner",
+      workspaceRole: "owner",
+      roles: ["owner"],
+      authSource: "dev-bypass",
+    });
+    mockEnsureChatInScope.mockResolvedValue({
+      id: 1,
+      appId: 1,
+    });
+    mockEnforceAndRecordUsage.mockResolvedValue(undefined);
+    mockWriteAuditEvent.mockResolvedValue(undefined);
   });
 
   it("initializes database once when middleware is created", () => {
@@ -178,6 +208,30 @@ describe("createChatStreamMiddleware", () => {
       }),
     );
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it("supports scoped SSE stream route", async () => {
+    mockHandleChatStreamRequest.mockImplementationOnce(
+      async (event: any, request: ChatStreamParams) => {
+        event.sender.send("chat:response:end", {
+          chatId: request.chatId,
+          updatedFiles: false,
+        });
+      },
+    );
+
+    const middleware = createMiddleware();
+    const req = createMockRequest({
+      method: "POST",
+      url: "/api/v1/orgs/org-1/workspaces/ws-1/chats/22/stream",
+      body: JSON.stringify({ prompt: "Scoped stream" }),
+    });
+    const { response, headers } = createMockResponse();
+
+    await middleware(req, response, vi.fn());
+
+    expect(response.statusCode).toBe(200);
+    expect(headers["content-type"]).toBe("text/event-stream");
   });
 
   it("supports stream cancellation endpoint", async () => {

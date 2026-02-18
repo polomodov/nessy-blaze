@@ -17,6 +17,17 @@ type BlazeDatabase = NodePgDatabase<typeof schema> & {
 };
 
 const RESET_TABLES = [
+  "audit_events",
+  "usage_events",
+  "user_soft_quotas",
+  "organization_quotas",
+  "workspace_model_settings",
+  "workspace_memberships",
+  "organization_memberships",
+  "workspaces",
+  "organizations",
+  "users",
+  "tenant_migration_markers",
   "messages",
   "chats",
   "versions",

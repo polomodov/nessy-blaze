@@ -1,8 +1,18 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import {
+  isLegacyIpcHttpInvokeEnabled,
+  isMultitenantEnforced,
+} from "./feature_flags";
+import { isHttpError } from "./http_errors";
+import type { RequestContext } from "./request_context";
+import { resolveRequestContext } from "./request_context";
 
 export type IpcInvokeHandler = (
   channel: string,
   args: unknown[],
+  meta?: {
+    requestContext?: RequestContext;
+  },
 ) => Promise<unknown>;
 
 type Next = (error?: unknown) => void;
@@ -44,6 +54,14 @@ export function createIpcInvokeMiddleware(invoke: IpcInvokeHandler) {
       return;
     }
 
+    if (!isLegacyIpcHttpInvokeEnabled()) {
+      writeJson(res, 410, {
+        error:
+          "Legacy /api/ipc/invoke endpoint is disabled by IPC_LEGACY_ENABLED=false",
+      });
+      return;
+    }
+
     try {
       const payload = (await readJsonBody(req)) as {
         channel?: unknown;
@@ -60,7 +78,29 @@ export function createIpcInvokeMiddleware(invoke: IpcInvokeHandler) {
       }
 
       const invokeArgs = Array.isArray(args) ? args : [];
-      const result = await invoke(channel, invokeArgs);
+      const orgIdHintRaw = req.headers["x-blaze-org-id"];
+      const workspaceIdHintRaw = req.headers["x-blaze-workspace-id"];
+      const orgIdHint =
+        typeof orgIdHintRaw === "string"
+          ? orgIdHintRaw
+          : Array.isArray(orgIdHintRaw)
+            ? orgIdHintRaw[0]
+            : undefined;
+      const workspaceIdHint =
+        typeof workspaceIdHintRaw === "string"
+          ? workspaceIdHintRaw
+          : Array.isArray(workspaceIdHintRaw)
+            ? workspaceIdHintRaw[0]
+            : undefined;
+      const requestContext = isMultitenantEnforced()
+        ? await resolveRequestContext(req, {
+            orgId: orgIdHint,
+            workspaceId: workspaceIdHint,
+          })
+        : undefined;
+      const result = await invoke(channel, invokeArgs, {
+        requestContext,
+      });
 
       if (typeof result === "undefined") {
         res.statusCode = 204;
@@ -70,6 +110,13 @@ export function createIpcInvokeMiddleware(invoke: IpcInvokeHandler) {
 
       writeJson(res, 200, { data: result });
     } catch (error) {
+      if (isHttpError(error)) {
+        writeJson(res, error.statusCode, {
+          error: error.message,
+          code: error.code,
+        });
+        return;
+      }
       writeJson(res, 500, {
         error: error instanceof Error ? error.message : String(error),
       });

@@ -75,6 +75,9 @@ export interface CreateAppParams {
 export interface CreateAppResult {
   app: {
     id: number;
+    organizationId?: string | null;
+    workspaceId?: string | null;
+    createdByUserId?: string | null;
     name: string;
     path: string;
     createdAt: string;
@@ -85,6 +88,9 @@ export interface CreateAppResult {
 
 export interface Message {
   id: number;
+  organizationId?: string | null;
+  workspaceId?: string | null;
+  createdByUserId?: string | null;
   role: "user" | "assistant";
   content: string;
   approvalState?: "approved" | "rejected" | null;
@@ -99,6 +105,10 @@ export interface Message {
 
 export interface Chat {
   id: number;
+  appId?: number;
+  organizationId?: string | null;
+  workspaceId?: string | null;
+  createdByUserId?: string | null;
   title: string;
   messages: Message[];
   initialCommitHash?: string | null;
@@ -107,6 +117,9 @@ export interface Chat {
 
 export interface App {
   id: number;
+  organizationId?: string | null;
+  workspaceId?: string | null;
+  createdByUserId?: string | null;
   name: string;
   path: string;
   files: string[];
@@ -145,6 +158,9 @@ export interface AppFileSearchResult {
 
 export interface Version {
   oid: string;
+  organizationId?: string | null;
+  workspaceId?: string | null;
+  createdByUserId?: string | null;
   message: string;
   timestamp: number;
   dbTimestamp?: string | null;

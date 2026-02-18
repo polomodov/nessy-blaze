@@ -108,6 +108,8 @@ import { showError } from "@/lib/toast";
 import { DeepLinkData } from "./deep_link_data";
 import {
   createBackendClientTransport,
+  getConfiguredTenantScope,
+  getDefaultRequestHeaders,
   getAllowIpcFallback,
   getConfiguredBackendBaseUrl,
   getConfiguredBackendMode,
@@ -778,15 +780,19 @@ export class IpcClient {
         }
 
         let response: Response | null = null;
+        const scope = getConfiguredTenantScope();
+        const streamPath = `/api/v1/orgs/${encodeURIComponent(
+          scope.orgId,
+        )}/workspaces/${encodeURIComponent(
+          scope.workspaceId,
+        )}/chats/${chatId}/stream`;
         for (let index = 0; index < baseUrls.length; index += 1) {
           const baseUrl = baseUrls[index];
           const hasNextBaseUrl = index < baseUrls.length - 1;
           try {
-            response = await fetch(`${baseUrl}/api/v1/chats/${chatId}/stream`, {
+            response = await fetch(`${baseUrl}${streamPath}`, {
               method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
+              headers: getDefaultRequestHeaders("chat:stream"),
               body: JSON.stringify({
                 prompt,
                 chatId,
@@ -934,12 +940,19 @@ export class IpcClient {
       }
 
       void (async () => {
+        const scope = getConfiguredTenantScope();
+        const cancelPath = `/api/v1/orgs/${encodeURIComponent(
+          scope.orgId,
+        )}/workspaces/${encodeURIComponent(
+          scope.workspaceId,
+        )}/chats/${chatId}/stream/cancel`;
         for (let index = 0; index < baseUrls.length; index += 1) {
           const baseUrl = baseUrls[index];
           const hasNextBaseUrl = index < baseUrls.length - 1;
           try {
-            await fetch(`${baseUrl}/api/v1/chats/${chatId}/stream/cancel`, {
+            await fetch(`${baseUrl}${cancelPath}`, {
               method: "POST",
+              headers: getDefaultRequestHeaders("chat:cancel"),
             });
             return;
           } catch (error) {

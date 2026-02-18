@@ -107,7 +107,9 @@ describe("createIpcInvokeMiddleware", () => {
     expect(JSON.parse(getBody())).toEqual({
       data: { apps: [] },
     });
-    expect(invoke).toHaveBeenCalledWith("list-apps", []);
+    expect(invoke).toHaveBeenCalledWith("list-apps", [], {
+      requestContext: undefined,
+    });
     expect(next).not.toHaveBeenCalled();
   });
 
@@ -129,7 +131,9 @@ describe("createIpcInvokeMiddleware", () => {
 
     expect(response.statusCode).toBe(204);
     expect(getBody()).toBe("");
-    expect(invoke).toHaveBeenCalledWith("ping", []);
+    expect(invoke).toHaveBeenCalledWith("ping", [], {
+      requestContext: undefined,
+    });
     expect(next).not.toHaveBeenCalled();
   });
 

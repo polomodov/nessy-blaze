@@ -5,6 +5,12 @@ export type BackendMode = "ipc" | "http";
 export const BACKEND_MODE_STORAGE_KEY = "blaze.backend.mode";
 export const BACKEND_BASE_URL_STORAGE_KEY = "blaze.backend.base_url";
 export const BACKEND_IPC_FALLBACK_STORAGE_KEY = "blaze.backend.ipc_fallback";
+export const TENANT_ORG_ID_STORAGE_KEY = "blaze.tenant.org_id";
+export const TENANT_WORKSPACE_ID_STORAGE_KEY = "blaze.tenant.workspace_id";
+export const AUTH_TOKEN_STORAGE_KEY = "blaze.auth.token";
+export const DEV_USER_SUB_STORAGE_KEY = "blaze.dev.user_sub";
+export const DEV_USER_EMAIL_STORAGE_KEY = "blaze.dev.user_email";
+export const DEV_USER_NAME_STORAGE_KEY = "blaze.dev.user_name";
 
 export interface BackendClient {
   invoke<T = any>(channel: string, ...args: unknown[]): Promise<T>;
@@ -17,6 +23,12 @@ interface RemoteBackendConfig {
   mode?: BackendMode;
   baseUrl?: string;
   allowIpcFallback?: boolean;
+  orgId?: string;
+  workspaceId?: string;
+  authToken?: string;
+  devUserSub?: string;
+  devUserEmail?: string;
+  devUserName?: string;
 }
 
 declare global {
@@ -30,9 +42,6 @@ declare global {
 const FORCE_IPC_CHANNELS = new Set<string>([
   "chat:stream",
   "chat:cancel",
-  "run-app",
-  "stop-app",
-  "restart-app",
   "respond-to-app-input",
   "github:start-flow",
   "help:chat:start",
@@ -46,6 +55,11 @@ interface HttpApiRequest {
   path: string;
   query?: Record<string, string>;
   body?: unknown;
+}
+
+export interface TenantScope {
+  orgId: string;
+  workspaceId: string;
 }
 
 function getLocalStorageValue(key: string): string | null {
@@ -68,6 +82,111 @@ function normalizeBackendMode(value: string | null | undefined): BackendMode {
   return value === "http" ? "http" : "ipc";
 }
 
+export function getConfiguredTenantScope(): TenantScope {
+  const localOrgId = getLocalStorageValue(TENANT_ORG_ID_STORAGE_KEY);
+  const localWorkspaceId = getLocalStorageValue(
+    TENANT_WORKSPACE_ID_STORAGE_KEY,
+  );
+  const remoteOrgId = window.__BLAZE_REMOTE_CONFIG__?.backendClient?.orgId;
+  const remoteWorkspaceId =
+    window.__BLAZE_REMOTE_CONFIG__?.backendClient?.workspaceId;
+  const envOrgId = import.meta.env.VITE_BLAZE_TENANT_ORG_ID as
+    | string
+    | undefined;
+  const envWorkspaceId = import.meta.env.VITE_BLAZE_TENANT_WORKSPACE_ID as
+    | string
+    | undefined;
+
+  const orgId =
+    localOrgId?.trim() || remoteOrgId?.trim() || envOrgId?.trim() || "me";
+  const workspaceId =
+    localWorkspaceId?.trim() ||
+    remoteWorkspaceId?.trim() ||
+    envWorkspaceId?.trim() ||
+    "me";
+
+  return {
+    orgId,
+    workspaceId,
+  };
+}
+
+function getAuthToken(): string | null {
+  const localToken = getLocalStorageValue(AUTH_TOKEN_STORAGE_KEY);
+  if (localToken?.trim()) {
+    return localToken.trim();
+  }
+  const remoteToken = window.__BLAZE_REMOTE_CONFIG__?.backendClient?.authToken;
+  if (remoteToken?.trim()) {
+    return remoteToken.trim();
+  }
+  const envToken = import.meta.env.VITE_BLAZE_AUTH_TOKEN as string | undefined;
+  if (envToken?.trim()) {
+    return envToken.trim();
+  }
+  return null;
+}
+
+function getDevHeaderValue(
+  localStorageKey: string,
+  remoteValue?: string,
+  envValue?: string,
+): string | null {
+  const localValue = getLocalStorageValue(localStorageKey);
+  if (localValue?.trim()) {
+    return localValue.trim();
+  }
+  if (remoteValue?.trim()) {
+    return remoteValue.trim();
+  }
+  if (envValue?.trim()) {
+    return envValue.trim();
+  }
+  return null;
+}
+
+export function getDefaultRequestHeaders(
+  channel: string,
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "X-Blaze-Channel": channel,
+  };
+  const token = getAuthToken();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const remote = window.__BLAZE_REMOTE_CONFIG__?.backendClient;
+  const devUserSub = getDevHeaderValue(
+    DEV_USER_SUB_STORAGE_KEY,
+    remote?.devUserSub,
+    import.meta.env.VITE_BLAZE_DEV_USER_SUB as string | undefined,
+  );
+  const devUserEmail = getDevHeaderValue(
+    DEV_USER_EMAIL_STORAGE_KEY,
+    remote?.devUserEmail,
+    import.meta.env.VITE_BLAZE_DEV_USER_EMAIL as string | undefined,
+  );
+  const devUserName = getDevHeaderValue(
+    DEV_USER_NAME_STORAGE_KEY,
+    remote?.devUserName,
+    import.meta.env.VITE_BLAZE_DEV_USER_NAME as string | undefined,
+  );
+
+  if (devUserSub) {
+    headers["x-blaze-dev-user-sub"] = devUserSub;
+  }
+  if (devUserEmail) {
+    headers["x-blaze-dev-user-email"] = devUserEmail;
+  }
+  if (devUserName) {
+    headers["x-blaze-dev-user-name"] = devUserName;
+  }
+
+  return headers;
+}
+
 function trimTrailingSlash(url: string): string {
   return url.replace(/\/+$/, "");
 }
@@ -88,7 +207,12 @@ function getFirstArg<T>(args: unknown[]): T | undefined {
 function resolveApiRoute(
   channel: string,
   args: unknown[],
+  tenantScope: TenantScope,
 ): HttpApiRequest | null {
+  const scopedBasePath = `/api/v1/orgs/${encodeURIComponent(
+    tenantScope.orgId,
+  )}/workspaces/${encodeURIComponent(tenantScope.workspaceId)}`;
+
   switch (channel) {
     case "get-user-settings":
       return {
@@ -104,7 +228,7 @@ function resolveApiRoute(
     case "list-apps":
       return {
         method: "GET",
-        path: "/api/v1/apps",
+        path: `${scopedBasePath}/apps`,
       };
     case "get-app": {
       const appId = getFirstArg<number>(args);
@@ -113,13 +237,13 @@ function resolveApiRoute(
       }
       return {
         method: "GET",
-        path: `/api/v1/apps/${appId}`,
+        path: `${scopedBasePath}/apps/${appId}`,
       };
     }
     case "create-app":
       return {
         method: "POST",
-        path: "/api/v1/apps",
+        path: `${scopedBasePath}/apps`,
         body: getFirstArg(args),
       };
     case "search-app": {
@@ -129,7 +253,7 @@ function resolveApiRoute(
       }
       return {
         method: "GET",
-        path: "/api/v1/apps:search",
+        path: `${scopedBasePath}/apps:search`,
         query: { q: query },
       };
     }
@@ -140,7 +264,7 @@ function resolveApiRoute(
       }
       return {
         method: "POST",
-        path: `/api/v1/apps/${params.appId}/favorite/toggle`,
+        path: `${scopedBasePath}/apps/${params.appId}/favorite/toggle`,
       };
     }
     case "get-chats": {
@@ -148,12 +272,12 @@ function resolveApiRoute(
       if (typeof appId === "number") {
         return {
           method: "GET",
-          path: `/api/v1/apps/${appId}/chats`,
+          path: `${scopedBasePath}/apps/${appId}/chats`,
         };
       }
       return {
         method: "GET",
-        path: "/api/v1/chats",
+        path: `${scopedBasePath}/chats`,
       };
     }
     case "create-chat": {
@@ -163,7 +287,7 @@ function resolveApiRoute(
       }
       return {
         method: "POST",
-        path: `/api/v1/apps/${appId}/chats`,
+        path: `${scopedBasePath}/apps/${appId}/chats`,
       };
     }
     case "get-chat": {
@@ -173,7 +297,38 @@ function resolveApiRoute(
       }
       return {
         method: "GET",
-        path: `/api/v1/chats/${chatId}`,
+        path: `${scopedBasePath}/chats/${chatId}`,
+      };
+    }
+    case "run-app": {
+      const params = getFirstArg<{ appId?: number }>(args);
+      if (!params || typeof params.appId !== "number") {
+        return null;
+      }
+      return {
+        method: "POST",
+        path: `${scopedBasePath}/apps/${params.appId}/run`,
+      };
+    }
+    case "stop-app": {
+      const params = getFirstArg<{ appId?: number }>(args);
+      if (!params || typeof params.appId !== "number") {
+        return null;
+      }
+      return {
+        method: "POST",
+        path: `${scopedBasePath}/apps/${params.appId}/stop`,
+      };
+    }
+    case "restart-app": {
+      const params = getFirstArg<{ appId?: number }>(args);
+      if (!params || typeof params.appId !== "number") {
+        return null;
+      }
+      return {
+        method: "POST",
+        path: `${scopedBasePath}/apps/${params.appId}/restart`,
+        body: params,
       };
     }
     case "get-env-vars":
@@ -294,7 +449,11 @@ export class HttpBackendClient implements BackendClient {
     }
 
     try {
-      const apiRoute = resolveApiRoute(channel, args);
+      const apiRoute = resolveApiRoute(
+        channel,
+        args,
+        getConfiguredTenantScope(),
+      );
       if (apiRoute) {
         return await invokeApiRoute<T>({
           baseUrl: this.baseUrl,
@@ -366,7 +525,7 @@ export class BrowserBackendClient implements BackendClient {
       );
     }
 
-    const apiRoute = resolveApiRoute(channel, args);
+    const apiRoute = resolveApiRoute(channel, args, getConfiguredTenantScope());
     for (let index = 0; index < this.baseUrls.length; index += 1) {
       const baseUrl = this.baseUrls[index];
       const hasNextBaseUrl = index < this.baseUrls.length - 1;
@@ -436,12 +595,10 @@ async function invokeApiRoute<T>({
   request: HttpApiRequest;
 }): Promise<T> {
   const url = `${baseUrl}${getFetchPathWithQuery(request.path, request.query)}`;
+  const headers = getDefaultRequestHeaders(channel);
   const response = await fetch(url, {
     method: request.method,
-    headers: {
-      "Content-Type": "application/json",
-      "X-Blaze-Channel": channel,
-    },
+    headers,
     body: request.body === undefined ? undefined : JSON.stringify(request.body),
   });
 
@@ -483,12 +640,14 @@ async function invokeOverHttp<T>({
   channel: string;
   args: unknown[];
 }): Promise<T> {
+  const headers = getDefaultRequestHeaders(channel);
+  const scope = getConfiguredTenantScope();
+  headers["x-blaze-org-id"] = scope.orgId;
+  headers["x-blaze-workspace-id"] = scope.workspaceId;
+
   const response = await fetch(`${baseUrl}${IPC_HTTP_INVOKE_PATH}`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Blaze-Channel": channel,
-    },
+    headers,
     body: JSON.stringify({ channel, args }),
   });
 
