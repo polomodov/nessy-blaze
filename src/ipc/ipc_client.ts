@@ -233,6 +233,31 @@ function isLikelyFetchFailure(error: unknown): boolean {
   return /failed to fetch|fetch failed|networkerror/i.test(message);
 }
 
+function extractPreviewUrls(value: unknown): {
+  previewUrl: string;
+  originalUrl: string;
+} | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const previewUrl =
+    "previewUrl" in value && typeof value.previewUrl === "string"
+      ? value.previewUrl
+      : null;
+
+  if (!previewUrl) {
+    return null;
+  }
+
+  const originalUrl =
+    "originalUrl" in value && typeof value.originalUrl === "string"
+      ? value.originalUrl
+      : previewUrl;
+
+  return { previewUrl, originalUrl };
+}
+
 async function encodeAttachmentsForStream(
   attachments: FileAttachment[] | undefined,
 ): Promise<EncodedStreamAttachment[]> {
@@ -974,8 +999,17 @@ export class IpcClient {
     appId: number,
     onOutput: (output: AppOutput) => void,
   ): Promise<void> {
-    await this.ipcRenderer.invoke("run-app", { appId });
     this.appStreams.set(appId, { onOutput });
+    const result = await this.ipcRenderer.invoke("run-app", { appId });
+    const previewUrls = extractPreviewUrls(result);
+    if (previewUrls) {
+      onOutput({
+        type: "stdout",
+        message: `[blaze-proxy-server]started=[${previewUrls.previewUrl}] original=[${previewUrls.originalUrl}]`,
+        appId,
+        timestamp: Date.now(),
+      });
+    }
   }
 
   // Stop a running app
@@ -995,6 +1029,15 @@ export class IpcClient {
         removeNodeModules,
       });
       this.appStreams.set(appId, { onOutput });
+      const previewUrls = extractPreviewUrls(result);
+      if (previewUrls) {
+        onOutput({
+          type: "stdout",
+          message: `[blaze-proxy-server]started=[${previewUrls.previewUrl}] original=[${previewUrls.originalUrl}]`,
+          appId,
+          timestamp: Date.now(),
+        });
+      }
       return result;
     } catch (error) {
       showError(error);

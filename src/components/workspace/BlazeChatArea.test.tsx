@@ -1,4 +1,10 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BlazeChatArea } from "./BlazeChatArea";
 
@@ -32,9 +38,12 @@ describe("BlazeChatArea", () => {
   });
 
   it("creates app on first message and reuses chat on next messages", async () => {
-    render(<BlazeChatArea />);
+    const onAppCreated = vi.fn();
+    render(<BlazeChatArea onAppCreated={onAppCreated} />);
 
-    const input = screen.getByPlaceholderText("Describe what should be built...");
+    const input = screen.getByPlaceholderText(
+      "Describe what should be built...",
+    );
     fireEvent.change(input, { target: { value: "Build a landing page" } });
     fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
 
@@ -53,6 +62,7 @@ describe("BlazeChatArea", () => {
         onError: expect.any(Function),
       }),
     );
+    expect(onAppCreated).toHaveBeenCalledWith(42);
 
     const firstStreamOptions = streamMessageMock.mock.calls[0][1];
     act(() => {
@@ -91,7 +101,9 @@ describe("BlazeChatArea", () => {
 
     render(<BlazeChatArea />);
 
-    const input = screen.getByPlaceholderText("Describe what should be built...");
+    const input = screen.getByPlaceholderText(
+      "Describe what should be built...",
+    );
     fireEvent.change(input, { target: { value: "Build page" } });
     fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
 

@@ -1,14 +1,15 @@
-import { useState, type ReactNode } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { useEffect, useRef, useState } from "react";
 import {
   Download,
   ExternalLink,
   Eye,
+  Loader2,
   Monitor,
-  Rocket,
   Smartphone,
   Tablet,
 } from "lucide-react";
+import { IpcClient } from "@/ipc/ipc_client";
+import type { AppOutput } from "@/ipc/ipc_types";
 
 type Device = "desktop" | "tablet" | "mobile";
 
@@ -18,161 +19,109 @@ const previewWidthByDevice: Record<Device, string> = {
   mobile: "375px",
 };
 
-type MockPage = {
-  projectTitle: string;
-  pageTitle: string;
-  sections: ReactNode;
-};
+function extractProxyUrl(output: AppOutput): string | null {
+  if (!output.message.includes("[blaze-proxy-server]started=[")) {
+    return null;
+  }
 
-const previewPagesById: Record<string, MockPage> = {
-  "1-1": {
-    projectTitle: "Spring Cashback Campaign",
-    pageTitle: "Landing",
-    sections: (
-      <>
-        <section className="bg-primary px-8 py-16 text-center">
-          <h1 className="mb-2 text-3xl font-extrabold text-primary-foreground">
-            30% Cashback on Every Purchase
-          </h1>
-          <p className="mb-6 text-sm text-primary-foreground/80">
-            Get up to 30% cashback with instant rewards.
-          </p>
-          <button className="rounded-lg bg-card px-6 py-2.5 text-sm font-semibold text-foreground shadow-sm">
-            Apply now
-          </button>
-        </section>
-        <section className="grid grid-cols-3 gap-4 p-8">
-          {["Up to 30% cashback", "No monthly fee", "Free transfers"].map(
-            (feature) => (
-              <div
-                key={feature}
-                className="rounded-xl bg-muted p-4 text-center text-xs font-medium text-foreground"
-              >
-                <div className="mx-auto mb-2 h-10 w-10 rounded-lg bg-primary/15" />
-                {feature}
-              </div>
-            ),
-          )}
-        </section>
-        <section className="border-t border-border bg-card px-8 py-10 text-center">
-          <h2 className="mb-2 text-lg font-bold text-foreground">
-            Open your card in 5 minutes
-          </h2>
-          <p className="mb-4 text-xs text-muted-foreground">
-            Free delivery next business day.
-          </p>
-          <button className="rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground">
-            Get started
-          </button>
-        </section>
-      </>
-    ),
-  },
-  "1-2": {
-    projectTitle: "Spring Cashback Campaign",
-    pageTitle: "Terms",
-    sections: (
-      <section className="px-8 py-10">
-        <h1 className="mb-6 text-2xl font-bold text-foreground">
-          Campaign Terms
-        </h1>
-        <div className="space-y-4">
-          {[
-            ["Campaign period", "Feb 1, 2026 - Mar 31, 2026"],
-            ["Eligible categories", "Restaurants, supermarkets, fuel"],
-            ["Maximum monthly reward", "$500"],
-            ["Activation", "Available automatically for all card holders"],
-          ].map(([title, description]) => (
-            <div key={title} className="rounded-xl border border-border p-4">
-              <p className="text-sm font-semibold text-foreground">{title}</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {description}
-              </p>
-            </div>
-          ))}
-        </div>
-      </section>
-    ),
-  },
-  "2-1": {
-    projectTitle: "Premium Plan Update",
-    pageTitle: "Product Page",
-    sections: (
-      <>
-        <section className="bg-foreground px-8 py-16 text-center">
-          <p className="mb-2 text-xs font-medium uppercase tracking-widest text-muted-foreground">
-            New plan
-          </p>
-          <h1 className="mb-2 text-3xl font-extrabold text-background">
-            Premium
-          </h1>
-          <p className="mb-6 text-sm text-background/60">
-            Everything advanced in one plan.
-          </p>
-          <span className="inline-block rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground">
-            $29/month
-          </span>
-        </section>
-        <section className="space-y-3 p-8">
-          {[
-            "Up to 30% cashback",
-            "Unlimited transfers",
-            "Personal manager",
-            "Airport lounge access",
-          ].map((feature) => (
-            <div
-              key={feature}
-              className="flex items-center gap-3 rounded-xl border border-border p-3"
-            >
-              <div className="h-8 w-8 flex-shrink-0 rounded-lg bg-primary/15" />
-              <p className="text-sm text-foreground">{feature}</p>
-            </div>
-          ))}
-        </section>
-      </>
-    ),
-  },
-  "3-1": {
-    projectTitle: "Refer a Friend",
-    pageTitle: "Campaign Page",
-    sections: (
-      <>
-        <section className="bg-primary px-8 py-14 text-center">
-          <h1 className="mb-2 text-3xl font-extrabold text-primary-foreground">
-            Invite a Friend
-          </h1>
-          <p className="mb-6 text-sm text-primary-foreground/80">
-            Earn $150 for each successful invite.
-          </p>
-          <button className="rounded-lg bg-card px-6 py-2.5 text-sm font-semibold text-foreground">
-            Invite now
-          </button>
-        </section>
-        <section className="p-8 text-center">
-          <div className="grid grid-cols-3 gap-4">
-            {[
-              "Share your invite link",
-              "Friend signs up",
-              "Both receive rewards",
-            ].map((step) => (
-              <div key={step} className="rounded-xl bg-muted p-4">
-                <p className="text-xs font-medium text-foreground">{step}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-      </>
-    ),
-  },
-};
-
-interface BlazePreviewPanelProps {
-  activePageId: string | null;
+  const proxyUrlMatch = output.message.match(
+    /\[blaze-proxy-server\]started=\[(.*?)\]/,
+  );
+  return proxyUrlMatch?.[1] ?? null;
 }
 
-export function BlazePreviewPanel({ activePageId }: BlazePreviewPanelProps) {
+function resolveErrorMessage(error: unknown): string {
+  if (typeof error === "string") {
+    return error;
+  }
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return "Failed to start preview app.";
+}
+
+interface BlazePreviewPanelProps {
+  activeAppId: number | null;
+}
+
+export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
   const [device, setDevice] = useState<Device>("desktop");
-  const page = activePageId ? previewPagesById[activePageId] : null;
+  const [appUrl, setAppUrl] = useState<string | null>(null);
+  const [isStarting, setIsStarting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const runningAppIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const handleOutput = (output: AppOutput) => {
+      if (cancelled || runningAppIdRef.current !== activeAppId) {
+        return;
+      }
+
+      const proxyUrl = extractProxyUrl(output);
+      if (proxyUrl) {
+        setAppUrl(proxyUrl);
+        setIsStarting(false);
+      }
+    };
+
+    const syncAppPreview = async () => {
+      const previousAppId = runningAppIdRef.current;
+      if (previousAppId !== null && previousAppId !== activeAppId) {
+        try {
+          await IpcClient.getInstance().stopApp(previousAppId);
+        } catch (stopError) {
+          console.error(`Failed to stop app ${previousAppId}:`, stopError);
+        }
+        if (cancelled) {
+          return;
+        }
+      }
+
+      if (activeAppId === null) {
+        runningAppIdRef.current = null;
+        setAppUrl(null);
+        setError(null);
+        setIsStarting(false);
+        return;
+      }
+
+      runningAppIdRef.current = activeAppId;
+      setAppUrl(null);
+      setError(null);
+      setIsStarting(true);
+
+      try {
+        await IpcClient.getInstance().runApp(activeAppId, handleOutput);
+      } catch (runError) {
+        if (cancelled) {
+          return;
+        }
+        setError(resolveErrorMessage(runError));
+        setIsStarting(false);
+      }
+    };
+
+    void syncAppPreview();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeAppId]);
+
+  useEffect(() => {
+    return () => {
+      const appId = runningAppIdRef.current;
+      if (appId !== null) {
+        void IpcClient.getInstance()
+          .stopApp(appId)
+          .catch((stopError) => {
+            console.error(`Failed to stop app ${appId}:`, stopError);
+          });
+      }
+    };
+  }, []);
 
   return (
     <div className="flex h-full w-full flex-col bg-muted/50">
@@ -201,25 +150,13 @@ export function BlazePreviewPanel({ activePageId }: BlazePreviewPanelProps) {
               </button>
             );
           })}
-          {page && (
-            <div className="ml-3 flex items-center gap-2 border-l border-border pl-3">
-              <span className="text-xs text-muted-foreground">
-                {page.projectTitle}
-              </span>
-              <span className="text-xs text-muted-foreground">/</span>
-              <span className="text-xs font-medium text-foreground">
-                {page.pageTitle}
-              </span>
+          {activeAppId !== null && (
+            <div className="ml-3 border-l border-border pl-3 text-xs text-muted-foreground">
+              App #{activeAppId}
             </div>
           )}
         </div>
         <div className="flex items-center gap-1">
-          {page && (
-            <button className="flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-medium text-primary-foreground transition-all hover:brightness-105">
-              <Rocket size={13} />
-              Deploy
-            </button>
-          )}
           <button className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
             <Eye size={14} />
             Preview
@@ -229,8 +166,14 @@ export function BlazePreviewPanel({ activePageId }: BlazePreviewPanelProps) {
             Export
           </button>
           <button
-            className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            onClick={() => {
+              if (appUrl) {
+                window.open(appUrl, "_blank", "noopener,noreferrer");
+              }
+            }}
+            className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
             aria-label="Open in new tab"
+            disabled={!appUrl}
           >
             <ExternalLink size={14} />
           </button>
@@ -238,42 +181,49 @@ export function BlazePreviewPanel({ activePageId }: BlazePreviewPanelProps) {
       </div>
 
       <div className="flex flex-1 items-start justify-center overflow-auto p-6">
-        <motion.div
-          layout
-          className="min-h-full max-w-full overflow-hidden rounded-xl border border-border bg-card shadow-sm"
+        <div
+          className="h-full min-h-[520px] max-w-full overflow-hidden rounded-xl border border-border bg-card shadow-sm"
           style={{ width: previewWidthByDevice[device] }}
         >
-          <AnimatePresence mode="wait">
-            {page ? (
-              <motion.div
-                key={activePageId}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.25 }}
-              >
-                {page.sections}
-              </motion.div>
-            ) : (
-              <motion.div
-                key="empty-state"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="flex h-96 flex-col items-center justify-center p-8 text-center"
-              >
-                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-muted">
-                  <Monitor size={20} className="text-muted-foreground" />
-                </div>
-                <h3 className="mb-1 text-sm font-medium text-foreground">
-                  Page preview
-                </h3>
-                <p className="max-w-xs text-xs text-muted-foreground">
-                  Select a page from the workspace or create one from chat.
-                </p>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </motion.div>
+          {activeAppId === null ? (
+            <div className="flex h-full min-h-[520px] flex-col items-center justify-center p-8 text-center">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-muted">
+                <Monitor size={20} className="text-muted-foreground" />
+              </div>
+              <h3 className="mb-1 text-sm font-medium text-foreground">
+                App preview
+              </h3>
+              <p className="max-w-xs text-xs text-muted-foreground">
+                Send a message in chat to create an app and run live preview.
+              </p>
+            </div>
+          ) : error ? (
+            <div className="flex h-full min-h-[520px] flex-col items-center justify-center p-8 text-center">
+              <p className="text-sm font-medium text-destructive">
+                Failed to start preview
+              </p>
+              <p className="mt-2 max-w-md text-xs text-muted-foreground">
+                {error}
+              </p>
+            </div>
+          ) : isStarting || !appUrl ? (
+            <div className="flex h-full min-h-[520px] flex-col items-center justify-center gap-3 text-center">
+              <Loader2
+                size={20}
+                className="animate-spin text-muted-foreground"
+              />
+              <p className="text-sm text-muted-foreground">
+                Starting app on preview port...
+              </p>
+            </div>
+          ) : (
+            <iframe
+              title="Generated app preview"
+              src={appUrl}
+              className="h-full min-h-[520px] w-full border-0"
+            />
+          )}
+        </div>
       </div>
     </div>
   );

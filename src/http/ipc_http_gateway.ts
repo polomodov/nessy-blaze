@@ -1,12 +1,22 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
+import net from "node:net";
 import { asc, desc, eq, ilike } from "drizzle-orm";
 import git from "isomorphic-git";
+import killPort from "kill-port";
 import { initializeDatabase, db } from "../db";
 import { apps, chats, messages, language_model_providers } from "../db/schema";
 import { getBlazeAppPath, getUserDataPath } from "../paths/paths";
 import { getEnvVar } from "../ipc/utils/read_env";
+import { withLock } from "../ipc/utils/lock_utils";
+import {
+  processCounter,
+  removeAppIfCurrentProcess,
+  runningApps,
+  stopAppByInfo,
+} from "../ipc/utils/process_manager";
 import {
   CLOUD_PROVIDERS,
   LOCAL_PROVIDERS,
@@ -15,6 +25,7 @@ import {
 import { UserSettingsSchema, type UserSettings } from "../lib/schemas";
 import { DEFAULT_TEMPLATE_ID } from "../shared/templates";
 import { DEFAULT_THEME_ID } from "../shared/themes";
+import { getAppPort } from "../../shared/ports";
 
 type InvokeHandler = (args: unknown[]) => Promise<unknown>;
 
@@ -324,6 +335,194 @@ async function listLanguageModelProviders() {
   ];
 }
 
+function getDefaultCommand(appId: number): string {
+  const port = getAppPort(appId);
+  return `(pnpm install && pnpm run dev --port ${port}) || (npm install --legacy-peer-deps && npm run dev -- --port ${port})`;
+}
+
+function getRunCommand({
+  appId,
+  installCommand,
+  startCommand,
+}: {
+  appId: number;
+  installCommand?: string | null;
+  startCommand?: string | null;
+}): string {
+  const hasCustomCommands = !!installCommand?.trim() && !!startCommand?.trim();
+  return hasCustomCommands
+    ? `${installCommand!.trim()} && ${startCommand!.trim()}`
+    : getDefaultCommand(appId);
+}
+
+function getPreviewUrl(appId: number): string {
+  return `http://127.0.0.1:${getAppPort(appId)}`;
+}
+
+function appendOutput(
+  existing: string,
+  chunk: string,
+  maxLength = 6000,
+): string {
+  const combined = existing + chunk;
+  if (combined.length <= maxLength) {
+    return combined;
+  }
+  return combined.slice(combined.length - maxLength);
+}
+
+function isPortOpen(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({
+      host: "127.0.0.1",
+      port,
+    });
+
+    let resolved = false;
+    const finalize = (value: boolean) => {
+      if (resolved) return;
+      resolved = true;
+      socket.destroy();
+      resolve(value);
+    };
+
+    socket.setTimeout(350);
+    socket.once("connect", () => finalize(true));
+    socket.once("timeout", () => finalize(false));
+    socket.once("error", () => finalize(false));
+  });
+}
+
+async function waitForAppReady({
+  appId,
+  appPort,
+  process,
+  getRecentOutput,
+}: {
+  appId: number;
+  appPort: number;
+  process: ReturnType<typeof spawn>;
+  getRecentOutput: () => string;
+}): Promise<void> {
+  const timeoutMs = 120_000;
+  const pollIntervalMs = 500;
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    if (process.exitCode !== null || process.signalCode !== null) {
+      const recentOutput = getRecentOutput().trim();
+      throw new Error(
+        `App ${appId} exited before preview became available. code=${process.exitCode}, signal=${process.signalCode}${
+          recentOutput ? `\nRecent output:\n${recentOutput}` : ""
+        }`,
+      );
+    }
+
+    if (await isPortOpen(appPort)) {
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, pollIntervalMs);
+    });
+  }
+
+  const recentOutput = getRecentOutput().trim();
+  throw new Error(
+    `Timed out waiting for app ${appId} to listen on port ${appPort}.${
+      recentOutput ? `\nRecent output:\n${recentOutput}` : ""
+    }`,
+  );
+}
+
+async function cleanUpPort(port: number): Promise<void> {
+  try {
+    await killPort(port, "tcp");
+  } catch {
+    // ignore: no process bound to this port
+  }
+}
+
+async function startPreviewAppForHttp(appId: number): Promise<string> {
+  const app = await db.query.apps.findFirst({
+    where: eq(apps.id, appId),
+  });
+  if (!app) {
+    throw new Error("App not found");
+  }
+
+  const appPath = getBlazeAppPath(app.path);
+  if (!fs.existsSync(appPath)) {
+    throw new Error(`App directory does not exist: ${appPath}`);
+  }
+
+  const command = getRunCommand({
+    appId,
+    installCommand: app.installCommand,
+    startCommand: app.startCommand,
+  });
+
+  const process = spawn(command, [], {
+    cwd: appPath,
+    shell: true,
+    stdio: "pipe",
+    detached: false,
+  });
+
+  if (!process.pid) {
+    throw new Error(`Failed to spawn process for app ${appId}`);
+  }
+
+  const currentProcessId = processCounter.increment();
+  runningApps.set(appId, {
+    process,
+    processId: currentProcessId,
+    isDocker: false,
+  });
+
+  let recentOutput = "";
+  process.stdout?.on("data", () => {
+    // keep stream attached so process output pipe does not block
+  });
+
+  process.stdout?.on("data", (chunk) => {
+    recentOutput = appendOutput(recentOutput, String(chunk));
+  });
+
+  process.stderr?.on("data", () => {
+    // keep stream attached so process output pipe does not block
+  });
+
+  process.stderr?.on("data", (chunk) => {
+    recentOutput = appendOutput(recentOutput, String(chunk));
+  });
+
+  process.on("close", () => {
+    removeAppIfCurrentProcess(appId, process);
+  });
+
+  process.on("error", () => {
+    removeAppIfCurrentProcess(appId, process);
+  });
+
+  const appPort = getAppPort(appId);
+  try {
+    await waitForAppReady({
+      appId,
+      appPort,
+      process,
+      getRecentOutput: () => recentOutput,
+    });
+    return getPreviewUrl(appId);
+  } catch (error) {
+    const appInfo = runningApps.get(appId);
+    if (appInfo) {
+      await stopAppByInfo(appId, appInfo);
+    }
+    throw error;
+  }
+}
+
 const handlers: Record<string, InvokeHandler> = {
   async "get-user-settings"() {
     return readUserSettings();
@@ -561,6 +760,85 @@ const handlers: Record<string, InvokeHandler> = {
 
   async "get-language-model-providers"() {
     return listLanguageModelProviders();
+  },
+
+  async "run-app"(args) {
+    const [params] = args as [{ appId?: number }];
+    const appId = params?.appId;
+    if (typeof appId !== "number") {
+      throw new Error("Invalid app ID");
+    }
+
+    return withLock(appId, async () => {
+      const previewUrl = getPreviewUrl(appId);
+      if (runningApps.has(appId)) {
+        if (await isPortOpen(getAppPort(appId))) {
+          return { previewUrl, originalUrl: previewUrl };
+        }
+        const staleAppInfo = runningApps.get(appId);
+        if (staleAppInfo) {
+          await stopAppByInfo(appId, staleAppInfo);
+        }
+      }
+
+      await cleanUpPort(getAppPort(appId));
+      const startedPreviewUrl = await startPreviewAppForHttp(appId);
+      return { previewUrl: startedPreviewUrl, originalUrl: startedPreviewUrl };
+    });
+  },
+
+  async "stop-app"(args) {
+    const [params] = args as [{ appId?: number }];
+    const appId = params?.appId;
+    if (typeof appId !== "number") {
+      throw new Error("Invalid app ID");
+    }
+
+    return withLock(appId, async () => {
+      const appInfo = runningApps.get(appId);
+      if (appInfo) {
+        await stopAppByInfo(appId, appInfo);
+      }
+      return;
+    });
+  },
+
+  async "restart-app"(args) {
+    const [params] = args as [{ appId?: number; removeNodeModules?: boolean }];
+    const appId = params?.appId;
+    if (typeof appId !== "number") {
+      throw new Error("Invalid app ID");
+    }
+
+    return withLock(appId, async () => {
+      const appInfo = runningApps.get(appId);
+      if (appInfo) {
+        await stopAppByInfo(appId, appInfo);
+      }
+
+      if (params?.removeNodeModules) {
+        const app = await db.query.apps.findFirst({
+          where: eq(apps.id, appId),
+          columns: { path: true },
+        });
+        if (!app) {
+          throw new Error("App not found");
+        }
+        const nodeModulesPath = path.join(
+          getBlazeAppPath(app.path),
+          "node_modules",
+        );
+        await fs.promises.rm(nodeModulesPath, { recursive: true, force: true });
+      }
+
+      await cleanUpPort(getAppPort(appId));
+      const startedPreviewUrl = await startPreviewAppForHttp(appId);
+      return {
+        success: true,
+        previewUrl: startedPreviewUrl,
+        originalUrl: startedPreviewUrl,
+      };
+    });
   },
 };
 

@@ -145,4 +145,47 @@ describe("IpcClient HTTP stream", () => {
       );
     });
   });
+
+  it("emits preview url output when run-app returns HTTP payload", async () => {
+    window.__BLAZE_REMOTE_CONFIG__ = {
+      backendClient: {
+        mode: "http",
+        baseUrl: "https://api.example.com",
+      },
+    };
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            data: {
+              previewUrl: "http://127.0.0.1:32142",
+              originalUrl: "http://127.0.0.1:32142",
+            },
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        ),
+      ),
+    );
+
+    const client = IpcClient.getInstance();
+    const onOutput = vi.fn();
+
+    await client.runApp(42, onOutput);
+
+    expect(onOutput).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "stdout",
+        appId: 42,
+        message:
+          "[blaze-proxy-server]started=[http://127.0.0.1:32142] original=[http://127.0.0.1:32142]",
+      }),
+    );
+  });
 });

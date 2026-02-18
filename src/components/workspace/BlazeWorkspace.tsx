@@ -8,6 +8,7 @@ import { BlazeSidebar } from "./BlazeSidebar";
 export function BlazeWorkspace() {
   const { isDarkMode, setTheme } = useTheme();
   const [activePageId, setActivePageId] = useState<string | null>("1-1");
+  const [activeAppId, setActiveAppId] = useState<number | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   return (
@@ -20,6 +21,7 @@ export function BlazeWorkspace() {
         onToggleCollapse={() => setIsSidebarCollapsed((previous) => !previous)}
         onNewProject={() => {
           setActivePageId(null);
+          setActiveAppId(null);
         }}
         onSelectPage={(pageId) => {
           setActivePageId(pageId);
@@ -28,11 +30,11 @@ export function BlazeWorkspace() {
 
       <PanelGroup direction="horizontal" className="flex-1">
         <Panel defaultSize={45} minSize={30} maxSize={70}>
-          <BlazeChatArea />
+          <BlazeChatArea onAppCreated={setActiveAppId} />
         </Panel>
         <PanelResizeHandle className="w-1 cursor-col-resize bg-gray-200 transition-colors hover:bg-gray-300 dark:bg-gray-800 dark:hover:bg-gray-700" />
         <Panel defaultSize={55} minSize={30}>
-          <BlazePreviewPanel activePageId={activePageId} />
+          <BlazePreviewPanel activeAppId={activeAppId} />
         </Panel>
       </PanelGroup>
     </div>

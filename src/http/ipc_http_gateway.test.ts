@@ -65,6 +65,17 @@ describe("invokeIpcChannelOverHttp", () => {
     },
   );
 
+  (hasDatabaseUrl ? it : it.skip)(
+    "returns app not found for run-app with unknown app id",
+    async () => {
+      await expect(
+        invokeIpcChannelOverHttp("run-app", [
+          { appId: Number.MAX_SAFE_INTEGER },
+        ]),
+      ).rejects.toThrow("App not found");
+    },
+  );
+
   it("throws for unsupported channels", async () => {
     await expect(
       invokeIpcChannelOverHttp("unknown-channel", []),

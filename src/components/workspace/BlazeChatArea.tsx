@@ -54,7 +54,9 @@ function generateAppName(prompt: string): string {
 
 function mapBackendMessages(messages: BackendMessage[]): Message[] {
   return messages
-    .filter((message) => message.role === "user" || message.role === "assistant")
+    .filter(
+      (message) => message.role === "user" || message.role === "assistant",
+    )
     .filter(
       (message) => message.role === "user" || message.content.trim().length > 0,
     )
@@ -75,9 +77,14 @@ function resolveErrorMessage(error: unknown): string {
   return "Failed to send message. Please try again.";
 }
 
-export function BlazeChatArea() {
+interface BlazeChatAreaProps {
+  onAppCreated?: (appId: number) => void;
+}
+
+export function BlazeChatArea({ onAppCreated }: BlazeChatAreaProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  const [appId, setAppId] = useState<number | null>(null);
   const [chatId, setChatId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
@@ -105,6 +112,7 @@ export function BlazeChatArea() {
     setInput("");
     setIsTyping(true);
     let activeChatId = chatId;
+    let activeAppId = appId;
 
     try {
       if (activeChatId === null) {
@@ -112,7 +120,12 @@ export function BlazeChatArea() {
           name: generateAppName(prompt),
         });
         activeChatId = createAppResult.chatId;
+        activeAppId = createAppResult.app.id;
         setChatId(createAppResult.chatId);
+        setAppId(createAppResult.app.id);
+        onAppCreated?.(createAppResult.app.id);
+      } else if (activeAppId !== null) {
+        onAppCreated?.(activeAppId);
       }
 
       IpcClient.getInstance().streamMessage(prompt, {
