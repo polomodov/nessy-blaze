@@ -10,7 +10,9 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
-      external: ["better-sqlite3"],
+      // Keep pg as a runtime dependency for Electron main process.
+      // Bundling pg can trigger TDZ/default-export initialization issues in packaged builds.
+      external: ["pg"],
     },
   },
   plugins: [

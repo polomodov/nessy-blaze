@@ -52,7 +52,7 @@ When creating hooks/components that call backend handlers:
 
 ## Database
 
-This app uses SQLite and drizzle ORM.
+This app uses PostgreSQL and drizzle ORM.
 
 Generate SQL migrations by running this:
 

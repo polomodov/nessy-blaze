@@ -20,7 +20,7 @@ import { handleSupabaseOAuthReturn } from "./supabase_admin/supabase_return_hand
 import { handleBlazeProReturn } from "./main/pro";
 import { IS_TEST_BUILD } from "./ipc/utils/test_utils";
 import { BackupManager } from "./backup_manager";
-import { getDatabasePath, initializeDatabase } from "./db";
+import { closeDatabase, initializeDatabase } from "./db";
 import { UserSettings } from "./lib/schemas";
 import { handleNeonOAuthReturn } from "./neon_admin/neon_return_handler";
 import {
@@ -88,13 +88,12 @@ export async function onReady() {
   try {
     const backupManager = new BackupManager({
       settingsFile: getSettingsFilePath(),
-      dbFile: getDatabasePath(),
     });
     await backupManager.initialize();
   } catch (e) {
     logger.error("Error initializing backup manager", e);
   }
-  initializeDatabase();
+  await initializeDatabase();
 
   // Cleanup old ai_messages_json entries to prevent database bloat
   cleanupOldAiMessagesJson();
@@ -321,7 +320,13 @@ if (!gotTheLock) {
     // the commandLine is array of strings in which last element is deep link url
     handleDeepLinkReturn(commandLine.pop()!);
   });
-  app.whenReady().then(onReady);
+  app
+    .whenReady()
+    .then(onReady)
+    .catch((error) => {
+      logger.error("Failed during app startup:", error);
+      app.quit();
+    });
 }
 
 // Handle the protocol. In this case, we choose to show an Error Box.
@@ -481,6 +486,9 @@ app.on("will-quit", () => {
   stopPerformanceMonitoring();
 
   writeSettings({ isRunning: false });
+  void closeDatabase().catch((error) => {
+    logger.error("Failed to close PostgreSQL connection pool:", error);
+  });
 });
 
 app.on("activate", () => {

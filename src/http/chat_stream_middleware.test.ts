@@ -23,6 +23,16 @@ vi.mock("../ipc/handlers/chat_stream_handlers", () => ({
   handleChatCancelRequest: mockHandleChatCancelRequest,
 }));
 
+function createMiddleware() {
+  return createChatStreamMiddleware({
+    loadChatStreamHandlers: async () =>
+      ({
+        handleChatStreamRequest: mockHandleChatStreamRequest,
+        handleChatCancelRequest: mockHandleChatCancelRequest,
+      }) as any,
+  });
+}
+
 function createMockRequest({
   method,
   url,
@@ -94,12 +104,12 @@ describe("createChatStreamMiddleware", () => {
   });
 
   it("initializes database once when middleware is created", () => {
-    createChatStreamMiddleware();
+    createMiddleware();
     expect(mockInitializeDatabase).toHaveBeenCalledOnce();
   });
 
   it("passes through unknown routes", async () => {
-    const middleware = createChatStreamMiddleware();
+    const middleware = createMiddleware();
     const req = createMockRequest({
       method: "GET",
       url: "/health",
@@ -113,7 +123,7 @@ describe("createChatStreamMiddleware", () => {
   });
 
   it("returns 400 for invalid prompt payload", async () => {
-    const middleware = createChatStreamMiddleware();
+    const middleware = createMiddleware();
     const req = createMockRequest({
       method: "POST",
       url: "/api/v1/chats/22/stream",
@@ -145,7 +155,7 @@ describe("createChatStreamMiddleware", () => {
       },
     );
 
-    const middleware = createChatStreamMiddleware();
+    const middleware = createMiddleware();
     const req = createMockRequest({
       method: "POST",
       url: "/api/v1/chats/22/stream",
@@ -172,7 +182,7 @@ describe("createChatStreamMiddleware", () => {
 
   it("supports stream cancellation endpoint", async () => {
     mockHandleChatCancelRequest.mockResolvedValueOnce(undefined);
-    const middleware = createChatStreamMiddleware();
+    const middleware = createMiddleware();
     const req = createMockRequest({
       method: "POST",
       url: "/api/v1/chats/23/stream/cancel",

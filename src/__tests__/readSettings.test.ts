@@ -9,12 +9,17 @@ import { UserSettings } from "@/lib/schemas";
 // Mock dependencies
 vi.mock("node:fs");
 vi.mock("node:path");
-vi.mock("electron", () => ({
-  safeStorage: {
+vi.mock("electron", () => {
+  const safeStorage = {
     isEncryptionAvailable: vi.fn(),
     decryptString: vi.fn(),
-  },
-}));
+  };
+
+  return {
+    default: { safeStorage },
+    safeStorage,
+  };
+});
 vi.mock("@/paths/paths", () => ({
   getUserDataPath: vi.fn(),
 }));

@@ -132,7 +132,7 @@ Cross-cutting:
 
 ### Фаза B — Control Plane
 - Вынести CRUD (apps/chats/messages/settings) в backend API.
-- Перевести хранение из локального SQLite в Postgres.
+- Использовать Postgres как единый backend storage (локальный SQLite больше не используется).
 
 ### Фаза C — AI и streaming
 - Вынести `chat:stream` логику в AI Orchestrator.

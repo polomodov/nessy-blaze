@@ -12,7 +12,7 @@
 
 ## 1) Цель миграции
 
-Перевести продукт с локальной модели исполнения (Electron + IPC + локальная SQLite/FS) на сервисную модель (`client ↔ backend services`) с multi-tenant архитектурой, централизованной безопасностью и масштабируемым execution layer.
+Перевести продукт с локальной модели исполнения (Electron + IPC + локальная FS) на сервисную модель (`client ↔ backend services`) с multi-tenant архитектурой, централизованной безопасностью и масштабируемым execution layer. Внутреннее хранилище Blaze уже использует PostgreSQL.
 
 ## 2) Результат миграции (Definition of Done)
 
@@ -72,7 +72,7 @@
 - Реализовать backend сервис для:
   - organizations/workspaces/users/roles,
   - projects/apps/chats/messages/versions/settings.
-- Перенести хранение из локального SQLite в Postgres.
+- Использовать Postgres как единый backend storage для данных платформы.
 - Ввести tenant isolation в схеме БД и индексах.
 - Реализовать миграцию данных для pilot-пользователей.
 

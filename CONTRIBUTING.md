@@ -23,17 +23,16 @@ Electron is supported as a compatibility runtime via explicit desktop scripts.
 npm install
 ```
 
-**Create the userData directory (required for database)**
+**Configure PostgreSQL connection**
+
+Set one of these environment variables before running Blaze:
 
 ```sh
-# Unix/macOS/Linux:
-mkdir -p userData
+# Preferred
+DATABASE_URL=postgresql://<user>:<password>@<host>:<port>/<db>
 
-# Windows PowerShell (run only if folder doesn't exist):
-mkdir userData
-
-# Windows Command Prompt (run only if folder doesn't exist):
-md userData
+# Fallback (used only when DATABASE_URL is not set)
+POSTGRES_URL=postgresql://<user>:<password>@<host>:<port>/<db>
 ```
 
 **Generate DB migrations:**
@@ -44,7 +43,7 @@ If you change the DB schema (i.e. `src/db/schema.ts`), you will need to generate
 npm run db:generate
 ```
 
-> If you want to discard a DB migration, you will likely need to reset your database which you can do by deleting the file in `userData/sqlite.db`.
+> If you want to discard a DB migration, reset your Postgres schema (for example, drop and recreate `public` in your local development database).
 
 **Run locally:**
 

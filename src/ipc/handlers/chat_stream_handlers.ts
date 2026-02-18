@@ -242,7 +242,7 @@ export async function handleChatStreamRequest(
   event: IpcMainInvokeEvent,
   req: ChatStreamParams,
 ) {
-  initializeDatabase();
+  await initializeDatabase();
   let attachmentPaths: string[] = [];
   try {
     const fileUploadsState = FileUploadsState.getInstance();
@@ -1539,7 +1539,7 @@ export async function handleChatCancelRequest(
   event: IpcMainInvokeEvent,
   chatId: number,
 ) {
-  initializeDatabase();
+  await initializeDatabase();
   const abortController = activeStreams.get(chatId);
 
   if (abortController) {

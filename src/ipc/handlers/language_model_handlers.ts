@@ -54,11 +54,11 @@ export function registerLanguageModelHandlers() {
       }
 
       // Check if a provider with this ID already exists
-      const existingProvider = db
+      const [existingProvider] = await db
         .select()
         .from(languageModelProvidersSchema)
         .where(eq(languageModelProvidersSchema.id, id))
-        .get();
+        .limit(1);
 
       if (existingProvider) {
         throw new Error(`A provider with ID "${id}" already exists`);
@@ -150,20 +150,20 @@ export function registerLanguageModelHandlers() {
       }
 
       // Check if the provider being edited exists
-      const existingProvider = db
+      const [existingProvider] = await db
         .select()
         .from(languageModelProvidersSchema)
         .where(eq(languageModelProvidersSchema.id, CUSTOM_PROVIDER_PREFIX + id))
-        .get();
+        .limit(1);
 
       if (!existingProvider) {
         throw new Error(`Provider with ID "${id}" not found`);
       }
 
       // Use transaction to ensure atomicity when updating provider and potentially its models
-      const result = db.transaction((tx) => {
+      const result = await db.transaction(async (tx) => {
         // Update the provider
-        const updateResult = tx
+        const updatedRows = await tx
           .update(languageModelProvidersSchema)
           .set({
             id: CUSTOM_PROVIDER_PREFIX + id,
@@ -175,9 +175,9 @@ export function registerLanguageModelHandlers() {
           .where(
             eq(languageModelProvidersSchema.id, CUSTOM_PROVIDER_PREFIX + id),
           )
-          .run();
+          .returning({ id: languageModelProvidersSchema.id });
 
-        if (updateResult.changes === 0) {
+        if (updatedRows.length === 0) {
           throw new Error(`Failed to update provider with ID "${id}"`);
         }
 
@@ -212,11 +212,11 @@ export function registerLanguageModelHandlers() {
         `Handling delete-custom-language-model for apiName: ${apiName}`,
       );
 
-      const existingModel = await db
+      const [existingModel] = await db
         .select()
         .from(languageModelsSchema)
         .where(eq(languageModelsSchema.apiName, apiName))
-        .get();
+        .limit(1);
 
       if (!existingModel) {
         throw new Error(
@@ -255,7 +255,7 @@ export function registerLanguageModelHandlers() {
       if (provider.type === "local") {
         throw new Error("Local models cannot be deleted");
       }
-      const result = db
+      const deletedRows = await db
         .delete(language_models)
         .where(
           and(
@@ -266,15 +266,15 @@ export function registerLanguageModelHandlers() {
             eq(language_models.apiName, modelApiName),
           ),
         )
-        .run();
+        .returning({ id: language_models.id });
 
-      if (result.changes === 0) {
+      if (deletedRows.length === 0) {
         logger.warn(
           `No custom model found matching providerId=${providerId} and apiName=${modelApiName} for deletion.`,
         );
       } else {
         logger.info(
-          `Successfully deleted ${result.changes} custom model(s) with apiName=${modelApiName} for provider=${providerId}`,
+          `Successfully deleted ${deletedRows.length} custom model(s) with apiName=${modelApiName} for provider=${providerId}`,
         );
       }
     },
@@ -298,11 +298,11 @@ export function registerLanguageModelHandlers() {
       );
 
       // Check if the provider exists before attempting deletion
-      const existingProvider = await db
+      const [existingProvider] = await db
         .select({ id: languageModelProvidersSchema.id })
         .from(languageModelProvidersSchema)
         .where(eq(languageModelProvidersSchema.id, providerId))
-        .get();
+        .limit(1);
 
       if (!existingProvider) {
         // If the provider doesn't exist, maybe it was already deleted. Log and return.
@@ -315,23 +315,23 @@ export function registerLanguageModelHandlers() {
       }
 
       // Use a transaction to ensure atomicity
-      db.transaction((tx) => {
+      await db.transaction(async (tx) => {
         // 1. Delete associated models
-        const deleteModelsResult = tx
+        const deletedModels = await tx
           .delete(languageModelsSchema)
           .where(eq(languageModelsSchema.customProviderId, providerId))
-          .run();
+          .returning({ id: languageModelsSchema.id });
         logger.info(
-          `Deleted ${deleteModelsResult.changes} model(s) associated with provider ${providerId}`,
+          `Deleted ${deletedModels.length} model(s) associated with provider ${providerId}`,
         );
 
         // 2. Delete the provider
-        const deleteProviderResult = tx
+        const deletedProviders = await tx
           .delete(languageModelProvidersSchema)
           .where(eq(languageModelProvidersSchema.id, providerId))
-          .run();
+          .returning({ id: languageModelProvidersSchema.id });
 
-        if (deleteProviderResult.changes === 0) {
+        if (deletedProviders.length === 0) {
           // This case should ideally not happen if existingProvider check passed,
           // but adding safety check within transaction.
           logger.error(

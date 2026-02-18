@@ -1,5 +1,5 @@
 import { ipcMain, app, dialog } from "electron";
-import { db, getDatabasePath } from "../../db";
+import { db, resetDatabaseState } from "../../db";
 import { apps, chats, messages } from "../../db/schema";
 import { desc, eq, like } from "drizzle-orm";
 import type {
@@ -1641,18 +1641,9 @@ export function registerAppHandlers() {
       }
     }
     logger.log("all running apps stopped.");
-    logger.log("deleting database...");
-    // 1. Drop the database by deleting the SQLite file
-    const dbPath = getDatabasePath();
-    if (fs.existsSync(dbPath)) {
-      // Close database connections first
-      if (db.$client) {
-        db.$client.close();
-      }
-      await fsPromises.unlink(dbPath);
-      logger.log(`Database file deleted: ${dbPath}`);
-    }
-    logger.log("database deleted.");
+    logger.log("resetting database tables...");
+    await resetDatabaseState();
+    logger.log("database reset complete.");
     logger.log("deleting settings...");
     // 2. Remove settings
     const userDataPath = getUserDataPath();

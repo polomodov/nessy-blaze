@@ -15,7 +15,7 @@ const handle = createLoggedHandler(logger);
 
 export function registerPromptHandlers() {
   handle("prompts:list", async (): Promise<PromptDto[]> => {
-    const rows = db.select().from(prompts).all();
+    const rows = await db.select().from(prompts);
     return rows.map((r) => ({
       id: r.id!,
       title: r.title,
@@ -36,17 +36,14 @@ export function registerPromptHandlers() {
       if (!title || !content) {
         throw new Error("Title and content are required");
       }
-      const result = db
+      const [row] = await db
         .insert(prompts)
         .values({
           title,
           description: description ?? null,
           content,
         })
-        .run();
-
-      const id = Number(result.lastInsertRowid);
-      const row = db.select().from(prompts).where(eq(prompts.id, id)).get();
+        .returning();
       if (!row) throw new Error("Failed to fetch created prompt");
       return {
         id: row.id!,
@@ -69,15 +66,15 @@ export function registerPromptHandlers() {
       if (!id) throw new Error("Prompt id is required");
       if (!title || !content) throw new Error("Title and content are required");
       const now = new Date();
-      db.update(prompts)
+      await db
+        .update(prompts)
         .set({
           title,
           description: description ?? null,
           content,
           updatedAt: now,
         })
-        .where(eq(prompts.id, id))
-        .run();
+        .where(eq(prompts.id, id));
     },
   );
 
@@ -85,7 +82,7 @@ export function registerPromptHandlers() {
     "prompts:delete",
     async (_e: IpcMainInvokeEvent, id: number): Promise<void> => {
       if (!id) throw new Error("Prompt id is required");
-      db.delete(prompts).where(eq(prompts.id, id)).run();
+      await db.delete(prompts).where(eq(prompts.id, id));
     },
   );
 }

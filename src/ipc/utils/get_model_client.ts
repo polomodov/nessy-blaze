@@ -36,24 +36,63 @@ import { createSelfSignedFetch } from "./self_signed_fetch";
 
 const blazeEngineUrl = process.env.BLAZE_ENGINE_URL;
 
-const AUTO_MODELS = [
+type AutoModelCandidate = Pick<LargeLanguageModel, "provider" | "name">;
+
+export const AUTO_MODELS: AutoModelCandidate[] = [
   {
-    provider: "google",
-    name: "gemini-2.5-flash",
+    provider: "openrouter",
+    name: "deepseek/deepseek-r1-0528:free",
   },
   {
     provider: "openrouter",
-    name: "qwen/qwen3-coder:free",
+    name: "mistralai/mistral-small-3.2-24b-instruct:free",
   },
   {
-    provider: "anthropic",
-    name: "claude-sonnet-4-20250514",
-  },
-  {
-    provider: "openai",
-    name: "gpt-4.1",
+    provider: "openrouter",
+    name: "openai/gpt-4o-mini",
   },
 ];
+
+type ResolvedAutoModel = {
+  model: AutoModelCandidate;
+  provider: LanguageModelProvider;
+};
+
+export function resolveAutoModelCandidates({
+  settings,
+  providers,
+  envLookup = getEnvVar,
+  candidates = AUTO_MODELS,
+}: {
+  settings: UserSettings;
+  providers: LanguageModelProvider[];
+  envLookup?: (key: string) => string | undefined;
+  candidates?: AutoModelCandidate[];
+}): ResolvedAutoModel[] {
+  const resolved: ResolvedAutoModel[] = [];
+
+  for (const candidate of candidates) {
+    const provider = providers.find((p) => p.id === candidate.provider);
+    if (!provider) {
+      continue;
+    }
+
+    const apiKeyFromSettings =
+      settings.providerSettings?.[candidate.provider]?.apiKey?.value;
+    const apiKeyFromEnv = provider.envVarName
+      ? envLookup(provider.envVarName)
+      : undefined;
+
+    if (apiKeyFromSettings || apiKeyFromEnv) {
+      resolved.push({
+        model: candidate,
+        provider,
+      });
+    }
+  }
+
+  return resolved;
+}
 
 export interface ModelClient {
   model: LanguageModel;
@@ -133,7 +172,7 @@ export async function getModelClient(
       // Fall through to regular provider logic if gateway prefix is missing
     }
   }
-  // Handle 'auto' provider by trying each model in AUTO_MODELS until one works
+  // Handle 'auto' provider using a fixed fallback chain.
   if (model.provider === "auto") {
     if (model.name === "free") {
       const openRouterProvider = allProviders.find(
@@ -159,34 +198,37 @@ export async function getModelClient(
         isEngineEnabled: false,
       };
     }
-    for (const autoModel of AUTO_MODELS) {
-      const providerInfo = allProviders.find(
-        (p) => p.id === autoModel.provider,
+    const autoCandidates = resolveAutoModelCandidates({
+      settings,
+      providers: allProviders,
+    });
+
+    if (autoCandidates.length === 0) {
+      // If no models have API keys, throw an error.
+      throw new Error(
+        "No API keys available for any model supported by the 'auto' provider.",
       );
-      const envVarName = providerInfo?.envVarName;
-
-      const apiKey =
-        settings.providerSettings?.[autoModel.provider]?.apiKey?.value ||
-        (envVarName ? getEnvVar(envVarName) : undefined);
-
-      if (apiKey) {
-        logger.log(
-          `Using provider: ${autoModel.provider} model: ${autoModel.name}`,
-        );
-        // Recursively call with the specific model found
-        return await getModelClient(
-          {
-            provider: autoModel.provider,
-            name: autoModel.name,
-          },
-          settings,
-        );
-      }
     }
-    // If no models have API keys, throw an error
-    throw new Error(
-      "No API keys available for any model supported by the 'auto' provider.",
+
+    const fallbackModels = autoCandidates.map(
+      ({ model: autoModel, provider }) => {
+        logger.log(
+          `Using auto fallback candidate: ${autoModel.provider}/${autoModel.name}`,
+        );
+        return getRegularModelClient(autoModel, settings, provider).modelClient
+          .model;
+      },
     );
+
+    return {
+      modelClient: {
+        model: createFallback({
+          models: fallbackModels,
+        }),
+        builtinProviderId: autoCandidates[0]?.provider.id,
+      },
+      isEngineEnabled: false,
+    };
   }
   return getRegularModelClient(model, settings, providerConfig);
 }

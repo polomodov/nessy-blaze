@@ -3,7 +3,6 @@ import * as fs from "fs/promises";
 import { app } from "electron";
 import * as crypto from "crypto";
 import log from "electron-log";
-import Database from "better-sqlite3";
 
 const logger = log.scope("backup_manager");
 
@@ -11,7 +10,6 @@ const MAX_BACKUPS = 3;
 
 interface BackupManagerOptions {
   settingsFile: string;
-  dbFile: string;
 }
 
 interface BackupMetadata {
@@ -35,14 +33,12 @@ interface BackupInfo extends BackupMetadata {
 export class BackupManager {
   private readonly maxBackups: number;
   private readonly settingsFilePath: string;
-  private readonly dbFilePath: string;
   private userDataPath!: string;
   private backupBasePath!: string;
 
   constructor(options: BackupManagerOptions) {
     this.maxBackups = MAX_BACKUPS;
     this.settingsFilePath = options.settingsFile;
-    this.dbFilePath = options.dbFile;
   }
 
   /**
@@ -120,19 +116,9 @@ export class BackupManager {
         logger.debug("Settings file not found, skipping settings backup");
       }
 
-      // Backup SQLite database
-      const dbBackupPath = path.join(
-        backupPath,
-        path.basename(this.dbFilePath),
+      logger.debug(
+        "Database backup is disabled for PostgreSQL mode; skipping DB file backup",
       );
-      const dbExists = await this.fileExists(this.dbFilePath);
-
-      if (dbExists) {
-        await this.backupSQLiteDatabase(this.dbFilePath, dbBackupPath);
-        logger.info("Database backed up successfully");
-      } else {
-        logger.debug("Database file not found, skipping database backup");
-      }
 
       // Create backup metadata
       const metadata: BackupMetadata = {
@@ -141,13 +127,13 @@ export class BackupManager {
         reason,
         files: {
           settings: settingsExists,
-          database: dbExists,
+          database: false,
         },
         checksums: {
           settings: settingsExists
             ? await this.getFileChecksum(settingsBackupPath)
             : null,
-          database: dbExists ? await this.getFileChecksum(dbBackupPath) : null,
+          database: null,
         },
       };
 
@@ -278,32 +264,6 @@ export class BackupManager {
     logger.debug(`Backup ${backupName} size: ${size} bytes`);
 
     return size;
-  }
-
-  /**
-   * Backup SQLite database safely
-   */
-  private async backupSQLiteDatabase(
-    sourcePath: string,
-    destPath: string,
-  ): Promise<void> {
-    logger.debug(`Backing up SQLite database: ${sourcePath} → ${destPath}`);
-    const sourceDb = new Database(sourcePath, {
-      readonly: true,
-      timeout: 10000,
-    });
-
-    try {
-      // This is safe even if other connections are active
-      await sourceDb.backup(destPath);
-      logger.info("Database backup completed successfully");
-    } catch (error) {
-      logger.error("Database backup failed:", error);
-      throw error;
-    } finally {
-      // Always close the temporary connection
-      sourceDb.close();
-    }
   }
 
   /**

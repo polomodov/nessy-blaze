@@ -159,7 +159,12 @@ export function createChatStreamMiddleware(
   options?: ChatStreamMiddlewareOptions,
 ) {
   // Shared chat streaming logic depends on the drizzle database connection.
-  initializeDatabase();
+  void Promise.resolve(initializeDatabase()).catch((error) => {
+    console.error(
+      "[chat_stream_middleware] Failed to initialize database",
+      error,
+    );
+  });
   const loadChatStreamHandlers =
     options?.loadChatStreamHandlers ?? defaultLoadChatStreamHandlers;
 
@@ -174,6 +179,15 @@ export function createChatStreamMiddleware(
 
     if (!isStreamRoute && !isCancelRoute) {
       next();
+      return;
+    }
+
+    try {
+      await initializeDatabase();
+    } catch (error) {
+      writeJson(res, 500, {
+        error: error instanceof Error ? error.message : String(error),
+      });
       return;
     }
 

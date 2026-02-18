@@ -1,19 +1,32 @@
-// db.ts
-import {
-  type BetterSQLite3Database,
-  drizzle,
-} from "drizzle-orm/better-sqlite3";
-import Database from "better-sqlite3";
+import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
+import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { sql } from "drizzle-orm";
+import { Pool } from "pg";
 import * as schema from "./schema";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { getBlazeAppPath, getUserDataPath } from "../paths/paths";
 import log from "electron-log";
+import { getEnvVar } from "../ipc/utils/read_env";
 
 const logger = log.scope("db");
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
+
+type BlazeDatabase = NodePgDatabase<typeof schema> & {
+  $client: Pool;
+};
+
+const RESET_TABLES = [
+  "messages",
+  "chats",
+  "versions",
+  "apps",
+  "prompts",
+  "language_models",
+  "language_model_providers",
+  "mcp_tool_consents",
+  "mcp_servers",
+] as const;
 
 function resolveMigrationsFolder(): string {
   const candidates = [
@@ -30,82 +43,104 @@ function resolveMigrationsFolder(): string {
   return candidates[0];
 }
 
-// Database connection factory
-let _db: ReturnType<typeof drizzle> | null = null;
+function getDatabaseUrl(): string {
+  const url =
+    process.env.DATABASE_URL ||
+    process.env.POSTGRES_URL ||
+    getEnvVar("DATABASE_URL") ||
+    getEnvVar("POSTGRES_URL");
 
-/**
- * Get the database path based on the current environment
- */
-export function getDatabasePath(): string {
-  return path.join(getUserDataPath(), "sqlite.db");
+  if (!url) {
+    throw new Error(
+      "DATABASE_URL is not set (fallback: POSTGRES_URL). Configure Postgres connection before launching Blaze.",
+    );
+  }
+
+  return url;
 }
 
-/**
- * Initialize the database connection
- */
-export function initializeDatabase(): BetterSQLite3Database<typeof schema> & {
-  $client: Database.Database;
-} {
-  if (_db) return _db as any;
+let _db: BlazeDatabase | null = null;
+let _pool: Pool | null = null;
+let _initPromise: Promise<BlazeDatabase> | null = null;
 
-  const dbPath = getDatabasePath();
-  logger.log("Initializing database at:", dbPath);
+export async function initializeDatabase(): Promise<BlazeDatabase> {
+  if (_db) {
+    return _db;
+  }
 
-  // Check if the database file exists and remove it if it has issues
-  try {
-    if (fs.existsSync(dbPath)) {
-      const stats = fs.statSync(dbPath);
-      if (stats.size < 100) {
-        logger.log("Database file exists but may be corrupted. Removing it...");
-        fs.unlinkSync(dbPath);
+  if (_initPromise) {
+    return _initPromise;
+  }
+
+  _initPromise = (async () => {
+    const databaseUrl = getDatabaseUrl();
+    logger.log("Initializing PostgreSQL database connection...");
+
+    const pool = new Pool({ connectionString: databaseUrl });
+    const database = drizzle(pool, { schema }) as BlazeDatabase;
+
+    try {
+      const migrationsFolder = resolveMigrationsFolder();
+      if (!fs.existsSync(migrationsFolder)) {
+        logger.error("Migrations folder not found:", migrationsFolder);
+      } else {
+        logger.log("Running migrations from:", migrationsFolder);
+        await migrate(database, { migrationsFolder });
       }
+
+      _pool = pool;
+      _db = database;
+      logger.log("PostgreSQL database initialized");
+      return database;
+    } catch (error) {
+      logger.error("Failed to initialize PostgreSQL database:", error);
+      await pool.end().catch((poolError) => {
+        logger.error(
+          "Failed to close PostgreSQL pool after init error:",
+          poolError,
+        );
+      });
+      throw error;
     }
-  } catch (error) {
-    logger.error("Error checking database file:", error);
-  }
-
-  fs.mkdirSync(getUserDataPath(), { recursive: true });
-  fs.mkdirSync(getBlazeAppPath("."), { recursive: true });
-
-  const sqlite = new Database(dbPath, { timeout: 10000 });
-  sqlite.pragma("foreign_keys = ON");
-
-  _db = drizzle(sqlite, { schema });
+  })();
 
   try {
-    const migrationsFolder = resolveMigrationsFolder();
-    if (!fs.existsSync(migrationsFolder)) {
-      logger.error("Migrations folder not found:", migrationsFolder);
-    } else {
-      logger.log("Running migrations from:", migrationsFolder);
-      migrate(_db, { migrationsFolder });
-    }
-  } catch (error) {
-    logger.error("Migration error:", error);
+    return await _initPromise;
+  } finally {
+    _initPromise = null;
   }
-
-  return _db as any;
 }
 
-/**
- * Get the database instance (throws if not initialized)
- */
-export function getDb(): BetterSQLite3Database<typeof schema> & {
-  $client: Database.Database;
-} {
+export function getDb(): BlazeDatabase {
   if (!_db) {
     throw new Error(
       "Database not initialized. Call initializeDatabase() first.",
     );
   }
-  return _db as any;
+  return _db;
 }
 
-export const db = new Proxy({} as any, {
-  get(target, prop) {
+export async function closeDatabase(): Promise<void> {
+  const pool = _pool;
+  _db = null;
+  _pool = null;
+
+  if (pool) {
+    await pool.end();
+  }
+}
+
+export async function resetDatabaseState(): Promise<void> {
+  const database = await initializeDatabase();
+  const tables = RESET_TABLES.map((table) => `"${table}"`).join(", ");
+  await database.execute(
+    sql.raw(`TRUNCATE TABLE ${tables} RESTART IDENTITY CASCADE`),
+  );
+}
+
+export const db = new Proxy({} as BlazeDatabase, {
+  get(_target, prop) {
     const database = getDb();
-    return database[prop as keyof typeof database];
+    return database[prop as keyof BlazeDatabase];
   },
-}) as BetterSQLite3Database<typeof schema> & {
-  $client: Database.Database;
-};
+}) as BlazeDatabase;

@@ -26,6 +26,7 @@ interface StreamResult {
 // Error classification
 const RETRYABLE_STATUS_CODES = new Set([
   401, // Unauthorized - wrong API key
+  404, // Model/endpoint unavailable for this provider, try next fallback model
   403, // Forbidden - permission error
   408, // Request Timeout
   409, // Conflict

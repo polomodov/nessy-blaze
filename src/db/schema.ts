@@ -1,6 +1,14 @@
-import { sql } from "drizzle-orm";
-import { integer, sqliteTable, text, unique } from "drizzle-orm/sqlite-core";
 import { relations } from "drizzle-orm";
+import {
+  boolean,
+  integer,
+  jsonb,
+  pgTable,
+  serial,
+  text,
+  timestamp,
+  unique,
+} from "drizzle-orm/pg-core";
 import type { ModelMessage } from "ai";
 
 export const AI_MESSAGES_SDK_VERSION = "ai@v6" as const;
@@ -10,29 +18,41 @@ export type AiMessagesJsonV6 = {
   sdkVersion: typeof AI_MESSAGES_SDK_VERSION;
 };
 
-export const prompts = sqliteTable("prompts", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const prompts = pgTable("prompts", {
+  id: serial("id").primaryKey(),
   title: text("title").notNull(),
   description: text("description"),
   content: text("content").notNull(),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  createdAt: timestamp("created_at", {
+    mode: "date",
+    withTimezone: true,
+  })
     .notNull()
-    .default(sql`(unixepoch())`),
-  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", {
+    mode: "date",
+    withTimezone: true,
+  })
     .notNull()
-    .default(sql`(unixepoch())`),
+    .defaultNow(),
 });
 
-export const apps = sqliteTable("apps", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const apps = pgTable("apps", {
+  id: serial("id").primaryKey(),
   name: text("name").notNull(),
   path: text("path").notNull(),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  createdAt: timestamp("created_at", {
+    mode: "date",
+    withTimezone: true,
+  })
     .notNull()
-    .default(sql`(unixepoch())`),
-  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", {
+    mode: "date",
+    withTimezone: true,
+  })
     .notNull()
-    .default(sql`(unixepoch())`),
+    .defaultNow(),
   githubOrg: text("github_org"),
   githubRepo: text("github_repo"),
   githubBranch: text("github_branch"),
@@ -54,28 +74,29 @@ export const apps = sqliteTable("apps", {
   vercelDeploymentUrl: text("vercel_deployment_url"),
   installCommand: text("install_command"),
   startCommand: text("start_command"),
-  chatContext: text("chat_context", { mode: "json" }),
-  isFavorite: integer("is_favorite", { mode: "boolean" })
-    .notNull()
-    .default(sql`0`),
+  chatContext: jsonb("chat_context"),
+  isFavorite: boolean("is_favorite").notNull().default(false),
   // Theme ID for design system theming (null means "no theme")
   themeId: text("theme_id"),
 });
 
-export const chats = sqliteTable("chats", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const chats = pgTable("chats", {
+  id: serial("id").primaryKey(),
   appId: integer("app_id")
     .notNull()
     .references(() => apps.id, { onDelete: "cascade" }),
   title: text("title"),
   initialCommitHash: text("initial_commit_hash"),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  createdAt: timestamp("created_at", {
+    mode: "date",
+    withTimezone: true,
+  })
     .notNull()
-    .default(sql`(unixepoch())`),
+    .defaultNow(),
 });
 
-export const messages = sqliteTable("messages", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const messages = pgTable("messages", {
+  id: serial("id").primaryKey(),
   chatId: integer("chat_id")
     .notNull()
     .references(() => chats.id, { onDelete: "cascade" }),
@@ -93,30 +114,37 @@ export const messages = sqliteTable("messages", {
   maxTokensUsed: integer("max_tokens_used"),
   // Model name used for this message (only for assistant messages)
   model: text("model"),
-  // AI SDK messages (v5 envelope) for preserving tool calls/results in agent mode
-  aiMessagesJson: text("ai_messages_json", {
-    mode: "json",
-  }).$type<AiMessagesJsonV6 | null>(),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  // AI SDK messages (v6 envelope) for preserving tool calls/results in agent mode
+  aiMessagesJson: jsonb("ai_messages_json").$type<AiMessagesJsonV6 | null>(),
+  createdAt: timestamp("created_at", {
+    mode: "date",
+    withTimezone: true,
+  })
     .notNull()
-    .default(sql`(unixepoch())`),
+    .defaultNow(),
 });
 
-export const versions = sqliteTable(
+export const versions = pgTable(
   "versions",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: serial("id").primaryKey(),
     appId: integer("app_id")
       .notNull()
       .references(() => apps.id, { onDelete: "cascade" }),
     commitHash: text("commit_hash").notNull(),
     neonDbTimestamp: text("neon_db_timestamp"),
-    createdAt: integer("created_at", { mode: "timestamp" })
+    createdAt: timestamp("created_at", {
+      mode: "date",
+      withTimezone: true,
+    })
       .notNull()
-      .default(sql`(unixepoch())`),
-    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", {
+      mode: "date",
+      withTimezone: true,
+    })
       .notNull()
-      .default(sql`(unixepoch())`),
+      .defaultNow(),
   },
   (table) => [
     // Unique constraint to prevent duplicate versions
@@ -145,27 +173,28 @@ export const messagesRelations = relations(messages, ({ one }) => ({
   }),
 }));
 
-export const language_model_providers = sqliteTable(
-  "language_model_providers",
-  {
-    id: text("id").primaryKey(),
-    name: text("name").notNull(),
-    api_base_url: text("api_base_url").notNull(),
-    env_var_name: text("env_var_name"),
-    trust_self_signed: integer("trust_self_signed", { mode: "boolean" })
-      .notNull()
-      .default(sql`0`),
-    createdAt: integer("created_at", { mode: "timestamp" })
-      .notNull()
-      .default(sql`(unixepoch())`),
-    updatedAt: integer("updated_at", { mode: "timestamp" })
-      .notNull()
-      .default(sql`(unixepoch())`),
-  },
-);
+export const language_model_providers = pgTable("language_model_providers", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  api_base_url: text("api_base_url").notNull(),
+  env_var_name: text("env_var_name"),
+  trust_self_signed: boolean("trust_self_signed").notNull().default(false),
+  createdAt: timestamp("created_at", {
+    mode: "date",
+    withTimezone: true,
+  })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", {
+    mode: "date",
+    withTimezone: true,
+  })
+    .notNull()
+    .defaultNow(),
+});
 
-export const language_models = sqliteTable("language_models", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const language_models = pgTable("language_models", {
+  id: serial("id").primaryKey(),
   displayName: text("display_name").notNull(),
   apiName: text("api_name").notNull(),
   builtinProviderId: text("builtin_provider_id"),
@@ -176,12 +205,18 @@ export const language_models = sqliteTable("language_models", {
   description: text("description"),
   max_output_tokens: integer("max_output_tokens"),
   context_window: integer("context_window"),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  createdAt: timestamp("created_at", {
+    mode: "date",
+    withTimezone: true,
+  })
     .notNull()
-    .default(sql`(unixepoch())`),
-  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", {
+    mode: "date",
+    withTimezone: true,
+  })
     .notNull()
-    .default(sql`(unixepoch())`),
+    .defaultNow(),
 });
 
 // Define relations for new tables
@@ -210,41 +245,45 @@ export const versionsRelations = relations(versions, ({ one }) => ({
 }));
 
 // --- MCP (Model Context Protocol) tables ---
-export const mcpServers = sqliteTable("mcp_servers", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const mcpServers = pgTable("mcp_servers", {
+  id: serial("id").primaryKey(),
   name: text("name").notNull(),
   transport: text("transport").notNull(),
   command: text("command"),
   // Store typed JSON for args and environment variables
-  args: text("args", { mode: "json" }).$type<string[] | null>(),
-  envJson: text("env_json", { mode: "json" }).$type<Record<
-    string,
-    string
-  > | null>(),
+  args: jsonb("args").$type<string[] | null>(),
+  envJson: jsonb("env_json").$type<Record<string, string> | null>(),
   url: text("url"),
-  enabled: integer("enabled", { mode: "boolean" })
+  enabled: boolean("enabled").notNull().default(false),
+  createdAt: timestamp("created_at", {
+    mode: "date",
+    withTimezone: true,
+  })
     .notNull()
-    .default(sql`0`),
-  createdAt: integer("created_at", { mode: "timestamp" })
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", {
+    mode: "date",
+    withTimezone: true,
+  })
     .notNull()
-    .default(sql`(unixepoch())`),
-  updatedAt: integer("updated_at", { mode: "timestamp" })
-    .notNull()
-    .default(sql`(unixepoch())`),
+    .defaultNow(),
 });
 
-export const mcpToolConsents = sqliteTable(
+export const mcpToolConsents = pgTable(
   "mcp_tool_consents",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: serial("id").primaryKey(),
     serverId: integer("server_id")
       .notNull()
       .references(() => mcpServers.id, { onDelete: "cascade" }),
     toolName: text("tool_name").notNull(),
     consent: text("consent").notNull().default("ask"), // ask | always | denied
-    updatedAt: integer("updated_at", { mode: "timestamp" })
+    updatedAt: timestamp("updated_at", {
+      mode: "date",
+      withTimezone: true,
+    })
       .notNull()
-      .default(sql`(unixepoch())`),
+      .defaultNow(),
   },
   (table) => [unique("uniq_mcp_consent").on(table.serverId, table.toolName)],
 );

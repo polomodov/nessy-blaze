@@ -1,6 +1,5 @@
 import * as path from "path";
 import * as fs from "fs";
-import * as crypto from "crypto";
 import { testWithConfig, test, PageObject } from "./helpers/test_helper";
 import { expect } from "@playwright/test";
 
@@ -9,10 +8,6 @@ const testWithLastVersion = testWithConfig({
   preLaunchHook: async ({ userDataDir }) => {
     fs.mkdirSync(path.join(userDataDir), { recursive: true });
     fs.writeFileSync(path.join(userDataDir, ".last_version"), "0.1.0");
-    fs.copyFileSync(
-      path.join(__dirname, "fixtures", "backups", "empty-v0.12.0-beta.1.db"),
-      path.join(userDataDir, "sqlite.db"),
-    );
     fs.writeFileSync(
       path.join(userDataDir, "user-settings.json"),
       JSON.stringify(BACKUP_SETTINGS, null, 2),
@@ -81,11 +76,11 @@ const testWithMultipleBackups = testWithConfig({
         reason: backup.reason,
         files: {
           settings: true,
-          database: true,
+          database: false,
         },
         checksums: {
           settings: "mock_settings_checksum_" + backup.version,
-          database: "mock_database_checksum_" + backup.version,
+          database: null,
         },
       };
 
@@ -98,11 +93,6 @@ const testWithMultipleBackups = testWithConfig({
       fs.writeFileSync(
         path.join(backupPath, "user-settings.json"),
         JSON.stringify({ version: backup.version, mockData: true }, null, 2),
-      );
-
-      fs.writeFileSync(
-        path.join(backupPath, "sqlite.db"),
-        `mock_database_content_${backup.version}`,
       );
     }
   },
@@ -136,9 +126,9 @@ testWithLastVersion(
     expect(backupMetadata.timestamp).toBeDefined();
     expect(backupMetadata.reason).toBe("upgrade_from_0.1.0");
     expect(backupMetadata.files.settings).toBe(true);
-    expect(backupMetadata.files.database).toBe(true);
+    expect(backupMetadata.files.database).toBe(false);
     expect(backupMetadata.checksums.settings).toBeDefined();
-    expect(backupMetadata.checksums.database).toBeDefined();
+    expect(backupMetadata.checksums.database).toBeNull();
 
     // Compare the backup files to the original files
     const backupSettings = fs.readFileSync(
@@ -147,16 +137,7 @@ testWithLastVersion(
     );
     expect(backupSettings).toEqual(JSON.stringify(BACKUP_SETTINGS, null, 2));
 
-    // For database, verify the backup file exists and has correct checksum
-    const backupDbPath = path.join(backupDir, "sqlite.db");
-    const originalDbPath = path.join(po.userDataDir, "sqlite.db");
-
-    expect(fs.existsSync(backupDbPath)).toBe(true);
-    expect(fs.existsSync(originalDbPath)).toBe(true);
-
-    const backupChecksum = calculateChecksum(backupDbPath);
-    // Verify backup metadata contains the correct checksum
-    expect(backupMetadata.checksums.database).toBe(backupChecksum);
+    expect(fs.existsSync(path.join(backupDir, "sqlite.db"))).toBe(false);
   },
 );
 
@@ -196,11 +177,7 @@ testWithMultipleBackups(
         true,
       );
 
-      // The first backup does NOT have a SQLite database because the backup
-      // manager is run before the DB is initialized.
-      expect(fs.existsSync(path.join(backupPath, "sqlite.db"))).toBe(
-        backup !== "*",
-      );
+      expect(fs.existsSync(path.join(backupPath, "sqlite.db"))).toBe(false);
     }
 
     // The 2 oldest backups should have been deleted
@@ -216,10 +193,3 @@ testWithMultipleBackups(
     }
   },
 );
-
-function calculateChecksum(filePath: string): string {
-  const fileBuffer = fs.readFileSync(filePath);
-  const hash = crypto.createHash("sha256");
-  hash.update(fileBuffer);
-  return hash.digest("hex");
-}

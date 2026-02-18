@@ -48,6 +48,15 @@ function signWindowsExecutable(filePath: string): void {
 }
 
 // Based on https://github.com/electron/forge/blob/6b2d547a7216c30fde1e1fddd1118eee5d872945/packages/plugin/vite/src/VitePlugin.ts#L124
+const RUNTIME_NODE_MODULE_PREFIXES = [
+  "/node_modules/pg",
+  "/node_modules/pg-",
+  "/node_modules/postgres-",
+  "/node_modules/pgpass",
+  "/node_modules/split2",
+  "/node_modules/xtend",
+];
+
 const ignore = (file: string) => {
   if (!file) return false;
   // `file` always starts with `/`
@@ -74,16 +83,10 @@ const ignore = (file: string) => {
   if (file.startsWith("/node_modules/html-to-image")) {
     return false;
   }
-  if (file.startsWith("/node_modules/better-sqlite3")) {
-    return false;
-  }
-  if (file.startsWith("/node_modules/bindings")) {
-    return false;
-  }
-  if (file.startsWith("/node_modules/file-uri-to-path")) {
-    return false;
-  }
   if (file.startsWith("/.vite")) {
+    return false;
+  }
+  if (RUNTIME_NODE_MODULE_PREFIXES.some((prefix) => file.startsWith(prefix))) {
     return false;
   }
 
@@ -117,10 +120,8 @@ const config: ForgeConfig = {
     asar: true,
     ignore,
     extraResource: ["node_modules/dugite/git", "node_modules/@vscode"],
-    // ignore: [/node_modules\/(?!(better-sqlite3|bindings|file-uri-to-path)\/)/],
   },
   rebuildConfig: {
-    extraModules: ["better-sqlite3"],
     force: true,
   },
   hooks: {
