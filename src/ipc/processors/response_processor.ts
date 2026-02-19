@@ -26,6 +26,7 @@ import {
   gitRemove,
   gitAddAll,
   getGitUncommittedFiles,
+  isGitStatusClean,
 } from "../utils/git_utils";
 import { readSettings } from "../../main/settings";
 import { writeMigrationFile } from "../utils/file_utils";
@@ -529,65 +530,79 @@ export async function processFullResponseActions(
         await gitAdd({ path: appPath, filepath: file });
       }
 
-      // Create commit with details of all changes
-      const changes = [];
-      if (writtenFiles.length > 0)
-        changes.push(`wrote ${writtenFiles.length} file(s)`);
-      if (renamedFiles.length > 0)
-        changes.push(`renamed ${renamedFiles.length} file(s)`);
-      if (deletedFiles.length > 0)
-        changes.push(`deleted ${deletedFiles.length} file(s)`);
-      if (blazeAddDependencyPackages.length > 0)
-        changes.push(
-          `added ${blazeAddDependencyPackages.join(", ")} package(s)`,
+      const isCleanAfterApply = await isGitStatusClean({ path: appPath });
+      if (isCleanAfterApply) {
+        logger.info(
+          "No git changes detected after applying AI response, skipping commit",
         );
-      if (blazeExecuteSqlQueries.length > 0)
-        changes.push(`executed ${blazeExecuteSqlQueries.length} SQL queries`);
-
-      let message = chatSummary
-        ? `[blaze] ${chatSummary} - ${changes.join(", ")}`
-        : `[blaze] ${changes.join(", ")}`;
-      // Use chat summary, if provided, or default for commit message
-      let commitHash = await gitCommit({
-        path: appPath,
-        message,
-      });
-      logger.log(`Successfully committed changes: ${changes.join(", ")}`);
-
-      // Check for any uncommitted changes after the commit
-      uncommittedFiles = await getGitUncommittedFiles({ path: appPath });
-
-      if (uncommittedFiles.length > 0) {
-        // Stage all changes
-        await gitAddAll({ path: appPath });
-        try {
-          commitHash = await gitCommit({
-            path: appPath,
-            message: message + " + extra files edited outside of Blaze",
-            amend: true,
-          });
-          logger.log(
-            `Amend commit with changes outside of blaze: ${uncommittedFiles.join(", ")}`,
-          );
-        } catch (error) {
-          // Just log, but don't throw an error because the user can still
-          // commit these changes outside of Blaze if needed.
-          logger.error(
-            `Failed to commit changes outside of blaze: ${uncommittedFiles.join(
-              ", ",
-            )}`,
-          );
-          extraFilesError = (error as any).toString();
-        }
+        hasChanges = false;
       }
 
-      // Save the commit hash to the message
-      await db
-        .update(messages)
-        .set({
-          commitHash: commitHash,
-        })
-        .where(eq(messages.id, messageId));
+      if (!hasChanges) {
+        // No effective changes after staging (e.g. identical content rewrites).
+        // Continue to approve the message without treating this as an error.
+        logger.log("Skipping commit because repository is clean");
+      } else {
+        // Create commit with details of all changes
+        const changes = [];
+        if (writtenFiles.length > 0)
+          changes.push(`wrote ${writtenFiles.length} file(s)`);
+        if (renamedFiles.length > 0)
+          changes.push(`renamed ${renamedFiles.length} file(s)`);
+        if (deletedFiles.length > 0)
+          changes.push(`deleted ${deletedFiles.length} file(s)`);
+        if (blazeAddDependencyPackages.length > 0)
+          changes.push(
+            `added ${blazeAddDependencyPackages.join(", ")} package(s)`,
+          );
+        if (blazeExecuteSqlQueries.length > 0)
+          changes.push(`executed ${blazeExecuteSqlQueries.length} SQL queries`);
+
+        let message = chatSummary
+          ? `[blaze] ${chatSummary} - ${changes.join(", ")}`
+          : `[blaze] ${changes.join(", ")}`;
+        // Use chat summary, if provided, or default for commit message
+        let commitHash = await gitCommit({
+          path: appPath,
+          message,
+        });
+        logger.log(`Successfully committed changes: ${changes.join(", ")}`);
+
+        // Check for any uncommitted changes after the commit
+        uncommittedFiles = await getGitUncommittedFiles({ path: appPath });
+
+        if (uncommittedFiles.length > 0) {
+          // Stage all changes
+          await gitAddAll({ path: appPath });
+          try {
+            commitHash = await gitCommit({
+              path: appPath,
+              message: message + " + extra files edited outside of Blaze",
+              amend: true,
+            });
+            logger.log(
+              `Amend commit with changes outside of blaze: ${uncommittedFiles.join(", ")}`,
+            );
+          } catch (error) {
+            // Just log, but don't throw an error because the user can still
+            // commit these changes outside of Blaze if needed.
+            logger.error(
+              `Failed to commit changes outside of blaze: ${uncommittedFiles.join(
+                ", ",
+              )}`,
+            );
+            extraFilesError = (error as any).toString();
+          }
+        }
+
+        // Save the commit hash to the message
+        await db
+          .update(messages)
+          .set({
+            commitHash: commitHash,
+          })
+          .where(eq(messages.id, messageId));
+      }
     }
     logger.log("mark as approved: hasChanges", hasChanges);
     // Update the message to approved

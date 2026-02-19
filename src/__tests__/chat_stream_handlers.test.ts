@@ -15,7 +15,12 @@ import {
 import fs from "node:fs";
 import { db } from "../db";
 import { cleanFullResponse } from "../ipc/utils/cleanFullResponse";
-import { gitAdd, gitRemove, gitCommit } from "../ipc/utils/git_utils";
+import {
+  gitAdd,
+  gitRemove,
+  gitCommit,
+  isGitStatusClean,
+} from "../ipc/utils/git_utils";
 
 // Mock fs with default export
 vi.mock("node:fs", async () => {
@@ -48,6 +53,7 @@ vi.mock("../ipc/utils/git_utils", () => ({
   gitAdd: vi.fn(),
   gitCommit: vi.fn(),
   gitRemove: vi.fn(),
+  isGitStatusClean: vi.fn().mockResolvedValue(false),
   gitRenameBranch: vi.fn(),
   gitCurrentBranch: vi.fn(),
   gitLog: vi.fn(),
@@ -670,6 +676,7 @@ describe("processFullResponse", () => {
 
     // Default mock for existsSync to return true
     vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(isGitStatusClean).mockResolvedValue(false);
   });
 
   it("should return empty object when no blaze-write tags are found", async () => {
@@ -717,6 +724,31 @@ describe("processFullResponse", () => {
     );
     expect(gitCommit).toHaveBeenCalled();
     expect(result).toEqual({ updatedFiles: true });
+  });
+
+  it("should skip commit when applied changes produce no git diff", async () => {
+    vi.mocked(fs.mkdirSync).mockImplementation(() => undefined);
+    vi.mocked(fs.writeFileSync).mockImplementation(() => undefined);
+    vi.mocked(isGitStatusClean).mockResolvedValue(true);
+
+    const response = `<blaze-write path="src/file1.js">console.log('Hello');</blaze-write>`;
+
+    const result = await processFullResponseActions(response, 1, {
+      chatSummary: undefined,
+      messageId: 1,
+    });
+
+    expect(gitAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filepath: "src/file1.js",
+      }),
+    );
+    expect(gitCommit).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      updatedFiles: false,
+      extraFiles: undefined,
+      extraFilesError: undefined,
+    });
   });
 
   it("should handle file system errors gracefully", async () => {

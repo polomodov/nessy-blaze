@@ -5,7 +5,7 @@ import {
   previewErrorMessageAtom,
 } from "@/atoms/appAtoms";
 import { useAtomValue, useSetAtom, useAtom } from "jotai";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -67,8 +67,15 @@ import { showError } from "@/lib/toast";
 import { AnnotatorOnlyForPro } from "./AnnotatorOnlyForPro";
 import { useAttachments } from "@/hooks/useAttachments";
 import { useUserBudgetInfo } from "@/hooks/useUserBudgetInfo";
+import { useSettings } from "@/hooks/useSettings";
 import { Annotator } from "@/pro/ui/components/Annotator/Annotator";
 import { VisualEditingToolbar } from "./VisualEditingToolbar";
+import type { AutoFixIncident } from "./error_autofix_prompt";
+import { useErrorAutofix } from "./use_error_autofix";
+import {
+  computeFingerprint,
+  isActionableServerError,
+} from "./error_autofix_policy";
 
 interface ErrorBannerProps {
   error: { message: string; source: "preview-app" | "blaze-app" } | undefined;
@@ -172,16 +179,20 @@ const ErrorBanner = ({ error, onDismiss, onAIFix }: ErrorBannerProps) => {
 export const PreviewIframe = ({ loading }: { loading: boolean }) => {
   const selectedAppId = useAtomValue(selectedAppIdAtom);
   const { appUrl, originalUrl } = useAtomValue(appUrlAtom);
+  const consoleEntries = useAtomValue(appConsoleEntriesAtom);
   const setConsoleEntries = useSetAtom(appConsoleEntriesAtom);
   // State to trigger iframe reload
   const [reloadKey, setReloadKey] = useState(0);
   const [errorMessage, setErrorMessage] = useAtom(previewErrorMessageAtom);
   const selectedChatId = useAtomValue(selectedChatIdAtom);
-  const { streamMessage } = useStreamChat();
+  const { streamMessage, isStreaming } = useStreamChat();
+  const { settings } = useSettings();
   const { routes: availableRoutes } = useParseRouter(selectedAppId);
   const { restartApp } = useRunApp();
   const { userBudget } = useUserBudgetInfo();
   const isProMode = !!userBudget;
+  const [latestAutoFixIncident, setLatestAutoFixIncident] =
+    useState<AutoFixIncident>();
 
   // Navigation state
   const [isComponentSelectorInitialized, setIsComponentSelectorInitialized] =
@@ -226,6 +237,30 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
 
   //detect if the user is using Mac
   const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
+  const lastProcessedServerErrorAtRef = useRef(0);
+
+  const getCurrentRoute = useCallback(() => {
+    const currentUrl =
+      navigationHistory[currentHistoryPosition] ?? appUrl ?? undefined;
+    if (!currentUrl) {
+      return undefined;
+    }
+
+    try {
+      return new URL(currentUrl).pathname;
+    } catch {
+      return undefined;
+    }
+  }, [navigationHistory, currentHistoryPosition, appUrl]);
+
+  const { triggerAIFix } = useErrorAutofix({
+    selectedAppId,
+    selectedChatId,
+    settings,
+    isStreaming,
+    consoleEntries,
+    streamMessage,
+  });
 
   const analyzeComponent = async (componentId: string) => {
     if (!componentId || !selectedAppId) return;
@@ -314,6 +349,68 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
   useEffect(() => {
     setAnnotatorMode(false);
   }, []);
+
+  useEffect(() => {
+    lastProcessedServerErrorAtRef.current = 0;
+  }, [selectedAppId, selectedChatId]);
+
+  useEffect(() => {
+    if (!latestAutoFixIncident) {
+      return;
+    }
+
+    triggerAIFix({
+      mode: "auto",
+      incident: latestAutoFixIncident,
+    });
+  }, [latestAutoFixIncident, triggerAIFix]);
+
+  useEffect(() => {
+    if (!selectedAppId || consoleEntries.length === 0) {
+      return;
+    }
+
+    let latestServerError: (typeof consoleEntries)[number] | undefined;
+
+    for (let i = consoleEntries.length - 1; i >= 0; i--) {
+      const entry = consoleEntries[i];
+      if (entry.appId !== selectedAppId) {
+        continue;
+      }
+      if (entry.type !== "server" || entry.level !== "error") {
+        continue;
+      }
+      if (entry.timestamp <= lastProcessedServerErrorAtRef.current) {
+        break;
+      }
+      if (!isActionableServerError(entry.message)) {
+        continue;
+      }
+      latestServerError = entry;
+      break;
+    }
+
+    if (!latestServerError) {
+      return;
+    }
+
+    lastProcessedServerErrorAtRef.current = latestServerError.timestamp;
+    const incident: AutoFixIncident = {
+      source: "server-stderr",
+      primaryError: latestServerError.message,
+      timestamp: latestServerError.timestamp,
+      route: getCurrentRoute(),
+      fingerprint: computeFingerprint(
+        "server-stderr",
+        latestServerError.message,
+      ),
+    };
+    console.debug(
+      `[autofix] detected server stderr incident (fingerprint=${incident.fingerprint})`,
+    );
+    setLatestAutoFixIncident(incident);
+  }, [consoleEntries, selectedAppId, getCurrentRoute]);
+
   // Reset visual editing state when app changes or component unmounts
   useEffect(() => {
     return () => {
@@ -557,6 +654,7 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
         type === "unhandled-rejection" ||
         type === "iframe-sourcemapped-error"
       ) {
+        const timestamp = Date.now();
         const stack =
           type === "iframe-sourcemapped-error"
             ? payload?.stack?.split("\n").slice(0, 1).join("\n")
@@ -566,12 +664,25 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
         }\nStack trace: ${stack}`;
         console.error("Iframe error:", errorMessage);
         setErrorMessage({ message: errorMessage, source: "preview-app" });
+        const incident: AutoFixIncident = {
+          source: "preview-runtime",
+          primaryError: errorMessage,
+          timestamp,
+          route: getCurrentRoute(),
+          file: payload?.file,
+          fingerprint: computeFingerprint(
+            "preview-runtime",
+            errorMessage,
+            payload?.file,
+          ),
+        };
+        setLatestAutoFixIncident(incident);
         const logEntry = {
           level: "error" as const,
           type: "client" as const,
           message: `Iframe error: ${errorMessage}`,
           appId: selectedAppId!,
-          timestamp: Date.now(),
+          timestamp,
         };
 
         // Send to central log store
@@ -581,14 +692,29 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
         setConsoleEntries((prev) => [...prev, logEntry]);
       } else if (type === "build-error-report") {
         console.debug(`Build error report: ${payload}`);
+        const timestamp = Date.now();
         const errorMessage = `${payload?.message} from file ${payload?.file}.\n\nSource code:\n${payload?.frame}`;
         setErrorMessage({ message: errorMessage, source: "preview-app" });
+        const incident: AutoFixIncident = {
+          source: "preview-build",
+          primaryError: errorMessage,
+          timestamp,
+          route: getCurrentRoute(),
+          file: payload?.file,
+          frame: payload?.frame,
+          fingerprint: computeFingerprint(
+            "preview-build",
+            errorMessage,
+            payload?.file,
+          ),
+        };
+        setLatestAutoFixIncident(incident);
         const logEntry = {
           level: "error" as const,
           type: "client" as const,
           message: `Build error report: ${JSON.stringify(payload)}`,
           appId: selectedAppId!,
-          timestamp: Date.now(),
+          timestamp,
         };
 
         // Send to central log store
@@ -623,7 +749,7 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
     navigationHistory,
     currentHistoryPosition,
     selectedAppId,
-    errorMessage,
+    getCurrentRoute,
     setErrorMessage,
     setIsComponentSelectorInitialized,
     setSelectedComponentsPreview,
@@ -744,6 +870,7 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
   const handleReload = () => {
     setReloadKey((prevKey) => prevKey + 1);
     setErrorMessage(undefined);
+    setLatestAutoFixIncident(undefined);
     // Reset visual editing state
     setVisualEditingSelectedComponent(null);
     setPendingChanges(new Map());
@@ -806,6 +933,29 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
 
   const onRestart = () => {
     restartApp();
+  };
+
+  const onManualAIFix = () => {
+    if (!errorMessage) {
+      return;
+    }
+
+    const incident: AutoFixIncident = latestAutoFixIncident ?? {
+      source:
+        errorMessage.source === "blaze-app" ? "blaze-app" : "preview-runtime",
+      primaryError: errorMessage.message,
+      timestamp: Date.now(),
+      route: getCurrentRoute(),
+      fingerprint: computeFingerprint(
+        errorMessage.source === "blaze-app" ? "blaze-app" : "preview-runtime",
+        errorMessage.message,
+      ),
+    };
+
+    triggerAIFix({
+      mode: "manual",
+      incident,
+    });
   };
 
   return (
@@ -1046,14 +1196,7 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
         <ErrorBanner
           error={errorMessage}
           onDismiss={() => setErrorMessage(undefined)}
-          onAIFix={() => {
-            if (selectedChatId) {
-              streamMessage({
-                prompt: `Fix error: ${errorMessage?.message}`,
-                chatId: selectedChatId,
-              });
-            }
-          }}
+          onAIFix={onManualAIFix}
         />
 
         {!appUrl ? (
@@ -1098,6 +1241,7 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
                   data-testid="preview-iframe-element"
                   onLoad={() => {
                     setErrorMessage(undefined);
+                    setLatestAutoFixIncident(undefined);
                   }}
                   ref={iframeRef}
                   key={reloadKey}

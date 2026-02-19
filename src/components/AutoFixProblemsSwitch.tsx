@@ -20,11 +20,15 @@ export function AutoFixProblemsSwitch({
             enableAutoFixProblems: !settings?.enableAutoFixProblems,
           });
           if (!settings?.enableAutoFixProblems && showToast) {
-            showInfo("You can disable Auto-fix problems in the Settings page.");
+            showInfo(
+              "You can disable Auto-fix errors (TypeScript + preview/build) in the Settings page.",
+            );
           }
         }}
       />
-      <Label htmlFor="auto-fix-problems">Auto-fix problems</Label>
+      <Label htmlFor="auto-fix-problems">
+        Auto-fix errors (TypeScript + preview/build)
+      </Label>
     </div>
   );
 }
