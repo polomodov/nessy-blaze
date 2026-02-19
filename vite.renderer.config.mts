@@ -2,6 +2,7 @@ import path from "path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
+import { blazeComponentTagger } from "./src/vite/blaze_component_tagger_plugin";
 
 const ReactCompilerConfig = {};
 
@@ -98,6 +99,7 @@ function ipcHttpGatewayPlugin(): Plugin {
 export default defineConfig({
   plugins: [
     ipcHttpGatewayPlugin(),
+    blazeComponentTagger(),
     react({
       babel: {
         plugins: [["babel-plugin-react-compiler", ReactCompilerConfig]],
