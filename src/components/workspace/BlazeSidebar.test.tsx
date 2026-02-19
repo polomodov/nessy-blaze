@@ -29,20 +29,24 @@ function renderSidebar(
     },
   });
 
-  render(
+  const baseProps: ComponentProps<typeof BlazeSidebar> = {
+    activeProjectId: null,
+    collapsed: false,
+    isDarkMode: false,
+    onToggleTheme: vi.fn(),
+    onToggleCollapse: vi.fn(),
+    onSelectProject: vi.fn(),
+    onNewProject: vi.fn(),
+    projectsRefreshToken: 0,
+  };
+
+  const view = render(
     <QueryClientProvider client={queryClient}>
-      <BlazeSidebar
-        activeProjectId={null}
-        collapsed={false}
-        isDarkMode={false}
-        onToggleTheme={vi.fn()}
-        onToggleCollapse={vi.fn()}
-        onSelectProject={vi.fn()}
-        onNewProject={vi.fn()}
-        {...props}
-      />
+      <BlazeSidebar {...baseProps} {...props} />
     </QueryClientProvider>,
   );
+
+  return { ...view, queryClient, baseProps };
 }
 
 describe("BlazeSidebar", () => {
@@ -90,5 +94,45 @@ describe("BlazeSidebar", () => {
     fireEvent.click(screen.getByRole("button", { name: "Dark theme" }));
 
     expect(onToggleTheme).toHaveBeenCalledTimes(1);
+  });
+
+  it("reloads project list when refresh token changes", async () => {
+    listAppsMock
+      .mockResolvedValueOnce({
+        apps: [
+          {
+            id: 101,
+            name: "Landing",
+            createdAt: "2026-02-18T10:00:00.000Z",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        apps: [
+          {
+            id: 101,
+            name: "Landing",
+            createdAt: "2026-02-18T10:00:00.000Z",
+          },
+          {
+            id: 202,
+            name: "New Project",
+            createdAt: "2026-02-19T10:00:00.000Z",
+          },
+        ],
+      });
+
+    const view = renderSidebar({ projectsRefreshToken: 0 });
+    await screen.findByText("Landing");
+    expect(screen.queryByText("New Project")).toBeNull();
+
+    view.rerender(
+      <QueryClientProvider client={view.queryClient}>
+        <BlazeSidebar {...view.baseProps} projectsRefreshToken={1} />
+      </QueryClientProvider>,
+    );
+
+    await screen.findByText("New Project");
+    expect(listAppsMock).toHaveBeenCalledTimes(2);
   });
 });

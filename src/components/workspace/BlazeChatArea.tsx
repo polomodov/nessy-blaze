@@ -327,8 +327,6 @@ export function BlazeChatArea({
           setAppId(createAppResult.app.id);
           onAppCreated?.(createAppResult.app.id);
         }
-      } else if (appIdForMessage !== null) {
-        onAppCreated?.(appIdForMessage);
       }
 
       IpcClient.getInstance().streamMessage(prompt, {

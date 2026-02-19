@@ -76,6 +76,31 @@ describe("invokeIpcChannelOverHttp", () => {
     },
   );
 
+  (hasDatabaseUrl ? it : it.skip)(
+    "reads app file content via HTTP IPC gateway",
+    async () => {
+      const appName = `http-ipc-read-app-file-${Date.now()}`;
+      const created = (await invokeIpcChannelOverHttp("create-app", [
+        { name: appName },
+      ])) as {
+        app: {
+          id: number;
+          resolvedPath: string;
+        };
+      };
+
+      try {
+        const fileContent = (await invokeIpcChannelOverHttp("read-app-file", [
+          { appId: created.app.id, filePath: "src/App.tsx" },
+        ])) as string;
+
+        expect(fileContent).toContain("const App");
+      } finally {
+        fs.rmSync(created.app.resolvedPath, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("throws for unsupported channels", async () => {
     await expect(
       invokeIpcChannelOverHttp("unknown-channel", []),

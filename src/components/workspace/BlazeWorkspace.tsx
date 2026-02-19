@@ -9,6 +9,7 @@ export function BlazeWorkspace() {
   const { isDarkMode, setTheme } = useTheme();
   const [activeProjectId, setActiveProjectId] = useState<number | null>(null);
   const [activeAppId, setActiveAppId] = useState<number | null>(null);
+  const [projectsRefreshToken, setProjectsRefreshToken] = useState(0);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   return (
@@ -17,6 +18,7 @@ export function BlazeWorkspace() {
         activeProjectId={activeProjectId}
         collapsed={isSidebarCollapsed}
         isDarkMode={isDarkMode}
+        projectsRefreshToken={projectsRefreshToken}
         onToggleTheme={() => setTheme(isDarkMode ? "light" : "dark")}
         onToggleCollapse={() => setIsSidebarCollapsed((previous) => !previous)}
         onNewProject={() => {
@@ -36,6 +38,7 @@ export function BlazeWorkspace() {
             onAppCreated={(appId) => {
               setActiveProjectId(appId);
               setActiveAppId(appId);
+              setProjectsRefreshToken((previous) => previous + 1);
             }}
           />
         </Panel>

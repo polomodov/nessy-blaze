@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Download,
   ExternalLink,
@@ -10,6 +10,11 @@ import {
 } from "lucide-react";
 import { IpcClient } from "@/ipc/ipc_client";
 import type { AppOutput } from "@/ipc/ipc_types";
+import {
+  buildPreviewUrl,
+  extractPreviewPathsFromAppSource,
+  getPreviewPathLabel,
+} from "./preview_routes";
 
 type Device = "desktop" | "tablet" | "mobile";
 
@@ -47,9 +52,61 @@ interface BlazePreviewPanelProps {
 export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
   const [device, setDevice] = useState<Device>("desktop");
   const [appUrl, setAppUrl] = useState<string | null>(null);
+  const [previewPaths, setPreviewPaths] = useState<string[]>(["/"]);
+  const [selectedPath, setSelectedPath] = useState("/");
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const runningAppIdRef = useRef<number | null>(null);
+
+  const loadPreviewPaths = useCallback(async (appId: number) => {
+    const appSource = await IpcClient.getInstance().readAppFile(
+      appId,
+      "src/App.tsx",
+    );
+    return extractPreviewPathsFromAppSource(appSource);
+  }, []);
+
+  const resolvedPreviewUrl = useMemo(() => {
+    if (!appUrl) {
+      return null;
+    }
+    return buildPreviewUrl(appUrl, selectedPath);
+  }, [appUrl, selectedPath]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const syncPreviewPaths = async () => {
+      if (activeAppId === null) {
+        setPreviewPaths(["/"]);
+        setSelectedPath("/");
+        return;
+      }
+
+      try {
+        const paths = await loadPreviewPaths(activeAppId);
+        if (cancelled) {
+          return;
+        }
+        setPreviewPaths(paths);
+        setSelectedPath((previousPath) =>
+          paths.includes(previousPath) ? previousPath : (paths[0] ?? "/"),
+        );
+      } catch {
+        if (cancelled) {
+          return;
+        }
+        setPreviewPaths(["/"]);
+        setSelectedPath("/");
+      }
+    };
+
+    void syncPreviewPaths();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeAppId, loadPreviewPaths]);
 
   useEffect(() => {
     let cancelled = false;
@@ -155,6 +212,40 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
               App #{activeAppId}
             </div>
           )}
+          {activeAppId !== null && (
+            <label className="ml-2 flex items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-1">
+              <span className="text-[11px] text-muted-foreground">Page</span>
+              <select
+                value={selectedPath}
+                onChange={(event) => {
+                  setSelectedPath(event.target.value);
+                }}
+                onFocus={() => {
+                  if (activeAppId === null) {
+                    return;
+                  }
+                  void loadPreviewPaths(activeAppId)
+                    .then((paths) => {
+                      setPreviewPaths(paths);
+                      setSelectedPath((previousPath) =>
+                        paths.includes(previousPath)
+                          ? previousPath
+                          : (paths[0] ?? "/"),
+                      );
+                    })
+                    .catch(() => {});
+                }}
+                aria-label="Preview page"
+                className="max-w-[180px] rounded bg-transparent text-xs text-foreground outline-none"
+              >
+                {previewPaths.map((pathValue) => (
+                  <option key={pathValue} value={pathValue}>
+                    {getPreviewPathLabel(pathValue)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
         </div>
         <div className="flex items-center gap-1">
           <button className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
@@ -167,13 +258,17 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
           </button>
           <button
             onClick={() => {
-              if (appUrl) {
-                window.open(appUrl, "_blank", "noopener,noreferrer");
+              if (resolvedPreviewUrl) {
+                window.open(
+                  resolvedPreviewUrl,
+                  "_blank",
+                  "noopener,noreferrer",
+                );
               }
             }}
             className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
             aria-label="Open in new tab"
-            disabled={!appUrl}
+            disabled={!resolvedPreviewUrl}
           >
             <ExternalLink size={14} />
           </button>
@@ -206,7 +301,7 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
                 {error}
               </p>
             </div>
-          ) : isStarting || !appUrl ? (
+          ) : isStarting || !resolvedPreviewUrl ? (
             <div className="flex h-full min-h-[520px] flex-col items-center justify-center gap-3 text-center">
               <Loader2
                 size={20}
@@ -219,7 +314,7 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
           ) : (
             <iframe
               title="Generated app preview"
-              src={appUrl}
+              src={resolvedPreviewUrl}
               className="h-full min-h-[520px] w-full border-0"
             />
           )}

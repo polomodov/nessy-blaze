@@ -28,6 +28,7 @@ interface BlazeSidebarProps {
   activeProjectId: number | null;
   collapsed: boolean;
   isDarkMode: boolean;
+  projectsRefreshToken?: number;
   onToggleTheme: () => void;
   onToggleCollapse: () => void;
   onSelectProject: (projectId: number) => void;
@@ -86,6 +87,7 @@ export function BlazeSidebar({
   activeProjectId,
   collapsed,
   isDarkMode,
+  projectsRefreshToken = 0,
   onToggleTheme,
   onToggleCollapse,
   onSelectProject,
@@ -98,7 +100,12 @@ export function BlazeSidebar({
     { apps: Array<{ id: number; name: string; createdAt: unknown }> },
     Error
   >({
-    queryKey: [PROJECTS_QUERY_KEY, scope.orgId, scope.workspaceId],
+    queryKey: [
+      PROJECTS_QUERY_KEY,
+      scope.orgId,
+      scope.workspaceId,
+      projectsRefreshToken,
+    ],
     queryFn: async () => IpcClient.getInstance().listApps(),
     meta: { showErrorToast: false },
   });

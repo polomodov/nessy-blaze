@@ -1079,6 +1079,59 @@ const handlers: Record<string, InvokeHandler> = {
     };
   },
 
+  async "read-app-file"(args, meta) {
+    const [params] = args as [
+      { appId?: number; filePath?: string } | undefined,
+    ];
+    const appId = params?.appId;
+    const filePath = params?.filePath;
+    if (typeof appId !== "number") {
+      throw new Error("Invalid app ID");
+    }
+    if (typeof filePath !== "string" || filePath.trim().length === 0) {
+      throw new Error("Invalid file path");
+    }
+
+    const scopedContext = getRequestContext(meta);
+    let appPath: string;
+    if (scopedContext) {
+      const app = await getAppByIdForScope(scopedContext, appId);
+      appPath = getBlazeAppPath(app.path);
+    } else {
+      if (isMultitenantEnforced()) {
+        throw new HttpError(
+          400,
+          "TENANT_SCOPE_REQUIRED",
+          "read-app-file requires tenant scope in enforce mode",
+        );
+      }
+
+      const app = await db.query.apps.findFirst({
+        where: eq(apps.id, appId),
+        columns: { path: true },
+      });
+      if (!app) {
+        throw new Error("App not found");
+      }
+      appPath = getBlazeAppPath(app.path);
+    }
+
+    const resolvedAppPath = path.resolve(appPath);
+    const resolvedFilePath = path.resolve(resolvedAppPath, filePath);
+    const isInsideAppPath =
+      resolvedFilePath === resolvedAppPath ||
+      resolvedFilePath.startsWith(`${resolvedAppPath}${path.sep}`);
+
+    if (!isInsideAppPath) {
+      throw new Error("Invalid file path");
+    }
+    if (!fs.existsSync(resolvedFilePath)) {
+      throw new Error("File not found");
+    }
+
+    return fs.readFileSync(resolvedFilePath, "utf-8");
+  },
+
   async "search-app"(args, meta) {
     const [searchQuery] = args as [string];
     if (typeof searchQuery !== "string") {
