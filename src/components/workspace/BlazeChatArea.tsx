@@ -191,6 +191,12 @@ export function BlazeChatArea({
   const [isHiddenAgentActivity, setIsHiddenAgentActivity] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const visibleChatIdRef = useRef<number | null>(null);
+  const pendingStreamChatIdsRef = useRef<Set<number>>(new Set());
+
+  useEffect(() => {
+    visibleChatIdRef.current = chatId;
+  }, [chatId]);
 
   const resizeInput = useCallback(() => {
     const textarea = inputRef.current;
@@ -225,13 +231,14 @@ export function BlazeChatArea({
 
     const loadInteractionHistory = async () => {
       setError(null);
-      setIsTyping(false);
-      setIsHiddenAgentActivity(false);
 
       if (activeAppId === null) {
         setAppId(null);
         setChatId(null);
+        visibleChatIdRef.current = null;
         setMessages([]);
+        setIsTyping(false);
+        setIsHiddenAgentActivity(false);
         return;
       }
 
@@ -259,6 +266,7 @@ export function BlazeChatArea({
 
       let selectedChatId: number | null = null;
       let selectedMessages: Message[] = [];
+      let selectedHasHiddenAgentActivity = false;
 
       for (const chatSummary of chatsByRecency) {
         const chat = await IpcClient.getInstance().getChat(chatSummary.id);
@@ -270,6 +278,9 @@ export function BlazeChatArea({
         if (mappedMessages.length > 0) {
           selectedChatId = chat.id;
           selectedMessages = mappedMessages;
+          selectedHasHiddenAgentActivity = hasHiddenAssistantActivity(
+            chat.messages,
+          );
           break;
         }
       }
@@ -283,10 +294,20 @@ export function BlazeChatArea({
         }
         selectedChatId = latestChat.id;
         selectedMessages = mapBackendMessages(latestChat.messages);
+        selectedHasHiddenAgentActivity = hasHiddenAssistantActivity(
+          latestChat.messages,
+        );
       }
 
+      visibleChatIdRef.current = selectedChatId;
       setChatId(selectedChatId);
       setMessages(selectedMessages);
+      const isSelectedChatPending =
+        pendingStreamChatIdsRef.current.has(selectedChatId);
+      setIsTyping(isSelectedChatPending);
+      setIsHiddenAgentActivity(
+        isSelectedChatPending ? selectedHasHiddenAgentActivity : false,
+      );
     };
 
     void loadInteractionHistory().catch((historyError) => {
@@ -329,6 +350,7 @@ export function BlazeChatArea({
           const createdChatId =
             await IpcClient.getInstance().createChat(appIdForMessage);
           activeChatId = createdChatId;
+          visibleChatIdRef.current = createdChatId;
           setChatId(createdChatId);
         } else {
           const createAppResult = await IpcClient.getInstance().createApp({
@@ -336,26 +358,46 @@ export function BlazeChatArea({
           });
           activeChatId = createAppResult.chatId;
           appIdForMessage = createAppResult.app.id;
+          visibleChatIdRef.current = createAppResult.chatId;
           setChatId(createAppResult.chatId);
           setAppId(createAppResult.app.id);
           onAppCreated?.(createAppResult.app.id);
         }
       }
 
+      if (activeChatId === null) {
+        throw new Error("Chat is not ready for streaming.");
+      }
+
+      const streamChatId = activeChatId;
+      pendingStreamChatIdsRef.current.add(streamChatId);
+      if (visibleChatIdRef.current === streamChatId) {
+        setIsTyping(true);
+      }
+
       IpcClient.getInstance().streamMessage(prompt, {
-        chatId: activeChatId,
+        chatId: streamChatId,
         onUpdate: (updatedMessages) => {
+          if (visibleChatIdRef.current !== streamChatId) {
+            return;
+          }
           setMessages(mapBackendMessages(updatedMessages));
           setIsHiddenAgentActivity(hasHiddenAssistantActivity(updatedMessages));
         },
         onEnd: () => {
-          setIsTyping(false);
-          setIsHiddenAgentActivity(false);
+          pendingStreamChatIdsRef.current.delete(streamChatId);
+          if (visibleChatIdRef.current === streamChatId) {
+            setIsTyping(false);
+            setIsHiddenAgentActivity(false);
+          }
         },
         onError: (streamError) => {
-          setError(streamError);
-          setIsTyping(false);
-          setIsHiddenAgentActivity(false);
+          pendingStreamChatIdsRef.current.delete(streamChatId);
+          if (visibleChatIdRef.current === streamChatId) {
+            setError(streamError);
+            setIsTyping(false);
+            setIsHiddenAgentActivity(false);
+          }
         },
       });
     } catch (sendError) {

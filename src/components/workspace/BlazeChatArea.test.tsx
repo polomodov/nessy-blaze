@@ -203,6 +203,87 @@ describe("BlazeChatArea", () => {
     );
   });
 
+  it("keeps waiting indicator for a pending stream after switching projects away and back", async () => {
+    getChatsMock.mockImplementation(async (appId?: number) => {
+      if (appId === 1) {
+        return [
+          {
+            id: 300,
+            appId: 1,
+            title: "Project one chat",
+            createdAt: new Date("2026-02-19T00:00:00.000Z"),
+          },
+        ];
+      }
+
+      if (appId === 2) {
+        return [
+          {
+            id: 400,
+            appId: 2,
+            title: "Project two chat",
+            createdAt: new Date("2026-02-19T00:10:00.000Z"),
+          },
+        ];
+      }
+
+      return [];
+    });
+
+    getChatMock.mockImplementation(async (chatId: number) => {
+      if (chatId === 300) {
+        return {
+          id: 300,
+          appId: 1,
+          title: "Project one chat",
+          messages: [{ id: 1, role: "user", content: "First project context" }],
+        };
+      }
+
+      return {
+        id: 400,
+        appId: 2,
+        title: "Project two chat",
+        messages: [{ id: 2, role: "user", content: "Second project context" }],
+      };
+    });
+
+    const view = render(<BlazeChatArea activeAppId={1} />);
+
+    await waitFor(() => {
+      expect(getChatsMock).toHaveBeenCalledWith(1);
+      expect(getChatMock).toHaveBeenCalledWith(300);
+    });
+
+    const input = screen.getByPlaceholderText(
+      "Describe what should be built...",
+    );
+    fireEvent.change(input, { target: { value: "Continue first project" } });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => {
+      expect(streamMessageMock).toHaveBeenCalledTimes(1);
+      expect(screen.getByText("Agent is drafting a response...")).toBeTruthy();
+    });
+
+    view.rerender(<BlazeChatArea activeAppId={2} />);
+
+    await waitFor(() => {
+      expect(getChatsMock).toHaveBeenCalledWith(2);
+      expect(getChatMock).toHaveBeenCalledWith(400);
+      expect(screen.getByText("Second project context")).toBeTruthy();
+    });
+    expect(screen.queryByText("Agent is drafting a response...")).toBeNull();
+
+    view.rerender(<BlazeChatArea activeAppId={1} />);
+
+    await waitFor(() => {
+      expect(getChatsMock).toHaveBeenCalledWith(1);
+      expect(screen.getByText("First project context")).toBeTruthy();
+      expect(screen.getByText("Agent is drafting a response...")).toBeTruthy();
+    });
+  });
+
   it("creates app on first message and reuses chat on next messages", async () => {
     const onAppCreated = vi.fn();
     render(<BlazeChatArea onAppCreated={onAppCreated} />);
