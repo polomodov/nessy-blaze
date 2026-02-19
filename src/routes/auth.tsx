@@ -1,15 +1,15 @@
 import { createRoute, redirect } from "@tanstack/react-router";
 import { rootRoute } from "./root";
-import HomePage from "../pages/home";
+import AuthPage from "@/pages/auth";
 import { hasStoredAuthContext } from "@/lib/auth_storage";
 
-export const homeRoute = createRoute({
+export const authRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/",
+  path: "/auth",
   beforeLoad: () => {
-    if (!hasStoredAuthContext()) {
-      throw redirect({ to: "/auth", replace: true });
+    if (hasStoredAuthContext()) {
+      throw redirect({ to: "/", replace: true });
     }
   },
-  component: HomePage,
+  component: AuthPage,
 });
