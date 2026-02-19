@@ -238,6 +238,39 @@ function resolveApiRoute(
         path: `/api/v1/orgs/${encodeURIComponent(orgId)}/workspaces`,
       };
     }
+    case "create-workspace": {
+      const params = getFirstArg<{
+        orgId?: string;
+        name?: string;
+        slug?: string;
+        type?: "personal" | "team";
+      }>(args);
+      if (!params || typeof params.name !== "string") {
+        return null;
+      }
+
+      const orgId = params.orgId?.trim() || tenantScope.orgId;
+      const body: {
+        name: string;
+        slug?: string;
+        type?: "personal" | "team";
+      } = {
+        name: params.name,
+      };
+
+      if (typeof params.slug === "string") {
+        body.slug = params.slug;
+      }
+      if (params.type === "personal" || params.type === "team") {
+        body.type = params.type;
+      }
+
+      return {
+        method: "POST",
+        path: `/api/v1/orgs/${encodeURIComponent(orgId)}/workspaces`,
+        body,
+      };
+    }
     case "list-apps":
       return {
         method: "GET",

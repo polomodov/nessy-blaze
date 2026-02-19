@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Building2, BriefcaseBusiness } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { IpcClient } from "@/ipc/ipc_client";
@@ -27,7 +27,12 @@ interface TenantScopePickerProps {
 export function TenantScopePicker({ onScopeChange }: TenantScopePickerProps) {
   const [scope, setScope] = useState(() => getConfiguredTenantScope());
   const [isSwitchingScope, setIsSwitchingScope] = useState(false);
+  const [newWorkspaceName, setNewWorkspaceName] = useState("");
+  const [createWorkspaceError, setCreateWorkspaceError] = useState<
+    string | null
+  >(null);
   const isHttpBackend = getConfiguredBackendMode() === "http";
+  const queryClient = useQueryClient();
 
   const organizationsQuery = useQuery<TenantOrganization[], Error>({
     queryKey: TENANT_QUERY_KEYS.organizations,
@@ -46,6 +51,16 @@ export function TenantScopePicker({ onScopeChange }: TenantScopePickerProps) {
   const activeOrgId = useMemo(() => {
     return resolveActiveOrganizationId(organizations, scope.orgId);
   }, [organizations, scope.orgId]);
+  const activeOrganization = useMemo(() => {
+    return organizations.find(
+      (organization) => organization.id === activeOrgId,
+    );
+  }, [activeOrgId, organizations]);
+  const canCreateWorkspace = useMemo(() => {
+    return activeOrganization
+      ? ["owner", "admin"].includes(activeOrganization.role)
+      : false;
+  }, [activeOrganization]);
 
   const workspacesQuery = useQuery<TenantWorkspace[], Error>({
     queryKey: TENANT_QUERY_KEYS.workspaces(activeOrgId ?? "none"),
@@ -66,6 +81,44 @@ export function TenantScopePicker({ onScopeChange }: TenantScopePickerProps) {
   const activeWorkspaceId = useMemo(() => {
     return resolveActiveWorkspaceId(workspaces, scope.workspaceId);
   }, [workspaces, scope.workspaceId]);
+  const createWorkspaceMutation = useMutation<
+    TenantWorkspace,
+    Error,
+    { orgId: string; name: string }
+  >({
+    mutationFn: async ({ orgId, name }) => {
+      return IpcClient.getInstance().createWorkspace({
+        orgId,
+        name,
+        type: "team",
+      });
+    },
+    onSuccess: async (workspace, variables) => {
+      setCreateWorkspaceError(null);
+      setNewWorkspaceName("");
+      await queryClient.invalidateQueries({
+        queryKey: TENANT_QUERY_KEYS.workspaces(variables.orgId),
+      });
+
+      setIsSwitchingScope(true);
+      try {
+        await applyScope(variables.orgId, workspace.id);
+      } catch (error) {
+        setCreateWorkspaceError(
+          error instanceof Error
+            ? error.message
+            : "Workspace created, but failed to switch scope",
+        );
+      } finally {
+        setIsSwitchingScope(false);
+      }
+    },
+    onError: (error) => {
+      setCreateWorkspaceError(error?.message || "Failed to create workspace");
+    },
+  });
+  const isCreatingWorkspace = createWorkspaceMutation.isPending;
+  const isBusy = isSwitchingScope || isCreatingWorkspace;
 
   const applyScope = useCallback(
     async (orgId: string, workspaceId: string) => {
@@ -78,7 +131,7 @@ export function TenantScopePicker({ onScopeChange }: TenantScopePickerProps) {
   );
 
   const handleOrganizationClick = async (orgId: string) => {
-    if (isSwitchingScope || orgId === activeOrgId) {
+    if (isBusy || orgId === activeOrgId) {
       return;
     }
     setIsSwitchingScope(true);
@@ -90,7 +143,7 @@ export function TenantScopePicker({ onScopeChange }: TenantScopePickerProps) {
   };
 
   const handleWorkspaceClick = async (workspaceId: string) => {
-    if (isSwitchingScope || !activeOrgId || workspaceId === activeWorkspaceId) {
+    if (isBusy || !activeOrgId || workspaceId === activeWorkspaceId) {
       return;
     }
     setIsSwitchingScope(true);
@@ -98,6 +151,27 @@ export function TenantScopePicker({ onScopeChange }: TenantScopePickerProps) {
       await applyScope(activeOrgId, workspaceId);
     } finally {
       setIsSwitchingScope(false);
+    }
+  };
+  const handleCreateWorkspace = async () => {
+    if (isBusy || !activeOrgId || !canCreateWorkspace) {
+      return;
+    }
+
+    const trimmedName = newWorkspaceName.trim();
+    if (!trimmedName) {
+      setCreateWorkspaceError("Workspace name is required");
+      return;
+    }
+
+    setCreateWorkspaceError(null);
+    try {
+      await createWorkspaceMutation.mutateAsync({
+        orgId: activeOrgId,
+        name: trimmedName,
+      });
+    } catch {
+      // Error is surfaced via mutation onError handler.
     }
   };
 
@@ -142,6 +216,11 @@ export function TenantScopePicker({ onScopeChange }: TenantScopePickerProps) {
     scope.workspaceId,
   ]);
 
+  useEffect(() => {
+    setCreateWorkspaceError(null);
+    setNewWorkspaceName("");
+  }, [activeOrgId]);
+
   if (!isHttpBackend) {
     return null;
   }
@@ -180,7 +259,7 @@ export function TenantScopePicker({ onScopeChange }: TenantScopePickerProps) {
               <button
                 key={organization.id}
                 type="button"
-                disabled={isSwitchingScope}
+                disabled={isBusy}
                 onClick={() => {
                   void handleOrganizationClick(organization.id);
                 }}
@@ -224,7 +303,7 @@ export function TenantScopePicker({ onScopeChange }: TenantScopePickerProps) {
               <button
                 key={workspace.id}
                 type="button"
-                disabled={isSwitchingScope}
+                disabled={isBusy}
                 onClick={() => {
                   void handleWorkspaceClick(workspace.id);
                 }}
@@ -246,6 +325,50 @@ export function TenantScopePicker({ onScopeChange }: TenantScopePickerProps) {
             );
           })
         )}
+
+        <form
+          className="px-2 pt-1 space-y-1"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleCreateWorkspace();
+          }}
+        >
+          <input
+            data-testid="create-workspace-input"
+            value={newWorkspaceName}
+            onChange={(event) => {
+              setNewWorkspaceName(event.target.value);
+              if (createWorkspaceError) {
+                setCreateWorkspaceError(null);
+              }
+            }}
+            placeholder="New workspace name"
+            className="w-full rounded-md border border-sidebar-border/80 bg-background px-2 py-1 text-xs"
+            disabled={!canCreateWorkspace || !activeOrgId || isBusy}
+          />
+          <button
+            type="submit"
+            data-testid="create-workspace-button"
+            disabled={!canCreateWorkspace || !activeOrgId || isBusy}
+            className={cn(
+              "w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors",
+              "hover:bg-sidebar-accent/80 disabled:opacity-60",
+              "border border-sidebar-border/80",
+            )}
+          >
+            {isCreatingWorkspace ? "Creating workspace..." : "Create workspace"}
+          </button>
+          {!canCreateWorkspace && activeOrgId ? (
+            <div className="text-[11px] text-muted-foreground">
+              Only owner/admin can create workspaces
+            </div>
+          ) : null}
+          {createWorkspaceError ? (
+            <div className="text-[11px] text-red-500">
+              {createWorkspaceError}
+            </div>
+          ) : null}
+        </form>
       </div>
     </div>
   );

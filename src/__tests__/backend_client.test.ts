@@ -127,6 +127,71 @@ describe("backend_client transport", () => {
     expect(fallback.invokeMock).not.toHaveBeenCalled();
   });
 
+  it("uses API route mapping for workspace creation", async () => {
+    window.__BLAZE_REMOTE_CONFIG__ = {
+      backendClient: {
+        mode: "http",
+        baseUrl: "https://api.example.com",
+      },
+    };
+
+    const fallback = new MockIpcRenderer();
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: "ws_123",
+            organizationId: "org_123",
+            slug: "new-space",
+            name: "New Space",
+            type: "team",
+            createdByUserId: "user_123",
+            createdAt: "2026-02-19T10:00:00.000Z",
+            updatedAt: "2026-02-19T10:00:00.000Z",
+          },
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createBackendClientTransport(fallback);
+    const workspace = await client.invoke("create-workspace", {
+      orgId: "org_123",
+      name: "New Space",
+      slug: "new-space",
+      type: "team",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.example.com/api/v1/orgs/org_123/workspaces",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          name: "New Space",
+          slug: "new-space",
+          type: "team",
+        }),
+      }),
+    );
+    expect(workspace).toEqual({
+      id: "ws_123",
+      organizationId: "org_123",
+      slug: "new-space",
+      name: "New Space",
+      type: "team",
+      createdByUserId: "user_123",
+      createdAt: "2026-02-19T10:00:00.000Z",
+      updatedAt: "2026-02-19T10:00:00.000Z",
+    });
+    expect(fallback.invokeMock).not.toHaveBeenCalled();
+  });
+
   it("falls back to IPC when HTTP request fails", async () => {
     window.__BLAZE_REMOTE_CONFIG__ = {
       backendClient: {

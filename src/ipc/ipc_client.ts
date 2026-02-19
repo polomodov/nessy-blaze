@@ -97,6 +97,7 @@ import type {
   UncommittedFile,
   TenantOrganization,
   TenantWorkspace,
+  CreateWorkspaceParams,
 } from "./ipc_types";
 import type { Template } from "../shared/templates";
 import type { Theme } from "../shared/themes";
@@ -607,6 +608,12 @@ export class IpcClient {
     orgId?: string;
   }): Promise<TenantWorkspace[]> {
     return this.ipcRenderer.invoke("list-workspaces", params);
+  }
+
+  public async createWorkspace(
+    params: CreateWorkspaceParams,
+  ): Promise<TenantWorkspace> {
+    return this.ipcRenderer.invoke("create-workspace", params);
   }
 
   // Search apps by name

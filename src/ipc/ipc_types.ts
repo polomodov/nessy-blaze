@@ -646,6 +646,13 @@ export interface TenantWorkspace {
   updatedAt: string | null;
 }
 
+export interface CreateWorkspaceParams {
+  orgId: string;
+  name: string;
+  slug?: string;
+  type?: "personal" | "team";
+}
+
 export interface SupabaseBranch {
   id: string;
   name: string;
