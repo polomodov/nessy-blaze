@@ -8,7 +8,11 @@ type Message = {
   id: string;
   content: string;
   role: "user" | "agent";
+  isAssistantActionOnly?: boolean;
 };
+
+const ASSISTANT_ACTION_ONLY_MESSAGE =
+  "Assistant responded with internal actions.";
 
 const starterPrompts = [
   {
@@ -121,8 +125,16 @@ function mapBackendMessages(messages: BackendMessage[]): Message[] {
     )
     .map((message) => {
       const isAssistant = message.role === "assistant";
+      const rawContent = message.content ?? "";
+      const strippedContent = isAssistant ? stripControlMarkup(rawContent) : "";
+      const isAssistantActionOnly =
+        isAssistant &&
+        rawContent.trim().length > 0 &&
+        strippedContent.length === 0;
       const content = isAssistant
-        ? stripControlMarkup(message.content)
+        ? isAssistantActionOnly
+          ? ASSISTANT_ACTION_ONLY_MESSAGE
+          : strippedContent
         : message.content;
       const role: Message["role"] = isAssistant ? "agent" : "user";
 
@@ -130,6 +142,7 @@ function mapBackendMessages(messages: BackendMessage[]): Message[] {
         id: String(message.id),
         role,
         content,
+        isAssistantActionOnly,
       };
     })
     .filter((message) => message.role === "user" || message.content.length > 0);
@@ -425,7 +438,9 @@ export function BlazeChatArea({
                     className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
                       message.role === "user"
                         ? "bg-user-bubble text-primary-foreground"
-                        : "bg-agent-bubble text-foreground"
+                        : message.isAssistantActionOnly
+                          ? "border border-dashed border-primary/40 bg-primary/5 text-muted-foreground"
+                          : "bg-agent-bubble text-foreground"
                     }`}
                   >
                     {message.content}

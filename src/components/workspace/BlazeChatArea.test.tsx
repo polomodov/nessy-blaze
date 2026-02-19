@@ -139,6 +139,43 @@ describe("BlazeChatArea", () => {
     expect(screen.getByText("Recovered history")).toBeTruthy();
   });
 
+  it("shows action-only marker for assistant messages in loaded history", async () => {
+    getChatsMock.mockResolvedValue([
+      {
+        id: 31,
+        appId: 10,
+        title: "Chat with actions",
+        createdAt: new Date("2026-02-19T00:00:00.000Z"),
+      },
+    ]);
+    getChatMock.mockResolvedValue({
+      id: 31,
+      appId: 10,
+      title: "Chat with actions",
+      messages: [
+        { id: 1, role: "user", content: "Run update" },
+        {
+          id: 2,
+          role: "assistant",
+          content:
+            '<blaze-write path="src/App.tsx">export default function App(){return null;}</blaze-write>',
+        },
+      ],
+    });
+
+    render(<BlazeChatArea activeAppId={10} />);
+
+    await waitFor(() => {
+      expect(getChatsMock).toHaveBeenCalledWith(10);
+      expect(getChatMock).toHaveBeenCalledWith(31);
+    });
+
+    expect(screen.getByText("Run update")).toBeTruthy();
+    expect(
+      screen.getByText("Assistant responded with internal actions."),
+    ).toBeTruthy();
+  });
+
   it("creates chat in selected app without creating new app", async () => {
     render(<BlazeChatArea activeAppId={88} />);
 
@@ -273,7 +310,7 @@ describe("BlazeChatArea", () => {
     expect(screen.queryByText(/blaze-chat-summary/i)).toBeNull();
   });
 
-  it("hides assistant messages that only contain control markup", async () => {
+  it("shows marker when assistant message contains only control markup", async () => {
     render(<BlazeChatArea />);
 
     const input = screen.getByPlaceholderText(
@@ -301,6 +338,9 @@ describe("BlazeChatArea", () => {
     });
 
     expect(screen.getByText("Create About page")).toBeTruthy();
+    expect(
+      screen.getByText("Assistant responded with internal actions."),
+    ).toBeTruthy();
     expect(screen.queryByText(/const x = 1/)).toBeNull();
     expect(screen.queryByText(/blaze-write/i)).toBeNull();
   });
