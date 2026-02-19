@@ -70,6 +70,7 @@ import {
   getBlazeWriteTags,
   getBlazeDeleteTags,
   getBlazeRenameTags,
+  getBlazeSearchReplaceTags,
 } from "../utils/blaze_tag_parser";
 import { fileExists } from "../utils/file_utils";
 import { FileUploadsState } from "../utils/file_uploads_state";
@@ -145,6 +146,35 @@ function escapeXml(unsafe: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+export function buildPendingApplySummaryTag(fullResponse: string): string {
+  const writeCount = getBlazeWriteTags(fullResponse).length;
+  const renameCount = getBlazeRenameTags(fullResponse).length;
+  const deleteCount = getBlazeDeleteTags(fullResponse).length;
+  const dependencyCount = getBlazeAddDependencyTags(fullResponse).length;
+  const searchReplaceCount = getBlazeSearchReplaceTags(fullResponse).length;
+  const totalProposedActions =
+    writeCount +
+    renameCount +
+    deleteCount +
+    dependencyCount +
+    searchReplaceCount;
+  const hasProposedCodeChanges = totalProposedActions > 0;
+
+  const title = hasProposedCodeChanges ? "Change ready" : "Response ready";
+  const summary = [
+    hasProposedCodeChanges
+      ? "Status: Change ready for approval."
+      : "Status: No code changes were generated.",
+    `Files to write: ${writeCount}`,
+    `Files to rename: ${renameCount}`,
+    `Files to delete: ${deleteCount}`,
+    `Search/replace edits: ${searchReplaceCount}`,
+    `Dependencies to add: ${dependencyCount}`,
+  ].join("\n");
+
+  return `<blaze-status title="${escapeXml(title)}">${escapeXml(summary)}</blaze-status>`;
 }
 
 // Safely parse an MCP tool key that combines server and tool names.
@@ -1498,6 +1528,26 @@ ${problemReport.problems
           extraFilesError: status.extraFilesError,
         } satisfies ChatResponseEnd);
       } else {
+        const responseWithSummary = `${fullResponse}\n\n${buildPendingApplySummaryTag(fullResponse)}`;
+        await db
+          .update(messages)
+          .set({ content: responseWithSummary })
+          .where(eq(messages.id, placeholderAssistantMessage.id));
+
+        const chat = await db.query.chats.findFirst({
+          where: eq(chats.id, req.chatId),
+          with: {
+            messages: {
+              orderBy: (messages, { asc }) => [asc(messages.createdAt)],
+            },
+          },
+        });
+
+        safeSend(event.sender, "chat:response:chunk", {
+          chatId: req.chatId,
+          messages: chat!.messages,
+        });
+
         safeSend(event.sender, "chat:response:end", {
           chatId: req.chatId,
           updatedFiles: false,

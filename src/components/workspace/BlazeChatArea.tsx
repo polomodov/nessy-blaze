@@ -77,13 +77,45 @@ function findFirstUnclosedControlTagIndex(content: string): number {
   );
 }
 
+function decodeXmlEntities(content: string): string {
+  return content
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
+function preserveStatusSummary(content: string): string {
+  return content.replace(
+    /<blaze-status(?<attrs>\s[^>]*)?>(?<body>[\s\S]*?)<\/blaze-status>/gi,
+    (match, attrs = "", body = "", _offset, _string, groups) => {
+      const attrsSource = (groups?.attrs as string | undefined) ?? attrs;
+      const bodySource = (groups?.body as string | undefined) ?? body;
+      const titleMatch = attrsSource.match(/\btitle="([^"]*)"/i);
+      const title = decodeXmlEntities((titleMatch?.[1] ?? "").trim());
+      const summaryBody = decodeXmlEntities(String(bodySource).trim());
+
+      if (!title && !summaryBody) {
+        return "";
+      }
+
+      const parts = [title, summaryBody].filter(Boolean);
+      return `\n${parts.join("\n")}\n`;
+    },
+  );
+}
+
 function stripControlMarkup(content: string): string {
   if (!content) {
     return "";
   }
 
+  // Keep completion summaries visible as plain text.
+  let cleaned = preserveStatusSummary(content);
+
   // Remove complete control blocks such as <blaze-write>...</blaze-write>.
-  let cleaned = content.replace(
+  cleaned = cleaned.replace(
     /<(?<tag>blaze-[\w-]+|think)(?:\s[^>]*)?>[\s\S]*?<\/\k<tag>>/gi,
     "",
   );

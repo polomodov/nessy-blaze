@@ -391,6 +391,45 @@ describe("BlazeChatArea", () => {
     expect(screen.queryByText(/blaze-chat-summary/i)).toBeNull();
   });
 
+  it("keeps completion summary from blaze-status visible in assistant output", async () => {
+    render(<BlazeChatArea />);
+
+    const input = screen.getByPlaceholderText(
+      "Describe what should be built...",
+    );
+    fireEvent.change(input, { target: { value: "Update section anchor" } });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => {
+      expect(streamMessageMock).toHaveBeenCalledTimes(1);
+    });
+
+    const streamOptions = streamMessageMock.mock.calls[0][1];
+    act(() => {
+      streamOptions.onUpdate([
+        { id: 1, role: "user", content: "Update section anchor" },
+        {
+          id: 2,
+          role: "assistant",
+          content: `<blaze-chat-summary>Anchor updated</blaze-chat-summary>
+<blaze-status title="Change ready">Status: Change ready for approval.
+Files to write: 1</blaze-status>`,
+        },
+      ]);
+      streamOptions.onEnd({ chatId: 77, updatedFiles: false });
+    });
+
+    expect(
+      screen.getByText((value) => value.includes("Change ready")),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/Status: Change ready for approval\./),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText("Assistant responded with internal actions."),
+    ).toBeNull();
+  });
+
   it("shows marker when assistant message contains only control markup", async () => {
     render(<BlazeChatArea />);
 

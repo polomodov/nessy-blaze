@@ -11,6 +11,7 @@ import { processFullResponseActions } from "../ipc/processors/response_processor
 import {
   removeBlazeTags,
   hasUnclosedBlazeWrite,
+  buildPendingApplySummaryTag,
 } from "../ipc/handlers/chat_stream_handlers";
 import fs from "node:fs";
 import { db } from "../db";
@@ -645,6 +646,16 @@ describe("getBlazeDeleteTags", () => {
 });
 
 describe("processFullResponse", () => {
+  const getDbUpdatePayloads = () => {
+    return vi.mocked(db.update).mock.results.flatMap((result) => {
+      const setMock = (result.value as any)?.set;
+      if (!setMock?.mock?.calls) {
+        return [];
+      }
+      return setMock.mock.calls.map((call: any[]) => call[0]);
+    });
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
 
@@ -695,6 +706,50 @@ describe("processFullResponse", () => {
     });
     expect(fs.mkdirSync).not.toHaveBeenCalled();
     expect(fs.writeFileSync).not.toHaveBeenCalled();
+  });
+
+  it("should append completion summary with ready status when changes are applied", async () => {
+    vi.mocked(fs.mkdirSync).mockImplementation(() => undefined);
+    vi.mocked(fs.writeFileSync).mockImplementation(() => undefined);
+
+    const response = `<blaze-write path="src/file1.js">console.log('Hello');</blaze-write>`;
+
+    await processFullResponseActions(response, 1, {
+      chatSummary: undefined,
+      messageId: 1,
+    });
+
+    const contentUpdate = getDbUpdatePayloads().find(
+      (payload) => typeof payload?.content === "string",
+    ) as { content?: string } | undefined;
+
+    expect(contentUpdate?.content).toContain(
+      `<blaze-status title="Change ready">`,
+    );
+    expect(contentUpdate?.content).toContain("Status: Change ready.");
+    expect(contentUpdate?.content).toContain("Files written: 1");
+    expect(contentUpdate?.content).toContain("Files renamed: 0");
+    expect(contentUpdate?.content).toContain("Files deleted: 0");
+  });
+
+  it("should append completion summary when no file changes were required", async () => {
+    await processFullResponseActions("No blaze-write tags here", 1, {
+      chatSummary: undefined,
+      messageId: 1,
+    });
+
+    const contentUpdate = getDbUpdatePayloads().find(
+      (payload) => typeof payload?.content === "string",
+    ) as { content?: string } | undefined;
+
+    expect(contentUpdate?.content).toContain(
+      `<blaze-status title="No file changes were required">`,
+    );
+    expect(contentUpdate?.content).toContain(
+      "Status: No file changes were required.",
+    );
+    expect(contentUpdate?.content).toContain("Files written: 0");
+    expect(contentUpdate?.content).toContain("Dependencies added: 0");
   });
 
   it("should process blaze-write tags and create files", async () => {
@@ -1103,6 +1158,41 @@ const special = "Special chars: @#$%^&*()[]{}|\\";
     const text = `Before <blaze-custom-action param="value">content</blaze-custom-action> After`;
     const result = removeBlazeTags(text);
     expect(result).toBe("Before  After");
+  });
+});
+
+describe("buildPendingApplySummaryTag", () => {
+  it("should mark response as ready when no code actions are present", () => {
+    const tag = buildPendingApplySummaryTag(
+      "I understand the issue and will investigate.",
+    );
+
+    expect(tag).toContain(`<blaze-status title="Response ready">`);
+    expect(tag).toContain("Status: No code changes were generated.");
+    expect(tag).toContain("Files to write: 0");
+    expect(tag).toContain("Files to rename: 0");
+    expect(tag).toContain("Files to delete: 0");
+    expect(tag).toContain("Search/replace edits: 0");
+    expect(tag).toContain("Dependencies to add: 0");
+  });
+
+  it("should mark change as ready when blaze actions are present", () => {
+    const response = `
+      <blaze-write path="src/App.tsx">export default function App() { return null; }</blaze-write>
+      <blaze-rename from="src/Old.tsx" to="src/New.tsx"></blaze-rename>
+      <blaze-delete path="src/Unused.tsx"></blaze-delete>
+      <blaze-search-replace path="src/index.tsx">-old +new</blaze-search-replace>
+      <blaze-add-dependency packages="zod"></blaze-add-dependency>
+    `;
+    const tag = buildPendingApplySummaryTag(response);
+
+    expect(tag).toContain(`<blaze-status title="Change ready">`);
+    expect(tag).toContain("Status: Change ready for approval.");
+    expect(tag).toContain("Files to write: 1");
+    expect(tag).toContain("Files to rename: 1");
+    expect(tag).toContain("Files to delete: 1");
+    expect(tag).toContain("Search/replace edits: 1");
+    expect(tag).toContain("Dependencies to add: 1");
   });
 });
 
