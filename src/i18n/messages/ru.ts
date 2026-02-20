@@ -131,6 +131,9 @@ export const ru = {
   "preview.aria.pageSelect": "Страница предпросмотра",
   "preview.button.preview": "Предпросмотр",
   "preview.button.export": "Экспорт",
+  "preview.button.selectComponent": "Выбрать элемент",
+  "preview.button.selectComponent.active": "Выбор...",
+  "preview.aria.toggleComponentPicker": "Переключить режим выбора элемента",
   "preview.aria.openNewTab": "Открыть в новой вкладке",
   "preview.empty.title": "Предпросмотр приложения",
   "preview.empty.subtitle":

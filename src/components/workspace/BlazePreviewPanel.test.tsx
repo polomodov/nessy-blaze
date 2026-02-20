@@ -1,5 +1,13 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { Provider, createStore } from "jotai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { selectedComponentsPreviewAtom } from "@/atoms/previewAtoms";
 import { BlazePreviewPanel } from "./BlazePreviewPanel";
 
 const { runAppMock, stopAppMock, readAppFileMock } = vi.hoisted(() => ({
@@ -119,6 +127,295 @@ describe("BlazePreviewPanel", () => {
         "Предпросмотр сгенерированного приложения",
       );
       expect(iframe.getAttribute("src")).toContain("about:");
+    });
+  });
+
+  it("activates element picker and stores selected component", async () => {
+    runAppMock.mockImplementation(
+      async (
+        appId: number,
+        onOutput: (payload: {
+          type: "info";
+          message: string;
+          appId: number;
+          timestamp: number;
+        }) => void,
+      ) => {
+        onOutput({
+          type: "info",
+          message:
+            "[blaze-proxy-server]started=[about:blank] original=[http://127.0.0.1:5173]",
+          appId,
+          timestamp: Date.now(),
+        });
+      },
+    );
+
+    const store = createStore();
+    render(
+      <Provider store={store}>
+        <BlazePreviewPanel activeAppId={42} />
+      </Provider>,
+    );
+
+    const iframe = await screen.findByTitle(
+      "Предпросмотр сгенерированного приложения",
+    );
+    const postMessageMock = vi.fn();
+    Object.defineProperty(iframe, "contentWindow", {
+      value: { postMessage: postMessageMock },
+      configurable: true,
+    });
+
+    fireEvent.click(screen.getByTestId("toggle-component-picker-button"));
+
+    expect(postMessageMock).toHaveBeenCalledWith(
+      { type: "activate-blaze-component-selector" },
+      "*",
+    );
+
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          source: (iframe as HTMLIFrameElement).contentWindow,
+          data: {
+            type: "blaze-component-selected",
+            component: {
+              id: "src/App.tsx:12:5",
+              name: "HeroSection",
+              runtimeId: "runtime-1",
+            },
+          },
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("preview-selected-components-count").textContent,
+      ).toBe("1");
+    });
+
+    expect(store.get(selectedComponentsPreviewAtom)).toEqual([
+      {
+        id: "src/App.tsx:12:5",
+        name: "HeroSection",
+        runtimeId: "runtime-1",
+        relativePath: "src/App.tsx",
+        lineNumber: 12,
+        columnNumber: 5,
+      },
+    ]);
+  });
+
+  it("accepts component selection even when component name is missing", async () => {
+    runAppMock.mockImplementation(
+      async (
+        appId: number,
+        onOutput: (payload: {
+          type: "info";
+          message: string;
+          appId: number;
+          timestamp: number;
+        }) => void,
+      ) => {
+        onOutput({
+          type: "info",
+          message:
+            "[blaze-proxy-server]started=[about:blank] original=[http://127.0.0.1:5173]",
+          appId,
+          timestamp: Date.now(),
+        });
+      },
+    );
+
+    const store = createStore();
+    render(
+      <Provider store={store}>
+        <BlazePreviewPanel activeAppId={42} />
+      </Provider>,
+    );
+
+    const iframe = await screen.findByTitle(
+      "Предпросмотр сгенерированного приложения",
+    );
+
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          source: (iframe as HTMLIFrameElement).contentWindow,
+          data: {
+            type: "blaze-component-selected",
+            component: {
+              id: "src/App.tsx:22:3",
+              runtimeId: "runtime-missing-name",
+            },
+          },
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("preview-selected-components-count").textContent,
+      ).toBe("1");
+    });
+
+    expect(store.get(selectedComponentsPreviewAtom)).toEqual([
+      {
+        id: "src/App.tsx:22:3",
+        name: "component",
+        runtimeId: "runtime-missing-name",
+        relativePath: "src/App.tsx",
+        lineNumber: 22,
+        columnNumber: 3,
+      },
+    ]);
+  });
+
+  it("deselects by runtime id without removing other instances", async () => {
+    runAppMock.mockImplementation(
+      async (
+        appId: number,
+        onOutput: (payload: {
+          type: "info";
+          message: string;
+          appId: number;
+          timestamp: number;
+        }) => void,
+      ) => {
+        onOutput({
+          type: "info",
+          message:
+            "[blaze-proxy-server]started=[about:blank] original=[http://127.0.0.1:5173]",
+          appId,
+          timestamp: Date.now(),
+        });
+      },
+    );
+
+    const store = createStore();
+    render(
+      <Provider store={store}>
+        <BlazePreviewPanel activeAppId={42} />
+      </Provider>,
+    );
+
+    const iframe = await screen.findByTitle(
+      "Предпросмотр сгенерированного приложения",
+    );
+
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          source: (iframe as HTMLIFrameElement).contentWindow,
+          data: {
+            type: "blaze-component-selected",
+            component: {
+              id: "src/App.tsx:12:5",
+              name: "HeroSection",
+              runtimeId: "runtime-1",
+            },
+          },
+        }),
+      );
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          source: (iframe as HTMLIFrameElement).contentWindow,
+          data: {
+            type: "blaze-component-selected",
+            component: {
+              id: "src/App.tsx:12:5",
+              name: "HeroSection",
+              runtimeId: "runtime-2",
+            },
+          },
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("preview-selected-components-count").textContent,
+      ).toBe("2");
+    });
+
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          source: (iframe as HTMLIFrameElement).contentWindow,
+          data: {
+            type: "blaze-component-deselected",
+            componentId: "src/App.tsx:12:5",
+            runtimeId: "runtime-1",
+          },
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("preview-selected-components-count").textContent,
+      ).toBe("1");
+    });
+
+    expect(store.get(selectedComponentsPreviewAtom)).toEqual([
+      {
+        id: "src/App.tsx:12:5",
+        name: "HeroSection",
+        runtimeId: "runtime-2",
+        relativePath: "src/App.tsx",
+        lineNumber: 12,
+        columnNumber: 5,
+      },
+    ]);
+  });
+
+  it("shows selectable elements counter while picker is active", async () => {
+    runAppMock.mockImplementation(
+      async (
+        appId: number,
+        onOutput: (payload: {
+          type: "info";
+          message: string;
+          appId: number;
+          timestamp: number;
+        }) => void,
+      ) => {
+        onOutput({
+          type: "info",
+          message:
+            "[blaze-proxy-server]started=[about:blank] original=[http://127.0.0.1:5173]",
+          appId,
+          timestamp: Date.now(),
+        });
+      },
+    );
+
+    render(<BlazePreviewPanel activeAppId={42} />);
+
+    const iframe = await screen.findByTitle(
+      "Предпросмотр сгенерированного приложения",
+    );
+
+    fireEvent.click(screen.getByTestId("toggle-component-picker-button"));
+
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          source: (iframe as HTMLIFrameElement).contentWindow,
+          data: {
+            type: "blaze-selectable-components-updated",
+            count: 37,
+          },
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("preview-selectable-components-count").textContent,
+      ).toBe("37");
     });
   });
 

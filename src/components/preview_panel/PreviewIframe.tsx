@@ -588,6 +588,10 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
 
       if (event.data?.type === "blaze-component-deselected") {
         const componentId = event.data.componentId;
+        const runtimeId =
+          typeof event.data.runtimeId === "string"
+            ? event.data.runtimeId
+            : null;
         if (componentId) {
           // Disable text editing for the deselected component
           if (iframeRef.current?.contentWindow) {
@@ -601,10 +605,18 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
           }
 
           setSelectedComponentsPreview((prev) =>
-            prev.filter((c) => c.id !== componentId),
+            prev.filter((c) => {
+              if (runtimeId && c.runtimeId) {
+                return c.runtimeId !== runtimeId;
+              }
+              return c.id !== componentId;
+            }),
           );
           setVisualEditingSelectedComponent((prev) => {
-            const shouldClear = prev?.id === componentId;
+            const shouldClear =
+              runtimeId && prev?.runtimeId
+                ? prev.runtimeId === runtimeId
+                : prev?.id === componentId;
             if (shouldClear) {
               setCurrentComponentCoordinates(null);
             }
@@ -1281,15 +1293,15 @@ function parseComponentSelection(data: any): ComponentSelection | null {
   }
 
   const component = data.component;
-  if (
-    !component ||
-    typeof component.id !== "string" ||
-    typeof component.name !== "string"
-  ) {
+  if (!component || typeof component.id !== "string") {
     return null;
   }
 
-  const { id, name, runtimeId } = component;
+  const { id, runtimeId } = component;
+  const name =
+    typeof component.name === "string" && component.name.trim().length > 0
+      ? component.name
+      : "component";
 
   // The id is expected to be in the format "filepath:line:column"
   const parts = id.split(":");

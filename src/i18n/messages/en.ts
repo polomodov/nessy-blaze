@@ -124,6 +124,9 @@ export const en = {
   "preview.aria.pageSelect": "Preview page",
   "preview.button.preview": "Preview",
   "preview.button.export": "Export",
+  "preview.button.selectComponent": "Select element",
+  "preview.button.selectComponent.active": "Selecting...",
+  "preview.aria.toggleComponentPicker": "Toggle element picker",
   "preview.aria.openNewTab": "Open in new tab",
   "preview.empty.title": "App preview",
   "preview.empty.subtitle":

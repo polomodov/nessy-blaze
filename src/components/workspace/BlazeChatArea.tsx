@@ -10,6 +10,13 @@ import {
   Send,
   Sparkles,
 } from "lucide-react";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import {
+  previewIframeRefAtom,
+  selectedComponentsPreviewAtom,
+  visualEditingSelectedComponentAtom,
+} from "@/atoms/previewAtoms";
+import { SelectedComponentsDisplay } from "../chat/SelectedComponentDisplay";
 import { useI18n } from "@/contexts/I18nContext";
 import { useSettings } from "@/hooks/useSettings";
 import { IpcClient } from "@/ipc/ipc_client";
@@ -360,6 +367,13 @@ export function BlazeChatArea({
   const [expandedStatusKeys, setExpandedStatusKeys] = useState<Set<string>>(
     new Set(),
   );
+  const [selectedComponents, setSelectedComponents] = useAtom(
+    selectedComponentsPreviewAtom,
+  );
+  const previewIframeRef = useAtomValue(previewIframeRefAtom);
+  const setVisualEditingSelectedComponent = useSetAtom(
+    visualEditingSelectedComponentAtom,
+  );
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const visibleChatIdRef = useRef<number | null>(null);
@@ -397,6 +411,14 @@ export function BlazeChatArea({
   useEffect(() => {
     void syncPendingCodeProposal(chatId);
   }, [chatId, syncPendingCodeProposal]);
+
+  useEffect(() => {
+    if (typeof activeAppId === "undefined") {
+      return;
+    }
+    setSelectedComponents([]);
+    setVisualEditingSelectedComponent(null);
+  }, [activeAppId, setSelectedComponents, setVisualEditingSelectedComponent]);
 
   const resizeInput = useCallback(() => {
     const textarea = inputRef.current;
@@ -528,6 +550,8 @@ export function BlazeChatArea({
     if (pendingCodeProposal && !settings?.autoApproveChanges) return;
 
     const prompt = input.trim();
+    const selectedComponentsForPrompt =
+      selectedComponents.length > 0 ? [...selectedComponents] : [];
     setError(null);
 
     const userMessage: Message = {
@@ -541,6 +565,18 @@ export function BlazeChatArea({
     setIsTyping(true);
     setIsHiddenAgentActivity(false);
     setPendingCodeProposal(null);
+    setSelectedComponents([]);
+    setVisualEditingSelectedComponent(null);
+    if (previewIframeRef?.contentWindow) {
+      previewIframeRef.contentWindow.postMessage(
+        { type: "clear-blaze-component-overlays" },
+        "*",
+      );
+      previewIframeRef.contentWindow.postMessage(
+        { type: "deactivate-blaze-component-selector" },
+        "*",
+      );
+    }
     let activeChatId = chatId;
     let appIdForMessage = appId;
 
@@ -577,6 +613,7 @@ export function BlazeChatArea({
 
       IpcClient.getInstance().streamMessage(prompt, {
         chatId: streamChatId,
+        selectedComponents: selectedComponentsForPrompt,
         onUpdate: (updatedMessages) => {
           if (visibleChatIdRef.current !== streamChatId) {
             return;
@@ -905,6 +942,9 @@ export function BlazeChatArea({
             </button>
           </div>
         )}
+        <div className="mx-auto max-w-2xl">
+          <SelectedComponentsDisplay />
+        </div>
         <div className="mx-auto flex max-w-2xl items-end gap-3">
           <div className="flex-1 rounded-xl border border-border bg-surface px-4 py-3 transition-colors focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20">
             <textarea

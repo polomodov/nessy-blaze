@@ -7,6 +7,47 @@
   let highlightedElement = null;
   let componentCoordinates = null; // Store the last selected component's coordinates
   let isProMode = false; // Track if pro mode is enabled
+  let runtimeIdCounter = 0;
+  let selectableObserver = null;
+  let selectableRefreshTimer = null;
+  const SELECTABLE_STYLE_ID = "__blaze_selectable_components_style__";
+  const EXCLUDED_TAGS = new Set([
+    "HTML",
+    "HEAD",
+    "BODY",
+    "SCRIPT",
+    "STYLE",
+    "META",
+    "LINK",
+    "TITLE",
+    "NOSCRIPT",
+  ]);
+  const INTERACTIVE_TAGS = new Set([
+    "A",
+    "BUTTON",
+    "INPUT",
+    "SELECT",
+    "TEXTAREA",
+    "OPTION",
+    "SUMMARY",
+    "LABEL",
+    "DETAILS",
+  ]);
+  const INTERACTIVE_ROLES = new Set([
+    "button",
+    "link",
+    "menuitem",
+    "tab",
+    "checkbox",
+    "switch",
+    "radio",
+    "option",
+    "textbox",
+    "combobox",
+    "listbox",
+    "slider",
+    "spinbutton",
+  ]);
   //detect if the user is using Mac
   const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
 
@@ -18,6 +59,429 @@
 
   /* ---------- helpers --------------------------------------------------- */
   const css = (el, obj) => Object.assign(el.style, obj);
+
+  function generateRuntimeId() {
+    runtimeIdCounter += 1;
+    return `blaze-${Date.now().toString(36)}-${runtimeIdCounter.toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  function ensureSelectableStylesInserted() {
+    if (!document.head) {
+      return;
+    }
+
+    if (document.getElementById(SELECTABLE_STYLE_ID)) {
+      return;
+    }
+
+    const style = document.createElement("style");
+    style.id = SELECTABLE_STYLE_ID;
+    style.textContent = `
+      [data-blaze-selectable="true"] {
+        outline: 1px dashed rgba(127, 34, 254, 0.45);
+        outline-offset: 1px;
+      }
+    `;
+
+    document.head.appendChild(style);
+  }
+
+  function sanitizeDomPathSegment(value) {
+    return value.replace(/[^a-z0-9_-]/gi, "-").replace(/-+/g, "-");
+  }
+
+  function buildDomPath(el, maxDepth = 10) {
+    const segments = [];
+    let current = el;
+    let depth = 0;
+
+    while (
+      current &&
+      current instanceof Element &&
+      current !== document.body &&
+      depth < maxDepth
+    ) {
+      const parent = current.parentElement;
+      const tag = current.tagName.toLowerCase();
+
+      if (!parent) {
+        segments.unshift(sanitizeDomPathSegment(tag));
+        break;
+      }
+
+      let index = 1;
+      let sibling = current.previousElementSibling;
+      while (sibling) {
+        if (sibling.tagName === current.tagName) {
+          index += 1;
+        }
+        sibling = sibling.previousElementSibling;
+      }
+
+      segments.unshift(sanitizeDomPathSegment(`${tag}-${index}`));
+      current = parent;
+      depth += 1;
+    }
+
+    return segments.join("/");
+  }
+
+  function hasDirectTextNode(el) {
+    for (const node of el.childNodes) {
+      if (
+        node.nodeType === Node.TEXT_NODE &&
+        typeof node.textContent === "string" &&
+        node.textContent.trim().length > 0
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  function isElementInspectableCandidate(el) {
+    if (!(el instanceof HTMLElement)) {
+      return false;
+    }
+
+    if (
+      el.classList.contains(OVERLAY_CLASS) ||
+      el.closest(`.${OVERLAY_CLASS}`)
+    ) {
+      return false;
+    }
+
+    if (EXCLUDED_TAGS.has(el.tagName)) {
+      return false;
+    }
+
+    const rect = el.getBoundingClientRect();
+    if (rect.width < 6 || rect.height < 6) {
+      return false;
+    }
+
+    const computed = window.getComputedStyle(el);
+    if (
+      computed.display === "none" ||
+      computed.visibility === "hidden" ||
+      computed.opacity === "0"
+    ) {
+      return false;
+    }
+
+    if (
+      typeof el.dataset.blazeId === "string" &&
+      el.dataset.blazeId.length > 0
+    ) {
+      return true;
+    }
+
+    if (INTERACTIVE_TAGS.has(el.tagName)) {
+      return true;
+    }
+
+    const role = el.getAttribute("role")?.toLowerCase();
+    if (role && INTERACTIVE_ROLES.has(role)) {
+      return true;
+    }
+
+    if (el.isContentEditable || el.tabIndex >= 0) {
+      return true;
+    }
+
+    if (el.hasAttribute("onclick") || typeof el.onclick === "function") {
+      return true;
+    }
+
+    if (computed.cursor === "pointer") {
+      return true;
+    }
+
+    return hasDirectTextNode(el);
+  }
+
+  function notifySelectableCount(count) {
+    window.parent.postMessage(
+      {
+        type: "blaze-selectable-components-updated",
+        count,
+      },
+      "*",
+    );
+  }
+
+  function normalizeSourcePath(fileName) {
+    if (typeof fileName !== "string" || fileName.length === 0) {
+      return null;
+    }
+
+    let normalized = fileName;
+
+    if (/^https?:\/\//i.test(normalized)) {
+      try {
+        normalized = new URL(normalized).pathname;
+      } catch {
+        return null;
+      }
+    }
+
+    try {
+      normalized = decodeURIComponent(normalized);
+    } catch {
+      // Keep original value when path is not URI-encoded.
+    }
+
+    normalized = normalized.replace(/\\/g, "/").replace(/^[a-zA-Z]:/, "");
+
+    const lowerNormalized = normalized.toLowerCase();
+    const srcIndex = lowerNormalized.lastIndexOf("/src/");
+    if (srcIndex >= 0) {
+      return normalized.slice(srcIndex + 1);
+    }
+
+    const appIndex = lowerNormalized.lastIndexOf("/app/");
+    if (appIndex >= 0) {
+      return normalized.slice(appIndex + 1);
+    }
+
+    if (normalized.startsWith("/")) {
+      normalized = normalized.slice(1);
+    }
+
+    return normalized || null;
+  }
+
+  function getReactFiberNode(el) {
+    for (const key of Object.keys(el)) {
+      if (key.startsWith("__reactFiber$")) {
+        return el[key];
+      }
+    }
+    return null;
+  }
+
+  function getFiberDebugSource(fiber) {
+    const seen = new Set();
+    let current = fiber;
+
+    while (current && !seen.has(current)) {
+      seen.add(current);
+
+      const candidateSources = [
+        current._debugSource,
+        current._source,
+        current.elementType?._source,
+        current.type?._source,
+        current.memoizedProps?.__source,
+        current.pendingProps?.__source,
+      ];
+
+      for (const source of candidateSources) {
+        if (
+          source &&
+          typeof source.fileName === "string" &&
+          typeof source.lineNumber === "number"
+        ) {
+          return source;
+        }
+      }
+
+      current = current.return;
+    }
+
+    return null;
+  }
+
+  function getFiberComponentName(fiber) {
+    const candidates = [
+      fiber?.elementType?.displayName,
+      fiber?.elementType?.name,
+      fiber?.type?.displayName,
+      fiber?.type?.name,
+    ];
+
+    for (const candidate of candidates) {
+      if (typeof candidate === "string" && candidate.trim().length > 0) {
+        return candidate.trim();
+      }
+    }
+
+    return null;
+  }
+
+  function ensureBlazeMetadataOnElement(el) {
+    if (!(el instanceof Element)) {
+      return false;
+    }
+
+    if (!el.dataset.blazeRuntimeId) {
+      el.dataset.blazeRuntimeId = generateRuntimeId();
+    }
+
+    if (!el.dataset.blazeInstanceId) {
+      el.dataset.blazeInstanceId = el.dataset.blazeRuntimeId;
+    }
+
+    if (!el.dataset.blazeName) {
+      el.dataset.blazeName = el.tagName.toLowerCase();
+    }
+
+    if (typeof el.dataset.blazeId === "string" && el.dataset.blazeId.length) {
+      return true;
+    }
+
+    const fiber = getReactFiberNode(el);
+    const source = fiber ? getFiberDebugSource(fiber) : null;
+    if (source) {
+      const relativePath = normalizeSourcePath(source.fileName);
+      const lineNumber = Number(source.lineNumber);
+      const columnNumber = Number(source.columnNumber ?? source.column ?? 1);
+      const normalizedLineNumber =
+        Number.isFinite(lineNumber) && lineNumber > 0
+          ? Math.floor(lineNumber)
+          : 0;
+      const normalizedColumnNumber = Number.isFinite(columnNumber)
+        ? Math.max(1, Math.floor(columnNumber))
+        : 1;
+
+      if (relativePath && normalizedLineNumber > 0) {
+        el.dataset.blazeId = `${relativePath}:${normalizedLineNumber}:${normalizedColumnNumber}`;
+        const fiberName = getFiberComponentName(fiber);
+        if (fiberName) {
+          el.dataset.blazeName = fiberName;
+        }
+        return true;
+      }
+    }
+
+    // Fallback when no source metadata is available: keep runtime-unique attribution.
+    const domPath = buildDomPath(el);
+    if (!domPath) {
+      return false;
+    }
+
+    el.dataset.blazeDomPath = domPath;
+    el.dataset.blazeId = `__dom__/${domPath}:1:1`;
+    return true;
+  }
+
+  function clearSelectableMarkers() {
+    const markedElements = document.querySelectorAll("[data-blaze-selectable]");
+    for (const element of markedElements) {
+      element.removeAttribute("data-blaze-selectable");
+    }
+  }
+
+  function markSelectableElements(limit = 800) {
+    if (!document.body) {
+      notifySelectableCount(0);
+      return 0;
+    }
+
+    clearSelectableMarkers();
+
+    const elements = document.body.querySelectorAll("*");
+    let count = 0;
+
+    for (let i = 0; i < elements.length && count < limit; i += 1) {
+      const element = elements[i];
+      if (!isElementInspectableCandidate(element)) {
+        continue;
+      }
+
+      if (!ensureBlazeMetadataOnElement(element)) {
+        continue;
+      }
+
+      element.dataset.blazeSelectable = "true";
+      count += 1;
+    }
+
+    notifySelectableCount(count);
+    return count;
+  }
+
+  function scheduleSelectableRefresh() {
+    if (selectableRefreshTimer) {
+      clearTimeout(selectableRefreshTimer);
+    }
+
+    selectableRefreshTimer = setTimeout(() => {
+      selectableRefreshTimer = null;
+      if (state.type === "inspecting") {
+        markSelectableElements();
+      }
+    }, 120);
+  }
+
+  function startSelectableObserver() {
+    if (selectableObserver || !document.body) {
+      return;
+    }
+
+    selectableObserver = new MutationObserver(() => {
+      scheduleSelectableRefresh();
+    });
+
+    selectableObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["class", "style", "role", "aria-label"],
+    });
+  }
+
+  function stopSelectableObserver() {
+    if (selectableObserver) {
+      selectableObserver.disconnect();
+      selectableObserver = null;
+    }
+    if (selectableRefreshTimer) {
+      clearTimeout(selectableRefreshTimer);
+      selectableRefreshTimer = null;
+    }
+  }
+
+  function findInspectableElement(initialTarget) {
+    let el =
+      initialTarget instanceof Element
+        ? initialTarget
+        : initialTarget?.parentElement;
+
+    while (el) {
+      if (
+        isElementInspectableCandidate(el) &&
+        ensureBlazeMetadataOnElement(el)
+      ) {
+        return el;
+      }
+      el = el.parentElement;
+    }
+
+    return null;
+  }
+
+  function hydrateExistingDomElements(limit = 1200) {
+    if (!document.body) {
+      return 0;
+    }
+
+    const elements = document.body.querySelectorAll("*");
+    let hydratedCount = 0;
+
+    for (let i = 0; i < elements.length && hydratedCount < limit; i += 1) {
+      const element = elements[i];
+      if (
+        isElementInspectableCandidate(element) &&
+        ensureBlazeMetadataOnElement(element)
+      ) {
+        hydratedCount += 1;
+      }
+    }
+
+    return hydratedCount;
+  }
 
   function makeOverlay() {
     const overlay = document.createElement("div");
@@ -326,8 +790,7 @@
       return;
     }
 
-    let el = e.target;
-    while (el && !el.dataset.blazeId) el = el.parentElement;
+    const el = findInspectableElement(e.target);
 
     const hoveredItem = overlays.find((item) => item.el === el);
 
@@ -397,7 +860,12 @@
     e.preventDefault();
     e.stopPropagation();
 
+    ensureBlazeMetadataOnElement(state.element);
+
     const clickedComponentId = state.element.dataset.blazeId;
+    if (!clickedComponentId) {
+      return;
+    }
     const selectedItem = overlays.find((item) => item.el === state.element);
 
     // If clicking on the currently highlighted component, deselect it
@@ -415,6 +883,7 @@
         {
           type: "blaze-component-deselected",
           componentId: clickedComponentId,
+          runtimeId: state.element.dataset.blazeRuntimeId || undefined,
         },
         "*",
       );
@@ -446,11 +915,6 @@
     if (!selectedItem) {
       updateOverlay(state.element, true, isProMode);
       requestAnimationFrame(updateAllOverlayPositions);
-    }
-
-    // Assign a unique runtime ID to this element if it doesn't have one
-    if (!state.element.dataset.blazeRuntimeId) {
-      state.element.dataset.blazeRuntimeId = `blaze-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     }
 
     const rect = state.element.getBoundingClientRect();
@@ -503,6 +967,10 @@
     if (state.type === "inactive") {
       window.addEventListener("click", onClick, true);
     }
+    ensureSelectableStylesInserted();
+    hydrateExistingDomElements();
+    markSelectableElements();
+    startSelectableObserver();
     state = { type: "inspecting", element: null };
   }
 
@@ -519,6 +987,9 @@
     // Hide all labels when deactivating
     overlays.forEach((item) => updateSelectedOverlayLabel(item, false));
     currentHoveredElement = null;
+    stopSelectableObserver();
+    clearSelectableMarkers();
+    notifySelectableCount(0);
 
     state = { type: "inactive" };
   }
@@ -576,10 +1047,13 @@
       return;
     }
     setTimeout(() => {
+      ensureSelectableStylesInserted();
+      const hydratedCount = hydrateExistingDomElements();
       if (document.body.querySelector("[data-blaze-id]")) {
         window.parent.postMessage(
           {
             type: "blaze-component-selector-initialized",
+            selectableCount: hydratedCount,
           },
           "*",
         );

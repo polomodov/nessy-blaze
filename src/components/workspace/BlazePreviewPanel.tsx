@@ -5,12 +5,19 @@ import {
   Eye,
   Loader2,
   Monitor,
+  MousePointerClick,
   Smartphone,
   Tablet,
 } from "lucide-react";
+import { useAtom, useSetAtom } from "jotai";
+import {
+  previewIframeRefAtom,
+  selectedComponentsPreviewAtom,
+} from "@/atoms/previewAtoms";
 import { useI18n } from "@/contexts/I18nContext";
 import { IpcClient } from "@/ipc/ipc_client";
-import type { AppOutput } from "@/ipc/ipc_types";
+import type { AppOutput, ComponentSelection } from "@/ipc/ipc_types";
+import { normalizePath } from "../../../shared/normalizePath";
 import {
   buildPreviewUrl,
   extractPreviewPathsFromAppSource,
@@ -46,6 +53,62 @@ function resolveErrorMessage(error: unknown, fallbackMessage: string): string {
   return fallbackMessage;
 }
 
+function parseComponentSelection(data: unknown): ComponentSelection | null {
+  if (!data || typeof data !== "object") {
+    return null;
+  }
+
+  const payload = data as {
+    type?: string;
+    component?: {
+      id?: string;
+      name?: string;
+      runtimeId?: string;
+    };
+  };
+
+  if (payload.type !== "blaze-component-selected") {
+    return null;
+  }
+
+  const component = payload.component;
+  if (!component || typeof component.id !== "string") {
+    return null;
+  }
+
+  const parts = component.id.split(":");
+  if (parts.length < 3) {
+    return null;
+  }
+
+  const columnPart = parts.pop();
+  const linePart = parts.pop();
+  const relativePath = parts.join(":");
+
+  if (!columnPart || !linePart || !relativePath) {
+    return null;
+  }
+
+  const lineNumber = Number.parseInt(linePart, 10);
+  const columnNumber = Number.parseInt(columnPart, 10);
+
+  if (Number.isNaN(lineNumber) || Number.isNaN(columnNumber)) {
+    return null;
+  }
+
+  return {
+    id: component.id,
+    name:
+      typeof component.name === "string" && component.name.trim().length > 0
+        ? component.name
+        : "component",
+    runtimeId: component.runtimeId,
+    relativePath: normalizePath(relativePath),
+    lineNumber,
+    columnNumber,
+  };
+}
+
 interface BlazePreviewPanelProps {
   activeAppId: number | null;
 }
@@ -58,6 +121,13 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
   const [selectedPath, setSelectedPath] = useState("/");
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isPickingComponent, setIsPickingComponent] = useState(false);
+  const [selectableCount, setSelectableCount] = useState<number | null>(null);
+  const [selectedComponents, setSelectedComponents] = useAtom(
+    selectedComponentsPreviewAtom,
+  );
+  const setPreviewIframeRef = useSetAtom(previewIframeRefAtom);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const runningAppIdRef = useRef<number | null>(null);
 
   const loadPreviewPaths = useCallback(async (appId: number) => {
@@ -74,6 +144,94 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
     }
     return buildPreviewUrl(appUrl, selectedPath);
   }, [appUrl, selectedPath]);
+
+  useEffect(() => {
+    setSelectedComponents([]);
+    setIsPickingComponent(false);
+    setSelectableCount(null);
+  }, [activeAppId, setSelectedComponents]);
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.source !== iframeRef.current?.contentWindow) {
+        return;
+      }
+
+      if (
+        event.data?.type === "blaze-selectable-components-updated" &&
+        typeof event.data?.count === "number"
+      ) {
+        setSelectableCount(Math.max(0, event.data.count));
+        return;
+      }
+
+      const parsedSelection = parseComponentSelection(event.data);
+      if (parsedSelection) {
+        setSelectedComponents((previous) => {
+          const exists = previous.some((component) => {
+            if (parsedSelection.runtimeId && component.runtimeId) {
+              return component.runtimeId === parsedSelection.runtimeId;
+            }
+            return component.id === parsedSelection.id;
+          });
+          return exists ? previous : [...previous, parsedSelection];
+        });
+        return;
+      }
+
+      if (
+        event.data?.type === "blaze-component-deselected" &&
+        typeof event.data?.componentId === "string"
+      ) {
+        const deselectedComponentId = event.data.componentId;
+        const deselectedRuntimeId =
+          typeof event.data?.runtimeId === "string"
+            ? event.data.runtimeId
+            : null;
+        setSelectedComponents((previous) =>
+          previous.filter((component) => {
+            if (deselectedRuntimeId && component.runtimeId) {
+              return component.runtimeId !== deselectedRuntimeId;
+            }
+            return component.id !== deselectedComponentId;
+          }),
+        );
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => {
+      window.removeEventListener("message", handleMessage);
+    };
+  }, [setSelectedComponents]);
+
+  const handleIframeRef = useCallback(
+    (node: HTMLIFrameElement | null) => {
+      iframeRef.current = node;
+      setPreviewIframeRef(node);
+    },
+    [setPreviewIframeRef],
+  );
+
+  const toggleComponentPicker = useCallback(() => {
+    const iframeWindow = iframeRef.current?.contentWindow;
+    if (!iframeWindow) {
+      return;
+    }
+
+    setIsPickingComponent((previous) => {
+      const next = !previous;
+      iframeWindow.postMessage(
+        {
+          type: next
+            ? "activate-blaze-component-selector"
+            : "deactivate-blaze-component-selector",
+        },
+        "*",
+      );
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -143,6 +301,9 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
         setAppUrl(null);
         setError(null);
         setIsStarting(false);
+        setSelectedComponents([]);
+        setIsPickingComponent(false);
+        setSelectableCount(null);
         return;
       }
 
@@ -150,6 +311,7 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
       setAppUrl(null);
       setError(null);
       setIsStarting(true);
+      setSelectableCount(null);
 
       try {
         await IpcClient.getInstance().runApp(activeAppId, handleOutput);
@@ -261,6 +423,40 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
             {t("preview.button.export")}
           </button>
           <button
+            onClick={toggleComponentPicker}
+            disabled={!resolvedPreviewUrl}
+            data-testid="toggle-component-picker-button"
+            className={`flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+              isPickingComponent
+                ? "bg-primary/10 text-primary hover:bg-primary/15"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            }`}
+            aria-label={t("preview.aria.toggleComponentPicker")}
+          >
+            <MousePointerClick size={14} />
+            {t(
+              isPickingComponent
+                ? "preview.button.selectComponent.active"
+                : "preview.button.selectComponent",
+            )}
+            {selectedComponents.length > 0 && (
+              <span
+                data-testid="preview-selected-components-count"
+                className="ml-0.5 rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold"
+              >
+                {selectedComponents.length}
+              </span>
+            )}
+            {isPickingComponent && selectableCount !== null && (
+              <span
+                data-testid="preview-selectable-components-count"
+                className="ml-0.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground"
+              >
+                {selectableCount}
+              </span>
+            )}
+          </button>
+          <button
             onClick={() => {
               if (resolvedPreviewUrl) {
                 window.open(
@@ -320,6 +516,15 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
               title={t("preview.iframe.title")}
               src={resolvedPreviewUrl}
               className="h-full min-h-[520px] w-full border-0"
+              ref={handleIframeRef}
+              onLoad={() => {
+                if (isPickingComponent && iframeRef.current?.contentWindow) {
+                  iframeRef.current.contentWindow.postMessage(
+                    { type: "activate-blaze-component-selector" },
+                    "*",
+                  );
+                }
+              }}
             />
           )}
         </div>

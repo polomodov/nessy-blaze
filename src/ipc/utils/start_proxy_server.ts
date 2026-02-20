@@ -1,11 +1,33 @@
 // startProxy.js – helper to launch proxy.js as a worker
 
 import { Worker } from "worker_threads";
+import fs from "node:fs";
 import path from "path";
 import { findAvailablePort } from "./port_utils";
 import log from "electron-log";
 
 const logger = log.scope("start_proxy_server");
+
+function resolveProxyServerWorkerPath(): string {
+  const candidates = [
+    // client-server/dev mode
+    path.resolve(process.cwd(), "worker", "proxy_server.js"),
+    // electron packaged/build mode (legacy behavior)
+    path.resolve(__dirname, "..", "..", "worker", "proxy_server.js"),
+    // ts/tsx source mode fallback
+    path.resolve(__dirname, "..", "..", "..", "worker", "proxy_server.js"),
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  throw new Error(
+    `startProxy: proxy worker script not found. Checked: ${candidates.join(", ")}`,
+  );
+}
 
 export async function startProxy(
   targetOrigin: string,
@@ -26,15 +48,15 @@ export async function startProxy(
     onStarted,
   } = opts;
 
-  const worker = new Worker(
-    path.resolve(__dirname, "..", "..", "worker", "proxy_server.js"),
-    {
-      workerData: {
-        targetOrigin,
-        port,
-      },
+  const workerScriptPath = resolveProxyServerWorkerPath();
+  logger.info("Using proxy worker script", workerScriptPath);
+
+  const worker = new Worker(workerScriptPath, {
+    workerData: {
+      targetOrigin,
+      port,
     },
-  );
+  });
 
   worker.on("message", (m) => {
     logger.info("[proxy]", m);

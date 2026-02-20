@@ -5,7 +5,13 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { Provider, createStore } from "jotai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  previewIframeRefAtom,
+  selectedComponentsPreviewAtom,
+} from "@/atoms/previewAtoms";
+import type { ComponentSelection } from "@/ipc/ipc_types";
 import { BlazeChatArea } from "./BlazeChatArea";
 
 const {
@@ -386,6 +392,60 @@ describe("BlazeChatArea", () => {
         chatId: 77,
       }),
     );
+  });
+
+  it("sends selected preview components with prompt context", async () => {
+    const store = createStore();
+    const selectedComponent: ComponentSelection = {
+      id: "src/App.tsx:12:5",
+      name: "HeroSection",
+      runtimeId: "runtime-1",
+      relativePath: "src/App.tsx",
+      lineNumber: 12,
+      columnNumber: 5,
+    };
+    const postMessageMock = vi.fn();
+
+    store.set(selectedComponentsPreviewAtom, [selectedComponent]);
+    store.set(previewIframeRefAtom, {
+      contentWindow: {
+        postMessage: postMessageMock,
+      },
+    } as unknown as HTMLIFrameElement);
+
+    render(
+      <Provider store={store}>
+        <BlazeChatArea />
+      </Provider>,
+    );
+
+    const input = screen.getByPlaceholderText("Опишите, что нужно собрать...");
+    fireEvent.change(input, {
+      target: { value: "Сделай этот блок компактнее и смени отступы" },
+    });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => {
+      expect(streamMessageMock).toHaveBeenCalledTimes(1);
+    });
+
+    expect(streamMessageMock).toHaveBeenCalledWith(
+      "Сделай этот блок компактнее и смени отступы",
+      expect.objectContaining({
+        chatId: 77,
+        selectedComponents: [selectedComponent],
+      }),
+    );
+
+    expect(postMessageMock).toHaveBeenCalledWith(
+      { type: "clear-blaze-component-overlays" },
+      "*",
+    );
+    expect(postMessageMock).toHaveBeenCalledWith(
+      { type: "deactivate-blaze-component-selector" },
+      "*",
+    );
+    expect(store.get(selectedComponentsPreviewAtom)).toEqual([]);
   });
 
   it("shows backend error from stream callback", async () => {

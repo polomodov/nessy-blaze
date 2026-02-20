@@ -21,6 +21,7 @@ import {
 import { getBlazeAppPath, getUserDataPath } from "../paths/paths";
 import { getEnvVar } from "../ipc/utils/read_env";
 import { withLock } from "../ipc/utils/lock_utils";
+import { startProxy } from "../ipc/utils/start_proxy_server";
 import {
   processCounter,
   removeAppIfCurrentProcess,
@@ -594,8 +595,100 @@ function getRunCommand({
     : getDefaultCommand(appId);
 }
 
-function getPreviewUrl(appId: number): string {
+type PreviewProxyWorker = Awaited<ReturnType<typeof startProxy>>;
+
+const previewProxyWorkers = new Map<number, PreviewProxyWorker>();
+const previewProxyUrls = new Map<number, string>();
+
+function getOriginalPreviewUrl(appId: number): string {
   return `http://127.0.0.1:${getAppPort(appId)}`;
+}
+
+async function stopPreviewProxyForApp(appId: number): Promise<void> {
+  const worker = previewProxyWorkers.get(appId);
+  previewProxyWorkers.delete(appId);
+  previewProxyUrls.delete(appId);
+
+  if (!worker) {
+    return;
+  }
+
+  try {
+    await worker.terminate();
+  } catch {
+    // ignore: worker may already be stopped
+  }
+}
+
+function stopPreviewProxyForAppInBackground(appId: number): void {
+  void stopPreviewProxyForApp(appId);
+}
+
+async function getOrCreatePreviewProxyUrl(appId: number): Promise<string> {
+  const existingProxyUrl = previewProxyUrls.get(appId);
+  if (existingProxyUrl) {
+    return existingProxyUrl;
+  }
+
+  const originalUrl = getOriginalPreviewUrl(appId);
+  let startedProxyUrl: string | null = null;
+  let startupError: Error | null = null;
+
+  const worker = await startProxy(originalUrl, {
+    onStarted: (proxyUrl) => {
+      startedProxyUrl = proxyUrl;
+    },
+  });
+
+  worker.once("error", (error) => {
+    startupError = new Error(
+      `Failed to start preview proxy for app ${appId}: ${error.message}`,
+    );
+  });
+
+  worker.once("exit", (code) => {
+    if (!startedProxyUrl) {
+      startupError = new Error(
+        `Failed to start preview proxy for app ${appId}. Worker exited with code ${code}.`,
+      );
+    }
+  });
+
+  const timeoutMs = 10_000;
+  const pollIntervalMs = 100;
+  const startedAt = Date.now();
+  while (startedProxyUrl == null && Date.now() - startedAt < timeoutMs) {
+    if (startupError) {
+      break;
+    }
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, pollIntervalMs);
+    });
+  }
+
+  if (!startedProxyUrl) {
+    try {
+      await worker.terminate();
+    } catch {
+      // ignore termination errors on startup failure
+    }
+    throw (
+      startupError ??
+      new Error(`Timed out starting preview proxy for app ${appId}.`)
+    );
+  }
+
+  previewProxyWorkers.set(appId, worker);
+  previewProxyUrls.set(appId, startedProxyUrl);
+  worker.once("exit", () => {
+    const activeWorker = previewProxyWorkers.get(appId);
+    if (activeWorker === worker) {
+      previewProxyWorkers.delete(appId);
+      previewProxyUrls.delete(appId);
+    }
+  });
+
+  return startedProxyUrl;
 }
 
 function appendOutput(
@@ -685,7 +778,7 @@ async function cleanUpPort(port: number): Promise<void> {
 async function startPreviewAppForHttp(
   appId: number,
   context?: RequestContext | null,
-): Promise<string> {
+): Promise<{ previewUrl: string; originalUrl: string }> {
   const app = await db.query.apps.findFirst({
     where:
       context != null
@@ -748,10 +841,12 @@ async function startPreviewAppForHttp(
 
   process.on("close", () => {
     removeAppIfCurrentProcess(appId, process);
+    stopPreviewProxyForAppInBackground(appId);
   });
 
   process.on("error", () => {
     removeAppIfCurrentProcess(appId, process);
+    stopPreviewProxyForAppInBackground(appId);
   });
 
   const appPort = getAppPort(appId);
@@ -762,8 +857,11 @@ async function startPreviewAppForHttp(
       process,
       getRecentOutput: () => recentOutput,
     });
-    return getPreviewUrl(appId);
+    const originalUrl = getOriginalPreviewUrl(appId);
+    const previewUrl = await getOrCreatePreviewProxyUrl(appId);
+    return { previewUrl, originalUrl };
   } catch (error) {
+    await stopPreviewProxyForApp(appId);
     const appInfo = runningApps.get(appId);
     if (appInfo) {
       await stopAppByInfo(appId, appInfo);
@@ -2202,22 +2300,24 @@ const handlers: Record<string, InvokeHandler> = {
     }
 
     return withLock(appId, async () => {
-      const previewUrl = getPreviewUrl(appId);
+      const originalPreviewUrl = getOriginalPreviewUrl(appId);
       if (runningApps.has(appId)) {
         if (await isPortOpen(getAppPort(appId))) {
-          return { previewUrl, originalUrl: previewUrl };
+          const proxiedPreviewUrl = await getOrCreatePreviewProxyUrl(appId);
+          return {
+            previewUrl: proxiedPreviewUrl,
+            originalUrl: originalPreviewUrl,
+          };
         }
         const staleAppInfo = runningApps.get(appId);
         if (staleAppInfo) {
           await stopAppByInfo(appId, staleAppInfo);
         }
+        await stopPreviewProxyForApp(appId);
       }
 
       await cleanUpPort(getAppPort(appId));
-      const startedPreviewUrl = await startPreviewAppForHttp(
-        appId,
-        scopedContext,
-      );
+      const startedPreview = await startPreviewAppForHttp(appId, scopedContext);
       if (scopedContext) {
         await writeAuditEvent({
           context: scopedContext,
@@ -2226,7 +2326,7 @@ const handlers: Record<string, InvokeHandler> = {
           resourceId: appId,
         });
       }
-      return { previewUrl: startedPreviewUrl, originalUrl: startedPreviewUrl };
+      return startedPreview;
     });
   },
 
@@ -2243,6 +2343,7 @@ const handlers: Record<string, InvokeHandler> = {
       if (appInfo) {
         await stopAppByInfo(appId, appInfo);
       }
+      await stopPreviewProxyForApp(appId);
       if (scopedContext) {
         await writeAuditEvent({
           context: scopedContext,
@@ -2268,6 +2369,7 @@ const handlers: Record<string, InvokeHandler> = {
       if (appInfo) {
         await stopAppByInfo(appId, appInfo);
       }
+      await stopPreviewProxyForApp(appId);
 
       if (params?.removeNodeModules) {
         const app = await db.query.apps.findFirst({
@@ -2292,10 +2394,7 @@ const handlers: Record<string, InvokeHandler> = {
       }
 
       await cleanUpPort(getAppPort(appId));
-      const startedPreviewUrl = await startPreviewAppForHttp(
-        appId,
-        scopedContext,
-      );
+      const startedPreview = await startPreviewAppForHttp(appId, scopedContext);
       if (scopedContext) {
         await writeAuditEvent({
           context: scopedContext,
@@ -2309,8 +2408,8 @@ const handlers: Record<string, InvokeHandler> = {
       }
       return {
         success: true,
-        previewUrl: startedPreviewUrl,
-        originalUrl: startedPreviewUrl,
+        previewUrl: startedPreview.previewUrl,
+        originalUrl: startedPreview.originalUrl,
       };
     });
   },
