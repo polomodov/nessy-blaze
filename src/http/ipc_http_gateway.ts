@@ -86,6 +86,7 @@ const DEFAULT_USER_SETTINGS: UserSettings = UserSettingsSchema.parse({
   enableProLazyEditsMode: true,
   enableProSmartFilesContextMode: true,
   selectedChatMode: "build",
+  autoApproveChanges: true,
   enableAutoFixProblems: false,
   enableAutoUpdate: true,
   releaseChannel: "stable",

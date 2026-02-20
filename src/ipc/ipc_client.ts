@@ -263,6 +263,32 @@ function extractPreviewUrls(value: unknown): {
   return { previewUrl, originalUrl };
 }
 
+function normalizeCollectionResponse<T>(
+  value: unknown,
+  collectionKey: string,
+): T[] {
+  if (Array.isArray(value)) {
+    return value as T[];
+  }
+
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+
+  const record = value as Record<string, unknown>;
+  const keyedValue = record[collectionKey];
+  if (Array.isArray(keyedValue)) {
+    return keyedValue as T[];
+  }
+
+  const dataValue = record.data;
+  if (Array.isArray(dataValue)) {
+    return dataValue as T[];
+  }
+
+  return [];
+}
+
 async function encodeAttachmentsForStream(
   attachments: FileAttachment[] | undefined,
 ): Promise<EncodedStreamAttachment[]> {
@@ -601,13 +627,18 @@ export class IpcClient {
   }
 
   public async listOrganizations(): Promise<TenantOrganization[]> {
-    return this.ipcRenderer.invoke("list-orgs");
+    const data = await this.ipcRenderer.invoke("list-orgs");
+    return normalizeCollectionResponse<TenantOrganization>(
+      data,
+      "organizations",
+    );
   }
 
   public async listWorkspaces(params?: {
     orgId?: string;
   }): Promise<TenantWorkspace[]> {
-    return this.ipcRenderer.invoke("list-workspaces", params);
+    const data = await this.ipcRenderer.invoke("list-workspaces", params);
+    return normalizeCollectionResponse<TenantWorkspace>(data, "workspaces");
   }
 
   public async createWorkspace(

@@ -1,6 +1,28 @@
 import { parse } from "@babel/parser";
 import * as recast from "recast";
-import traverse from "@babel/traverse";
+import babelTraverse from "@babel/traverse";
+import type { NodePath } from "@babel/traverse";
+import type { JSXElement as BabelJsxElement } from "@babel/types";
+
+type TraverseFunction = (
+  ast: unknown,
+  visitors: Record<string, unknown>,
+) => void;
+
+function getTraverseFunction(): TraverseFunction {
+  if (typeof babelTraverse === "function") {
+    return babelTraverse as unknown as TraverseFunction;
+  }
+
+  const maybeTraverse = (babelTraverse as { default?: unknown }).default;
+  if (typeof maybeTraverse === "function") {
+    return maybeTraverse as TraverseFunction;
+  }
+
+  throw new TypeError(
+    "Failed to resolve @babel/traverse function export for visual editing",
+  );
+}
 
 interface ContentChange {
   classes: string[];
@@ -23,6 +45,8 @@ export function transformContent(
   content: string,
   changes: Map<number, ContentChange>,
 ): string {
+  const traverse = getTraverseFunction();
+
   // Parse with babel for compatibility with JSX/TypeScript
   const ast = parse(content, {
     sourceType: "module",
@@ -33,7 +57,7 @@ export function transformContent(
   const processedLines = new Set<number>();
 
   traverse(ast, {
-    JSXElement(path) {
+    JSXElement(path: NodePath<BabelJsxElement>) {
       const line = path.node.openingElement.loc?.start.line;
 
       // Only process if we have changes for this line and haven't processed it yet

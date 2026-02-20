@@ -1,5 +1,6 @@
 import { parse } from "@babel/parser";
-import traverse from "@babel/traverse";
+import babelTraverse from "@babel/traverse";
+import type { NodePath } from "@babel/traverse";
 import type { JSXOpeningElement } from "@babel/types";
 import MagicString from "magic-string";
 import path from "node:path";
@@ -7,6 +8,25 @@ import type { Plugin } from "vite";
 
 const VALID_EXTENSIONS = new Set([".jsx", ".tsx"]);
 const BLAZE_ID_ATTRIBUTE = "data-blaze-id";
+type TraverseFunction = (
+  ast: unknown,
+  visitors: Record<string, unknown>,
+) => void;
+
+function getTraverseFunction(): TraverseFunction {
+  if (typeof babelTraverse === "function") {
+    return babelTraverse as unknown as TraverseFunction;
+  }
+
+  const maybeTraverse = (babelTraverse as { default?: unknown }).default;
+  if (typeof maybeTraverse === "function") {
+    return maybeTraverse as TraverseFunction;
+  }
+
+  throw new TypeError(
+    "Failed to resolve @babel/traverse function export for component tagger",
+  );
+}
 
 function normalizeFileId(id: string): string {
   return id.split("?")[0];
@@ -32,6 +52,8 @@ function hasBlazeIdAttribute(node: JSXOpeningElement): boolean {
 }
 
 export function blazeComponentTagger(): Plugin {
+  const traverse = getTraverseFunction();
+
   return {
     name: "vite-plugin-blaze-component-tagger",
     apply: "serve",
@@ -51,7 +73,7 @@ export function blazeComponentTagger(): Plugin {
         const relativeFilePath = path.relative(process.cwd(), fileId);
 
         traverse(ast, {
-          JSXOpeningElement(pathNode) {
+          JSXOpeningElement(pathNode: NodePath<JSXOpeningElement>) {
             try {
               const node = pathNode.node;
               if (node.name.type !== "JSXIdentifier" || node.name.end == null) {

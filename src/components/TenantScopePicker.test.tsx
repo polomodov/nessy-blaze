@@ -194,4 +194,26 @@ describe("TenantScopePicker", () => {
     );
     expect(onScopeChange).not.toHaveBeenCalled();
   });
+
+  it("handles non-array organizations response without crashing", async () => {
+    listOrganizationsMock.mockResolvedValueOnce({
+      organizations: [],
+    });
+
+    renderPicker();
+
+    await screen.findByText(/(No organizations found|Организации не найдены)/);
+    expect(listWorkspacesMock).not.toHaveBeenCalled();
+  });
+
+  it("handles non-array workspaces response without crashing", async () => {
+    listWorkspacesMock.mockResolvedValueOnce({
+      workspaces: [],
+    });
+
+    renderPicker();
+
+    await screen.findByText("Org One");
+    await screen.findByText(/(No workspaces found|Рабочие области не найдены)/);
+  });
 });

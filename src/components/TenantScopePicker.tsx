@@ -46,7 +46,9 @@ export function TenantScopePicker({ onScopeChange }: TenantScopePickerProps) {
     meta: { showErrorToast: false },
   });
 
-  const organizations = organizationsQuery.data ?? [];
+  const organizations = Array.isArray(organizationsQuery.data)
+    ? organizationsQuery.data
+    : [];
   const hasConfiguredOrganization = organizations.some(
     (organization) => organization.id === scope.orgId,
   );
@@ -76,7 +78,9 @@ export function TenantScopePicker({ onScopeChange }: TenantScopePickerProps) {
     meta: { showErrorToast: false },
   });
 
-  const workspaces = workspacesQuery.data ?? [];
+  const workspaces = Array.isArray(workspacesQuery.data)
+    ? workspacesQuery.data
+    : [];
   const hasConfiguredWorkspace = workspaces.some(
     (workspace) => workspace.id === scope.workspaceId,
   );
