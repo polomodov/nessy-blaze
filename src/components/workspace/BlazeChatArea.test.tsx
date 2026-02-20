@@ -391,7 +391,7 @@ describe("BlazeChatArea", () => {
     expect(screen.queryByText(/blaze-chat-summary/i)).toBeNull();
   });
 
-  it("keeps completion summary from blaze-status visible in assistant output", async () => {
+  it("shows blaze-status content behind an expandable diagnostic block", async () => {
     render(<BlazeChatArea />);
 
     const input = screen.getByPlaceholderText(
@@ -419,9 +419,12 @@ Files to write: 1</blaze-status>`,
       streamOptions.onEnd({ chatId: 77, updatedFiles: false });
     });
 
+    expect(screen.getByRole("button", { name: /Change ready/i })).toBeTruthy();
     expect(
-      screen.getByText((value) => value.includes("Change ready")),
-    ).toBeTruthy();
+      screen.queryByText(/Status: Change ready for approval\./),
+    ).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /Change ready/i }));
     expect(
       screen.getByText(/Status: Change ready for approval\./),
     ).toBeTruthy();

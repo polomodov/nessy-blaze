@@ -80,40 +80,6 @@ function toErrorString(error: unknown): string {
   }
 }
 
-function buildCompletionStatusTag({
-  hasChanges,
-  writtenFilesCount,
-  renamedFilesCount,
-  deletedFilesCount,
-  dependenciesCount,
-  sqlCount,
-  warningCount,
-  errorCount,
-}: {
-  hasChanges: boolean;
-  writtenFilesCount: number;
-  renamedFilesCount: number;
-  deletedFilesCount: number;
-  dependenciesCount: number;
-  sqlCount: number;
-  warningCount: number;
-  errorCount: number;
-}): string {
-  const title = hasChanges ? "Change ready" : "No file changes were required";
-  const summary = [
-    `Status: ${hasChanges ? "Change ready." : "No file changes were required."}`,
-    `Files written: ${writtenFilesCount}`,
-    `Files renamed: ${renamedFilesCount}`,
-    `Files deleted: ${deletedFilesCount}`,
-    `Dependencies added: ${dependenciesCount}`,
-    `SQL queries executed: ${sqlCount}`,
-    `Warnings: ${warningCount}`,
-    `Errors: ${errorCount}`,
-  ].join("\n");
-
-  return `<blaze-status title="${escapeXmlAttr(title)}">${escapeXmlContent(summary)}</blaze-status>`;
-}
-
 export async function dryRunSearchReplace({
   fullResponse,
   appPath,
@@ -218,9 +184,6 @@ export async function processFullResponseActions(
 
   const warnings: Output[] = [];
   const errors: Output[] = [];
-  let dependencyCount = 0;
-  let sqlCount = 0;
-  let shouldAppendCompletionSummary = false;
 
   try {
     // Extract all tags
@@ -231,8 +194,6 @@ export async function processFullResponseActions(
     const blazeExecuteSqlQueries = chatWithApp.app.supabaseProjectId
       ? getBlazeExecuteSqlTags(fullResponse)
       : [];
-    dependencyCount = blazeAddDependencyPackages.length;
-    sqlCount = blazeExecuteSqlQueries.length;
 
     const message = await db.query.messages.findFirst({
       where: and(
@@ -680,7 +641,6 @@ export async function processFullResponseActions(
         approvalState: "approved",
       })
       .where(eq(messages.id, messageId));
-    shouldAppendCompletionSummary = true;
 
     return {
       updatedFiles: hasChanges,
@@ -692,20 +652,6 @@ export async function processFullResponseActions(
     return { error: (error as any).toString() };
   } finally {
     const appendedParts: string[] = [];
-    if (shouldAppendCompletionSummary) {
-      appendedParts.push(
-        buildCompletionStatusTag({
-          hasChanges,
-          writtenFilesCount: writtenFiles.length,
-          renamedFilesCount: renamedFiles.length,
-          deletedFilesCount: deletedFiles.length,
-          dependenciesCount: dependencyCount,
-          sqlCount,
-          warningCount: warnings.length,
-          errorCount: errors.length,
-        }),
-      );
-    }
 
     if (warnings.length > 0) {
       appendedParts.push(

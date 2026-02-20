@@ -1,14 +1,29 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Code2, Globe, Image, RotateCcw, Send, Sparkles } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  Code2,
+  Globe,
+  Image,
+  RotateCcw,
+  Send,
+  Sparkles,
+} from "lucide-react";
 import { IpcClient } from "@/ipc/ipc_client";
 import type { Message as BackendMessage } from "@/ipc/ipc_types";
+
+type StatusBlock = {
+  title: string;
+  body: string;
+};
 
 type Message = {
   id: string;
   content: string;
   role: "user" | "agent";
   isAssistantActionOnly?: boolean;
+  statusBlocks?: StatusBlock[];
 };
 
 const ASSISTANT_ACTION_ONLY_MESSAGE =
@@ -86,24 +101,35 @@ function decodeXmlEntities(content: string): string {
     .replace(/&amp;/g, "&");
 }
 
-function preserveStatusSummary(content: string): string {
-  return content.replace(
+function extractStatusBlocks(content: string): {
+  contentWithoutStatus: string;
+  statusBlocks: StatusBlock[];
+} {
+  const statusBlocks: StatusBlock[] = [];
+  const contentWithoutStatus = content.replace(
     /<blaze-status(?<attrs>\s[^>]*)?>(?<body>[\s\S]*?)<\/blaze-status>/gi,
-    (match, attrs = "", body = "", _offset, _string, groups) => {
+    (_match, attrs = "", body = "", _offset, _string, groups) => {
       const attrsSource = (groups?.attrs as string | undefined) ?? attrs;
       const bodySource = (groups?.body as string | undefined) ?? body;
       const titleMatch = attrsSource.match(/\btitle="([^"]*)"/i);
-      const title = decodeXmlEntities((titleMatch?.[1] ?? "").trim());
+      const title =
+        decodeXmlEntities((titleMatch?.[1] ?? "").trim()) ||
+        "Diagnostic details";
       const summaryBody = decodeXmlEntities(String(bodySource).trim());
-
-      if (!title && !summaryBody) {
+      if (!summaryBody) {
         return "";
       }
-
-      const parts = [title, summaryBody].filter(Boolean);
-      return `\n${parts.join("\n")}\n`;
+      statusBlocks.push({
+        title,
+        body: summaryBody,
+      });
+      return "";
     },
   );
+  return {
+    contentWithoutStatus,
+    statusBlocks,
+  };
 }
 
 function stripControlMarkup(content: string): string {
@@ -111,10 +137,8 @@ function stripControlMarkup(content: string): string {
     return "";
   }
 
-  // Keep completion summaries visible as plain text.
-  let cleaned = preserveStatusSummary(content);
-
   // Remove complete control blocks such as <blaze-write>...</blaze-write>.
+  let cleaned = content;
   cleaned = cleaned.replace(
     /<(?<tag>blaze-[\w-]+|think)(?:\s[^>]*)?>[\s\S]*?<\/\k<tag>>/gi,
     "",
@@ -158,11 +182,17 @@ function mapBackendMessages(messages: BackendMessage[]): Message[] {
     .map((message) => {
       const isAssistant = message.role === "assistant";
       const rawContent = message.content ?? "";
-      const strippedContent = isAssistant ? stripControlMarkup(rawContent) : "";
+      const { contentWithoutStatus, statusBlocks } = isAssistant
+        ? extractStatusBlocks(rawContent)
+        : { contentWithoutStatus: rawContent, statusBlocks: [] };
+      const strippedContent = isAssistant
+        ? stripControlMarkup(contentWithoutStatus)
+        : "";
       const isAssistantActionOnly =
         isAssistant &&
         rawContent.trim().length > 0 &&
-        strippedContent.length === 0;
+        strippedContent.length === 0 &&
+        statusBlocks.length === 0;
       const content = isAssistant
         ? isAssistantActionOnly
           ? ASSISTANT_ACTION_ONLY_MESSAGE
@@ -175,9 +205,15 @@ function mapBackendMessages(messages: BackendMessage[]): Message[] {
         role,
         content,
         isAssistantActionOnly,
+        statusBlocks,
       };
     })
-    .filter((message) => message.role === "user" || message.content.length > 0);
+    .filter(
+      (message) =>
+        message.role === "user" ||
+        message.content.length > 0 ||
+        (message.statusBlocks?.length ?? 0) > 0,
+    );
 }
 
 function hasHiddenAssistantActivity(messages: BackendMessage[]): boolean {
@@ -187,11 +223,16 @@ function hasHiddenAssistantActivity(messages: BackendMessage[]): boolean {
     }
 
     const rawContent = message.content ?? "";
+    const { contentWithoutStatus, statusBlocks } =
+      extractStatusBlocks(rawContent);
     if (rawContent.trim().length === 0) {
       return false;
     }
+    if (statusBlocks.length > 0) {
+      return false;
+    }
 
-    return stripControlMarkup(rawContent).length === 0;
+    return stripControlMarkup(contentWithoutStatus).length === 0;
   });
 }
 
@@ -221,6 +262,9 @@ export function BlazeChatArea({
   const [error, setError] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [isHiddenAgentActivity, setIsHiddenAgentActivity] = useState(false);
+  const [expandedStatusKeys, setExpandedStatusKeys] = useState<Set<string>>(
+    new Set(),
+  );
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const visibleChatIdRef = useRef<number | null>(null);
@@ -446,6 +490,17 @@ export function BlazeChatArea({
   };
 
   const isEmpty = messages.length === 0;
+  const toggleStatusKey = (key: string) => {
+    setExpandedStatusKeys((previous) => {
+      const next = new Set(previous);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
 
   return (
     <div className="flex h-full flex-1 flex-col bg-background">
@@ -517,7 +572,44 @@ export function BlazeChatArea({
                           : "bg-agent-bubble text-foreground"
                     }`}
                   >
-                    {message.content}
+                    {message.content && <div>{message.content}</div>}
+                    {message.statusBlocks?.map((statusBlock, index) => {
+                      const statusKey = `${message.id}:status:${index}`;
+                      const isExpanded = expandedStatusKeys.has(statusKey);
+                      return (
+                        <div
+                          key={statusKey}
+                          className={`${
+                            message.content ? "mt-3" : ""
+                          } rounded-lg border border-border bg-(--background-lightest)`}
+                        >
+                          <button
+                            className="w-full flex items-center justify-between px-3 py-2 text-left cursor-pointer"
+                            onClick={() => toggleStatusKey(statusKey)}
+                          >
+                            <span className="font-medium text-xs">
+                              {statusBlock.title}
+                            </span>
+                            {isExpanded ? (
+                              <ChevronUp
+                                size={16}
+                                className="text-muted-foreground"
+                              />
+                            ) : (
+                              <ChevronDown
+                                size={16}
+                                className="text-muted-foreground"
+                              />
+                            )}
+                          </button>
+                          {isExpanded && (
+                            <pre className="px-3 pb-3 text-xs whitespace-pre-wrap break-words text-muted-foreground font-mono overflow-auto max-h-60">
+                              {statusBlock.body}
+                            </pre>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </motion.div>
               ))}

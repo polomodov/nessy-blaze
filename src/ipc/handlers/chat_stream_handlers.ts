@@ -15,7 +15,7 @@ import {
 import { db } from "../../db";
 import { apps, chats, messages } from "../../db/schema";
 import { and, eq, isNull } from "drizzle-orm";
-import type { SmartContextMode } from "../../lib/schemas";
+import type { SmartContextMode, UserSettings } from "../../lib/schemas";
 import {
   constructSystemPrompt,
   readAiRules,
@@ -47,6 +47,7 @@ import {
   getSupabaseClientCode,
 } from "../../supabase_admin/supabase_context";
 import { SUMMARIZE_CHAT_SYSTEM_PROMPT } from "../../prompts/summarize_chat_system_prompt";
+import { CHANGE_SUMMARY_SYSTEM_PROMPT } from "../../prompts/change_summary_system_prompt";
 import { SECURITY_REVIEW_SYSTEM_PROMPT } from "../../prompts/security_review_prompt";
 import fs from "node:fs";
 import * as path from "path";
@@ -70,7 +71,6 @@ import {
   getBlazeWriteTags,
   getBlazeDeleteTags,
   getBlazeRenameTags,
-  getBlazeSearchReplaceTags,
 } from "../utils/blaze_tag_parser";
 import { fileExists } from "../utils/file_utils";
 import { FileUploadsState } from "../utils/file_uploads_state";
@@ -148,33 +148,158 @@ function escapeXml(unsafe: string): string {
     .replace(/"/g, "&quot;");
 }
 
-export function buildPendingApplySummaryTag(fullResponse: string): string {
-  const writeCount = getBlazeWriteTags(fullResponse).length;
-  const renameCount = getBlazeRenameTags(fullResponse).length;
-  const deleteCount = getBlazeDeleteTags(fullResponse).length;
-  const dependencyCount = getBlazeAddDependencyTags(fullResponse).length;
-  const searchReplaceCount = getBlazeSearchReplaceTags(fullResponse).length;
-  const totalProposedActions =
-    writeCount +
-    renameCount +
-    deleteCount +
-    dependencyCount +
-    searchReplaceCount;
-  const hasProposedCodeChanges = totalProposedActions > 0;
+const DIAGNOSTIC_TITLE = "Diagnostic details";
+const MAX_DIAGNOSTIC_BLOCK_CHARS = 18000;
+const MAX_SUMMARY_INPUT_CHARS = 12000;
 
-  const title = hasProposedCodeChanges ? "Change ready" : "Response ready";
-  const summary = [
-    hasProposedCodeChanges
-      ? "Status: Change ready for approval."
-      : "Status: No code changes were generated.",
-    `Files to write: ${writeCount}`,
-    `Files to rename: ${renameCount}`,
-    `Files to delete: ${deleteCount}`,
-    `Search/replace edits: ${searchReplaceCount}`,
-    `Dependencies to add: ${dependencyCount}`,
+type ApplyStatus = {
+  updatedFiles?: boolean;
+  error?: string;
+  extraFiles?: string[];
+  extraFilesError?: string;
+};
+
+function truncateText(value: string, maxChars: number): string {
+  if (value.length <= maxChars) {
+    return value;
+  }
+  return `${value.slice(0, maxChars)}\n...[truncated]`;
+}
+
+function buildDiagnosticsPayload({
+  rawResponse,
+  status,
+  autoApplied,
+}: {
+  rawResponse: string;
+  status: ApplyStatus;
+  autoApplied: boolean;
+}): string {
+  return [
+    `Auto-applied: ${autoApplied ? "yes" : "no"}`,
+    `Updated files: ${status.updatedFiles ? "yes" : "no"}`,
+    `Apply error: ${status.error ?? "none"}`,
+    `Extra files: ${status.extraFiles?.join(", ") || "none"}`,
+    `Extra files error: ${status.extraFilesError ?? "none"}`,
+    "",
+    "Assistant raw output:",
+    rawResponse.trim(),
   ].join("\n");
+}
 
-  return `<blaze-status title="${escapeXml(title)}">${escapeXml(summary)}</blaze-status>`;
+export function buildDiagnosticStatusTag({
+  rawResponse,
+  status,
+  autoApplied,
+}: {
+  rawResponse: string;
+  status: ApplyStatus;
+  autoApplied: boolean;
+}): string {
+  const diagnosticPayload = buildDiagnosticsPayload({
+    rawResponse,
+    status,
+    autoApplied,
+  });
+  const escapedPayload = escapeXml(
+    truncateText(diagnosticPayload, MAX_DIAGNOSTIC_BLOCK_CHARS),
+  );
+  return `<blaze-status title="${escapeXml(DIAGNOSTIC_TITLE)}">${escapedPayload}</blaze-status>`;
+}
+
+function buildFallbackSummary({
+  status,
+  autoApplied,
+  chatSummary,
+}: {
+  status: ApplyStatus;
+  autoApplied: boolean;
+  chatSummary?: string;
+}): string {
+  const title = chatSummary?.trim() || "Change run completed";
+  const firstLine = autoApplied
+    ? "### What changed"
+    : "### What changed (pending approval)";
+  const applyState = autoApplied
+    ? "Changes were processed and applied automatically."
+    : "Changes are ready for review and approval.";
+  const errorLine = status.error
+    ? `- Apply error: ${status.error}`
+    : "- No apply errors were reported.";
+  const updatedFilesLine = `- Updated files: ${status.updatedFiles ? "yes" : "no"}.`;
+  const extraFilesLine =
+    status.extraFiles && status.extraFiles.length > 0
+      ? `- Additional modified files detected: ${status.extraFiles.join(", ")}.`
+      : "- No additional modified files detected outside standard operations.";
+
+  return [
+    firstLine,
+    `- ${title}`,
+    `- ${applyState}`,
+    updatedFilesLine,
+    errorLine,
+    extraFilesLine,
+  ].join("\n");
+}
+
+async function collectStreamText(
+  fullStream: AsyncIterableStream<TextStreamPart<ToolSet>>,
+): Promise<string> {
+  let result = "";
+  for await (const part of fullStream) {
+    if (part.type === "text-delta") {
+      result += part.text;
+    }
+  }
+  return result.trim();
+}
+
+async function generateSummaryWithExternalLlm({
+  settings,
+  appId,
+  diagnosticsPayload,
+  autoApplied,
+}: {
+  settings: UserSettings;
+  appId: number;
+  diagnosticsPayload: string;
+  autoApplied: boolean;
+}): Promise<string> {
+  const { modelClient } = await getModelClient(
+    settings.selectedModel,
+    settings,
+  );
+  const userPrompt = [
+    "Summarize this coding-agent run for the end user.",
+    `Auto-applied changes: ${autoApplied ? "yes" : "no"}.`,
+    "",
+    "Diagnostics:",
+    truncateText(diagnosticsPayload, MAX_SUMMARY_INPUT_CHARS),
+  ].join("\n");
+  const providerOptions = getProviderOptions({
+    blazeAppId: appId,
+    blazeDisableFiles: true,
+    smartContextMode: "balanced",
+    files: [],
+    mentionedAppsCodebases: [],
+    builtinProviderId: modelClient.builtinProviderId,
+    settings,
+  });
+  const streamResult = streamText({
+    headers: getAiHeaders({
+      builtinProviderId: modelClient.builtinProviderId,
+    }),
+    maxOutputTokens: 240,
+    temperature: 0.2,
+    maxRetries: 1,
+    model: modelClient.model,
+    providerOptions,
+    system: CHANGE_SUMMARY_SYSTEM_PROMPT,
+    messages: [{ role: "user", content: userPrompt }],
+  });
+  return collectStreamText(
+    streamResult.fullStream as AsyncIterableStream<TextStreamPart<ToolSet>>,
+  );
 }
 
 // Safely parse an MCP tool key that combines server and tool names.
@@ -1489,70 +1614,101 @@ ${problemReport.problems
         .set({ content: fullResponse })
         .where(eq(messages.id, placeholderAssistantMessage.id));
       const settings = readSettings();
-      if (settings.autoApproveChanges && settings.selectedChatMode !== "ask") {
-        const status = await processFullResponseActions(
-          fullResponse,
-          req.chatId,
-          {
-            chatSummary,
-            messageId: placeholderAssistantMessage.id,
-          }, // Use placeholder ID
-        );
+      const autoApplied = Boolean(
+        settings.autoApproveChanges && settings.selectedChatMode !== "ask",
+      );
+      let status: ApplyStatus = {
+        updatedFiles: false,
+      };
+      let diagnosticSource = fullResponse;
 
-        const chat = await db.query.chats.findFirst({
-          where: eq(chats.id, req.chatId),
-          with: {
-            messages: {
-              orderBy: (messages, { asc }) => [asc(messages.createdAt)],
-            },
+      if (autoApplied) {
+        status = await processFullResponseActions(fullResponse, req.chatId, {
+          chatSummary,
+          messageId: placeholderAssistantMessage.id,
+        });
+        const processedMessage = await db.query.messages.findFirst({
+          where: eq(messages.id, placeholderAssistantMessage.id),
+          columns: {
+            content: true,
           },
         });
-
-        safeSend(event.sender, "chat:response:chunk", {
-          chatId: req.chatId,
-          messages: chat!.messages,
-        });
-
-        if (status.error) {
-          safeSend(event.sender, "chat:response:error", {
-            chatId: req.chatId,
-            error: `Sorry, there was an error applying the AI's changes: ${status.error}`,
-          });
+        if (processedMessage?.content?.trim()) {
+          diagnosticSource = processedMessage.content;
         }
-
-        // Signal that the stream has completed
-        safeSend(event.sender, "chat:response:end", {
-          chatId: req.chatId,
-          updatedFiles: status.updatedFiles ?? false,
-          extraFiles: status.extraFiles,
-          extraFilesError: status.extraFilesError,
-        } satisfies ChatResponseEnd);
-      } else {
-        const responseWithSummary = `${fullResponse}\n\n${buildPendingApplySummaryTag(fullResponse)}`;
-        await db
-          .update(messages)
-          .set({ content: responseWithSummary })
-          .where(eq(messages.id, placeholderAssistantMessage.id));
-
-        const chat = await db.query.chats.findFirst({
-          where: eq(chats.id, req.chatId),
-          with: {
-            messages: {
-              orderBy: (messages, { asc }) => [asc(messages.createdAt)],
-            },
-          },
-        });
-
-        safeSend(event.sender, "chat:response:chunk", {
-          chatId: req.chatId,
-          messages: chat!.messages,
-        });
-
-        safeSend(event.sender, "chat:response:end", {
-          chatId: req.chatId,
-          updatedFiles: false,
-        } satisfies ChatResponseEnd);
       }
+
+      const diagnosticsPayload = buildDiagnosticsPayload({
+        rawResponse: diagnosticSource,
+        status,
+        autoApplied,
+      });
+      const diagnosticTag = buildDiagnosticStatusTag({
+        rawResponse: diagnosticSource,
+        status,
+        autoApplied,
+      });
+
+      await db
+        .update(messages)
+        .set({ content: diagnosticTag })
+        .where(eq(messages.id, placeholderAssistantMessage.id));
+
+      let summaryMessageContent = "";
+      try {
+        summaryMessageContent = await generateSummaryWithExternalLlm({
+          settings,
+          appId: chatApp.id,
+          diagnosticsPayload,
+          autoApplied,
+        });
+      } catch (summaryError) {
+        logger.error(
+          "Failed to generate external summary message:",
+          summaryError,
+        );
+      }
+
+      if (!summaryMessageContent.trim()) {
+        summaryMessageContent = buildFallbackSummary({
+          status,
+          autoApplied,
+          chatSummary,
+        });
+      }
+
+      await db.insert(messages).values({
+        ...messageTenantScope,
+        chatId: req.chatId,
+        role: "assistant",
+        content: summaryMessageContent,
+        model: settings.selectedModel.name,
+      });
+
+      const chat = await db.query.chats.findFirst({
+        where: eq(chats.id, req.chatId),
+        with: {
+          messages: {
+            orderBy: (messages, { asc }) => [asc(messages.createdAt)],
+          },
+        },
+      });
+
+      safeSend(event.sender, "chat:response:chunk", {
+        chatId: req.chatId,
+        messages: chat!.messages,
+      });
+
+      if (status.error) {
+        logger.error("AI apply error captured in diagnostics:", status.error);
+      }
+
+      safeSend(event.sender, "chat:response:end", {
+        chatId: req.chatId,
+        updatedFiles: status.updatedFiles ?? false,
+        extraFiles: status.extraFiles,
+        extraFilesError: status.extraFilesError,
+      } satisfies ChatResponseEnd);
     }
 
     // Return the chat ID for backwards compatibility
