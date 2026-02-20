@@ -27,6 +27,7 @@ import { readSettings } from "@/main/settings";
 import { extractMentionedAppsCodebases } from "../utils/mention_apps";
 import { parseAppMentions } from "@/shared/parse_mention_apps";
 import { isTurboEditsV2Enabled } from "@/lib/schemas";
+import { appendResponseLanguageInstruction } from "../utils/response_language_prompt";
 
 const logger = log.scope("token_count_handlers");
 
@@ -96,7 +97,11 @@ export function registerTokenCountHandlers() {
         systemPrompt += "\n\n" + SUPABASE_NOT_AVAILABLE_SYSTEM_PROMPT;
       }
 
-      const systemPromptTokens = estimateTokens(systemPrompt + supabaseContext);
+      const localizedSystemPrompt = appendResponseLanguageInstruction(
+        systemPrompt + supabaseContext,
+        settings.uiLanguage,
+      );
+      const systemPromptTokens = estimateTokens(localizedSystemPrompt);
 
       // Extract codebase information if app is associated with the chat
       let codebaseInfo = "";

@@ -81,7 +81,7 @@ describe("BlazeSidebar", () => {
 
     renderSidebar({ onNewProject });
 
-    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    fireEvent.click(screen.getByRole("button", { name: "Новый проект" }));
 
     expect(onNewProject).toHaveBeenCalledTimes(1);
   });
@@ -91,7 +91,7 @@ describe("BlazeSidebar", () => {
 
     renderSidebar({ onToggleTheme });
 
-    fireEvent.click(screen.getByRole("button", { name: "Dark theme" }));
+    fireEvent.click(screen.getByRole("button", { name: "Темная тема" }));
 
     expect(onToggleTheme).toHaveBeenCalledTimes(1);
   });

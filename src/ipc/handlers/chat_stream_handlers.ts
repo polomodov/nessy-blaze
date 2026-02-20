@@ -95,6 +95,10 @@ import {
 import { getAiMessagesJsonIfWithinLimit } from "../utils/ai_messages_utils";
 import { initializeDatabase } from "../../db";
 import { resolveMessageTenantScope } from "../utils/message_tenant_scope";
+import {
+  appendResponseLanguageInstruction,
+  resolveUiLanguage,
+} from "../utils/response_language_prompt";
 
 type AsyncIterableStream<T> = AsyncIterable<T> & ReadableStream<T>;
 
@@ -211,12 +215,44 @@ function buildFallbackSummary({
   status,
   autoApplied,
   chatSummary,
+  uiLanguage,
 }: {
   status: ApplyStatus;
   autoApplied: boolean;
   chatSummary?: string;
+  uiLanguage: UserSettings["uiLanguage"] | null | undefined;
 }): string {
-  const title = chatSummary?.trim() || "Change run completed";
+  const language = resolveUiLanguage(uiLanguage);
+  const title =
+    chatSummary?.trim() ||
+    (language === "ru" ? "Изменения обработаны" : "Change run completed");
+
+  if (language === "ru") {
+    const firstLine = autoApplied
+      ? "### Что изменилось"
+      : "### Что изменилось (ожидает подтверждения)";
+    const applyState = autoApplied
+      ? "Изменения обработаны и применены автоматически."
+      : "Изменения готовы к проверке и подтверждению.";
+    const errorLine = status.error
+      ? `- Ошибка применения: ${status.error}`
+      : "- Ошибок применения не обнаружено.";
+    const updatedFilesLine = `- Измененные файлы: ${status.updatedFiles ? "да" : "нет"}.`;
+    const extraFilesLine =
+      status.extraFiles && status.extraFiles.length > 0
+        ? `- Обнаружены дополнительные измененные файлы: ${status.extraFiles.join(", ")}.`
+        : "- Дополнительные изменения вне стандартных операций не обнаружены.";
+
+    return [
+      firstLine,
+      `- ${title}`,
+      `- ${applyState}`,
+      updatedFilesLine,
+      errorLine,
+      extraFilesLine,
+    ].join("\n");
+  }
+
   const firstLine = autoApplied
     ? "### What changed"
     : "### What changed (pending approval)";
@@ -294,7 +330,10 @@ async function generateSummaryWithExternalLlm({
     maxRetries: 1,
     model: modelClient.model,
     providerOptions,
-    system: CHANGE_SUMMARY_SYSTEM_PROMPT,
+    system: appendResponseLanguageInstruction(
+      CHANGE_SUMMARY_SYSTEM_PROMPT,
+      settings.uiLanguage,
+    ),
     messages: [{ role: "user", content: userPrompt }],
   });
   return collectStreamText(
@@ -601,6 +640,17 @@ ${componentSnippet}
       .returning({ id: messages.id });
     const userMessageId = insertedUserMessage.id;
     const settings = readSettings();
+    const responseLanguage = resolveUiLanguage(settings.uiLanguage);
+    logger.log(
+      "chat stream start",
+      JSON.stringify({
+        chatId: req.chatId,
+        selectedChatMode: settings.selectedChatMode,
+        uiLanguage: settings.uiLanguage ?? "unset",
+        responseLanguage,
+        selectedModel: `${settings.selectedModel.provider}/${settings.selectedModel.name}`,
+      }),
+    );
     // Only Blaze Pro requests have request ids.
     if (settings.enableBlazePro) {
       // Generate requestId early so it can be saved with the message
@@ -934,6 +984,10 @@ This conversation includes one or more image attachments. When the user uploads 
 5. For screenshots of code or errors, try to identify the issue or explain the code.
 `;
       }
+      systemPrompt = appendResponseLanguageInstruction(
+        systemPrompt,
+        settings.uiLanguage,
+      );
 
       const codebasePrefix = isEngineEnabled
         ? // No codebase prefix if engine is set, we will take of it there.
@@ -1213,7 +1267,10 @@ This conversation includes one or more image attachments. When the user uploads 
 
         await handleLocalAgentStream(event, req, abortController, {
           placeholderMessageId: placeholderAssistantMessage.id,
-          systemPrompt: readOnlySystemPrompt,
+          systemPrompt: appendResponseLanguageInstruction(
+            readOnlySystemPrompt,
+            settings.uiLanguage,
+          ),
           blazeRequestId: blazeRequestId ?? "[no-request-id]",
           readOnly: true,
         });
@@ -1251,11 +1308,14 @@ This conversation includes one or more image attachments. When the user uploads 
               execute: async () => "",
             },
           },
-          systemPromptOverride: constructSystemPrompt({
-            aiRules: await readAiRules(getBlazeAppPath(chatApp.path)),
-            chatMode: "agent",
-            enableTurboEditsV2: false,
-          }),
+          systemPromptOverride: appendResponseLanguageInstruction(
+            constructSystemPrompt({
+              aiRules: await readAiRules(getBlazeAppPath(chatApp.path)),
+              chatMode: "agent",
+              enableTurboEditsV2: false,
+            }),
+            settings.uiLanguage,
+          ),
           files: files,
           blazeDisableFiles: true,
         });
@@ -1674,6 +1734,7 @@ ${problemReport.problems
           status,
           autoApplied,
           chatSummary,
+          uiLanguage: settings.uiLanguage,
         });
       }
 

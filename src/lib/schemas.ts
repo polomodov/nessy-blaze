@@ -298,6 +298,7 @@ export const UserSettingsSchema = z
     proSmartContextOption: SmartContextModeSchema.optional(),
     selectedTemplateId: z.string(),
     selectedThemeId: z.string().optional(),
+    uiLanguage: z.enum(["ru", "en"]).optional(),
     enableSupabaseWriteSqlMigration: z.boolean().optional(),
     selectedChatMode: ChatModeSchema.optional(),
     defaultChatMode: ChatModeSchema.optional(),

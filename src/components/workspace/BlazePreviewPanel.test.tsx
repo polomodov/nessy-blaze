@@ -32,10 +32,10 @@ describe("BlazePreviewPanel", () => {
   it("shows empty state when no app is selected", () => {
     render(<BlazePreviewPanel activeAppId={null} />);
 
-    expect(screen.getByText("App preview")).toBeTruthy();
+    expect(screen.getByText("Предпросмотр приложения")).toBeTruthy();
     expect(
       screen.getByText(
-        "Send a message in chat to create an app and run live preview.",
+        "Отправьте сообщение в чат, чтобы создать приложение и запустить live preview.",
       ),
     ).toBeTruthy();
     expect(runAppMock).not.toHaveBeenCalled();
@@ -69,7 +69,9 @@ describe("BlazePreviewPanel", () => {
       expect(runAppMock).toHaveBeenCalledWith(42, expect.any(Function));
     });
 
-    const iframe = await screen.findByTitle("Generated app preview");
+    const iframe = await screen.findByTitle(
+      "Предпросмотр сгенерированного приложения",
+    );
     expect(iframe.getAttribute("src")).toBe("about:blank");
   });
 
@@ -103,17 +105,19 @@ describe("BlazePreviewPanel", () => {
 
     render(<BlazePreviewPanel activeAppId={9} />);
 
-    await screen.findByLabelText("Preview page");
-    await screen.findByRole("option", { name: "Home (/)" });
+    await screen.findByLabelText("Страница предпросмотра");
+    await screen.findByRole("option", { name: "Главная (/)" });
     await screen.findByRole("option", { name: "/about" });
     await screen.findByRole("option", { name: "/services" });
 
-    const pageSelect = screen.getByLabelText("Preview page");
+    const pageSelect = screen.getByLabelText("Страница предпросмотра");
     fireEvent.change(pageSelect, { target: { value: "/about" } });
 
     await waitFor(() => {
       expect((pageSelect as HTMLSelectElement).value).toBe("/about");
-      const iframe = screen.getByTitle("Generated app preview");
+      const iframe = screen.getByTitle(
+        "Предпросмотр сгенерированного приложения",
+      );
       expect(iframe.getAttribute("src")).toContain("about:");
     });
   });
@@ -124,7 +128,9 @@ describe("BlazePreviewPanel", () => {
     render(<BlazePreviewPanel activeAppId={55} />);
 
     await waitFor(() => {
-      expect(screen.getByText("Failed to start preview")).toBeTruthy();
+      expect(
+        screen.getByText("Не удалось запустить предпросмотр"),
+      ).toBeTruthy();
       expect(screen.getByText("Port is busy")).toBeTruthy();
     });
   });

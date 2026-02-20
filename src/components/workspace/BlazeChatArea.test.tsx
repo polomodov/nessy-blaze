@@ -172,7 +172,7 @@ describe("BlazeChatArea", () => {
 
     expect(screen.getByText("Run update")).toBeTruthy();
     expect(
-      screen.getByText("Assistant responded with internal actions."),
+      screen.getByText("Ассистент ответил внутренними действиями."),
     ).toBeTruthy();
   });
 
@@ -183,9 +183,7 @@ describe("BlazeChatArea", () => {
       expect(getChatsMock).toHaveBeenCalledWith(88);
     });
 
-    const input = screen.getByPlaceholderText(
-      "Describe what should be built...",
-    );
+    const input = screen.getByPlaceholderText("Опишите, что нужно собрать...");
     fireEvent.change(input, { target: { value: "Add account settings page" } });
     fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
 
@@ -255,15 +253,13 @@ describe("BlazeChatArea", () => {
       expect(getChatMock).toHaveBeenCalledWith(300);
     });
 
-    const input = screen.getByPlaceholderText(
-      "Describe what should be built...",
-    );
+    const input = screen.getByPlaceholderText("Опишите, что нужно собрать...");
     fireEvent.change(input, { target: { value: "Continue first project" } });
     fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
 
     await waitFor(() => {
       expect(streamMessageMock).toHaveBeenCalledTimes(1);
-      expect(screen.getByText("Agent is drafting a response...")).toBeTruthy();
+      expect(screen.getByText("Агент формирует ответ...")).toBeTruthy();
     });
 
     view.rerender(<BlazeChatArea activeAppId={2} />);
@@ -273,14 +269,14 @@ describe("BlazeChatArea", () => {
       expect(getChatMock).toHaveBeenCalledWith(400);
       expect(screen.getByText("Second project context")).toBeTruthy();
     });
-    expect(screen.queryByText("Agent is drafting a response...")).toBeNull();
+    expect(screen.queryByText("Агент формирует ответ...")).toBeNull();
 
     view.rerender(<BlazeChatArea activeAppId={1} />);
 
     await waitFor(() => {
       expect(getChatsMock).toHaveBeenCalledWith(1);
       expect(screen.getByText("First project context")).toBeTruthy();
-      expect(screen.getByText("Agent is drafting a response...")).toBeTruthy();
+      expect(screen.getByText("Агент формирует ответ...")).toBeTruthy();
     });
   });
 
@@ -288,9 +284,7 @@ describe("BlazeChatArea", () => {
     const onAppCreated = vi.fn();
     render(<BlazeChatArea onAppCreated={onAppCreated} />);
 
-    const input = screen.getByPlaceholderText(
-      "Describe what should be built...",
-    );
+    const input = screen.getByPlaceholderText("Опишите, что нужно собрать...");
     fireEvent.change(input, { target: { value: "Build a landing page" } });
     fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
 
@@ -348,9 +342,7 @@ describe("BlazeChatArea", () => {
 
     render(<BlazeChatArea />);
 
-    const input = screen.getByPlaceholderText(
-      "Describe what should be built...",
-    );
+    const input = screen.getByPlaceholderText("Опишите, что нужно собрать...");
     fireEvent.change(input, { target: { value: "Build page" } });
     fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
 
@@ -362,9 +354,7 @@ describe("BlazeChatArea", () => {
   it("strips blaze control markup from assistant output", async () => {
     render(<BlazeChatArea />);
 
-    const input = screen.getByPlaceholderText(
-      "Describe what should be built...",
-    );
+    const input = screen.getByPlaceholderText("Опишите, что нужно собрать...");
     fireEvent.change(input, { target: { value: "Create About page" } });
     fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
 
@@ -394,9 +384,7 @@ describe("BlazeChatArea", () => {
   it("shows blaze-status content behind an expandable diagnostic block", async () => {
     render(<BlazeChatArea />);
 
-    const input = screen.getByPlaceholderText(
-      "Describe what should be built...",
-    );
+    const input = screen.getByPlaceholderText("Опишите, что нужно собрать...");
     fireEvent.change(input, { target: { value: "Update section anchor" } });
     fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
 
@@ -429,16 +417,14 @@ Files to write: 1</blaze-status>`,
       screen.getByText(/Status: Change ready for approval\./),
     ).toBeTruthy();
     expect(
-      screen.queryByText("Assistant responded with internal actions."),
+      screen.queryByText("Ассистент ответил внутренними действиями."),
     ).toBeNull();
   });
 
   it("shows marker when assistant message contains only control markup", async () => {
     render(<BlazeChatArea />);
 
-    const input = screen.getByPlaceholderText(
-      "Describe what should be built...",
-    );
+    const input = screen.getByPlaceholderText("Опишите, что нужно собрать...");
     fireEvent.change(input, { target: { value: "Create About page" } });
     fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
 
@@ -462,7 +448,7 @@ Files to write: 1</blaze-status>`,
 
     expect(screen.getByText("Create About page")).toBeTruthy();
     expect(
-      screen.getByText("Assistant responded with internal actions."),
+      screen.getByText("Ассистент ответил внутренними действиями."),
     ).toBeTruthy();
     expect(screen.queryByText(/const x = 1/)).toBeNull();
     expect(screen.queryByText(/blaze-write/i)).toBeNull();
@@ -471,9 +457,7 @@ Files to write: 1</blaze-status>`,
   it("does not show code from an unclosed blaze block during streaming", async () => {
     render(<BlazeChatArea />);
 
-    const input = screen.getByPlaceholderText(
-      "Describe what should be built...",
-    );
+    const input = screen.getByPlaceholderText("Опишите, что нужно собрать...");
     fireEvent.change(input, { target: { value: "Create About page" } });
     fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
 
@@ -519,9 +503,7 @@ Files to write: 1</blaze-status>`,
   it("shows progress text when assistant emits only internal markup", async () => {
     render(<BlazeChatArea />);
 
-    const input = screen.getByPlaceholderText(
-      "Describe what should be built...",
-    );
+    const input = screen.getByPlaceholderText("Опишите, что нужно собрать...");
     fireEvent.change(input, { target: { value: "Create settings page" } });
     fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
 
@@ -543,7 +525,7 @@ Files to write: 1</blaze-status>`,
     });
 
     expect(
-      screen.getByText("Agent is thinking and applying changes..."),
+      screen.getByText("Агент думает и применяет изменения..."),
     ).toBeTruthy();
   });
 
@@ -551,7 +533,7 @@ Files to write: 1</blaze-status>`,
     render(<BlazeChatArea />);
 
     const input = screen.getByPlaceholderText(
-      "Describe what should be built...",
+      "Опишите, что нужно собрать...",
     ) as HTMLTextAreaElement;
 
     Object.defineProperty(input, "scrollHeight", {

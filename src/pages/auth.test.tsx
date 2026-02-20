@@ -1,6 +1,7 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { I18nProvider, UI_LANGUAGE_STORAGE_KEY } from "@/contexts/I18nContext";
 import {
   AUTH_TOKEN_STORAGE_KEY,
   DEV_USER_EMAIL_STORAGE_KEY,
@@ -9,13 +10,23 @@ import {
 } from "@/ipc/backend_client";
 import AuthPage from "./auth";
 
-const { navigateMock, toastSuccessMock, toastErrorMock, toastInfoMock } =
-  vi.hoisted(() => ({
-    navigateMock: vi.fn(),
-    toastSuccessMock: vi.fn(),
-    toastErrorMock: vi.fn(),
-    toastInfoMock: vi.fn(),
-  }));
+const {
+  navigateMock,
+  toastSuccessMock,
+  toastErrorMock,
+  toastInfoMock,
+  updateSettingsMock,
+  settingsRef,
+} = vi.hoisted(() => ({
+  navigateMock: vi.fn(),
+  toastSuccessMock: vi.fn(),
+  toastErrorMock: vi.fn(),
+  toastInfoMock: vi.fn(),
+  updateSettingsMock: vi.fn(),
+  settingsRef: {
+    current: { uiLanguage: "ru" as const },
+  },
+}));
 
 vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof import("@tanstack/react-router")>(
@@ -35,6 +46,13 @@ vi.mock("sonner", () => ({
   },
 }));
 
+vi.mock("@/hooks/useSettings", () => ({
+  useSettings: () => ({
+    settings: settingsRef.current,
+    updateSettings: updateSettingsMock,
+  }),
+}));
+
 function renderAuthPage() {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -49,7 +67,9 @@ function renderAuthPage() {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <AuthPage />
+      <I18nProvider>
+        <AuthPage />
+      </I18nProvider>
     </QueryClientProvider>,
   );
 }
@@ -90,6 +110,8 @@ describe("AuthPage", () => {
       configurable: true,
     });
     vi.clearAllMocks();
+    settingsRef.current = { uiLanguage: "ru" };
+    updateSettingsMock.mockResolvedValue({ uiLanguage: "ru" });
   });
 
   afterEach(() => {
@@ -102,14 +124,14 @@ describe("AuthPage", () => {
     fireEvent.change(screen.getByLabelText("Email"), {
       target: { value: "dev@example.com" },
     });
-    fireEvent.change(screen.getByLabelText("Password"), {
+    fireEvent.change(screen.getByLabelText("Пароль"), {
       target: { value: "secret-pass" },
     });
-    fireEvent.change(screen.getByLabelText("Bearer token (optional)"), {
+    fireEvent.change(screen.getByLabelText("Bearer токен (опционально)"), {
       target: { value: "sample-jwt-token" },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    fireEvent.click(screen.getByRole("button", { name: "Войти" }));
 
     expect(window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)).toBe(
       "sample-jwt-token",
@@ -119,7 +141,7 @@ describe("AuthPage", () => {
       "dev@example.com",
     );
     expect(window.localStorage.getItem(DEV_USER_NAME_STORAGE_KEY)).toBeNull();
-    expect(toastSuccessMock).toHaveBeenCalledWith("Credentials saved.");
+    expect(toastSuccessMock).toHaveBeenCalledWith("Данные входа сохранены.");
     expect(navigateMock).toHaveBeenCalledWith({ to: "/" });
   });
 
@@ -127,7 +149,7 @@ describe("AuthPage", () => {
     renderAuthPage();
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Continue with Google" }),
+      screen.getByRole("button", { name: "Продолжить с Google" }),
     );
 
     expect(window.localStorage.getItem(DEV_USER_EMAIL_STORAGE_KEY)).toBe(
@@ -140,7 +162,9 @@ describe("AuthPage", () => {
       "google-user",
     );
     expect(toastErrorMock).not.toHaveBeenCalled();
-    expect(toastSuccessMock).toHaveBeenCalledWith("Signed in with Google.");
+    expect(toastSuccessMock).toHaveBeenCalledWith(
+      "Вход через Google выполнен.",
+    );
     expect(navigateMock).toHaveBeenCalledWith({ to: "/" });
   });
 
@@ -153,13 +177,34 @@ describe("AuthPage", () => {
     renderAuthPage();
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Clear saved credentials" }),
+      screen.getByRole("button", { name: "Очистить сохраненные данные" }),
     );
 
     expect(window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)).toBeNull();
     expect(window.localStorage.getItem(DEV_USER_SUB_STORAGE_KEY)).toBeNull();
     expect(window.localStorage.getItem(DEV_USER_EMAIL_STORAGE_KEY)).toBeNull();
     expect(window.localStorage.getItem(DEV_USER_NAME_STORAGE_KEY)).toBeNull();
-    expect(toastSuccessMock).toHaveBeenCalledWith("Saved credentials cleared.");
+    expect(toastSuccessMock).toHaveBeenCalledWith(
+      "Сохраненные данные очищены.",
+    );
+  });
+
+  it("renders Russian copy by default", () => {
+    renderAuthPage();
+
+    expect(screen.getByText("С возвращением")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Войти" })).toBeTruthy();
+  });
+
+  it("switches language to English and persists preference", async () => {
+    renderAuthPage();
+
+    fireEvent.click(screen.getByTestId("language-option-en"));
+
+    await waitFor(() => {
+      expect(updateSettingsMock).toHaveBeenCalledWith({ uiLanguage: "en" });
+      expect(window.localStorage.getItem(UI_LANGUAGE_STORAGE_KEY)).toBe("en");
+      expect(screen.getByText("Welcome back")).toBeTruthy();
+    });
   });
 });

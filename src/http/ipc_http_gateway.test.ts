@@ -26,6 +26,37 @@ describe("invokeIpcChannelOverHttp", () => {
     expect(response.version).toBe(packageJson.version);
   });
 
+  it("saves and reads uiLanguage in user settings", async () => {
+    const initialSettings = (await invokeIpcChannelOverHttp(
+      "get-user-settings",
+      [],
+    )) as {
+      uiLanguage?: "ru" | "en";
+    };
+    const initialLanguage = initialSettings.uiLanguage ?? "ru";
+    const nextLanguage: "ru" | "en" = initialLanguage === "en" ? "ru" : "en";
+
+    const updatedSettings = (await invokeIpcChannelOverHttp(
+      "set-user-settings",
+      [{ uiLanguage: nextLanguage }],
+    )) as {
+      uiLanguage?: "ru" | "en";
+    };
+    expect(updatedSettings.uiLanguage).toBe(nextLanguage);
+
+    const persistedSettings = (await invokeIpcChannelOverHttp(
+      "get-user-settings",
+      [],
+    )) as {
+      uiLanguage?: "ru" | "en";
+    };
+    expect(persistedSettings.uiLanguage).toBe(nextLanguage);
+
+    await invokeIpcChannelOverHttp("set-user-settings", [
+      { uiLanguage: initialLanguage },
+    ]);
+  });
+
   (hasDatabaseUrl ? it : it.skip)(
     "creates app via HTTP IPC gateway",
     async () => {

@@ -1,6 +1,7 @@
 import React from "react";
 import { toast } from "sonner";
 import { X, Copy, Check } from "lucide-react";
+import { useI18n } from "@/contexts/I18nContext";
 
 interface CustomErrorToastProps {
   message: string;
@@ -15,6 +16,7 @@ export function CustomErrorToast({
   copied = false,
   onCopy,
 }: CustomErrorToastProps) {
+  const { t } = useI18n();
   const handleClose = () => {
     toast.dismiss(toastId);
   };
@@ -37,7 +39,9 @@ export function CustomErrorToast({
                   <X className="w-3 h-3 text-white" />
                 </div>
               </div>
-              <h3 className="ml-3 text-sm font-medium text-red-900">Error</h3>
+              <h3 className="ml-3 text-sm font-medium text-red-900">
+                {t("toast.error.title")}
+              </h3>
 
               {/* Action buttons */}
               <div className="flex items-center space-x-1.5 ml-auto">
@@ -47,7 +51,7 @@ export function CustomErrorToast({
                     handleCopy();
                   }}
                   className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-100/70 rounded-lg transition-all duration-150"
-                  title="Copy to clipboard"
+                  title={t("toast.button.copy")}
                 >
                   {copied ? (
                     <Check className="w-4 h-4 text-green-500" />
@@ -61,7 +65,7 @@ export function CustomErrorToast({
                     handleClose();
                   }}
                   className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-100/70 rounded-lg transition-all duration-150"
-                  title="Close"
+                  title={t("toast.button.close")}
                 >
                   <X className="w-4 h-4" />
                 </button>

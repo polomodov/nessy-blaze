@@ -12,6 +12,7 @@ import {
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -23,6 +24,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { useI18n } from "@/contexts/I18nContext";
 import {
   AUTH_TOKEN_STORAGE_KEY,
   DEV_USER_EMAIL_STORAGE_KEY,
@@ -106,6 +108,7 @@ const GoogleIcon = () => (
 export default function AuthPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { t } = useI18n();
 
   const storedValues = useMemo<StoredAuthValues>(
     () => ({
@@ -153,26 +156,26 @@ export default function AuthPage() {
     event.preventDefault();
 
     if (mode === "forgot") {
-      toast.info("Password reset flow is not wired yet.");
+      toast.info(t("auth.toast.passwordResetNotWired"));
       setMode("login");
       return;
     }
 
     if (!email.trim()) {
-      toast.error("Email is required.");
+      toast.error(t("auth.toast.emailRequired"));
       return;
     }
     if (!password.trim()) {
-      toast.error("Password is required.");
+      toast.error(t("auth.toast.passwordRequired"));
       return;
     }
     if (mode === "register" && !name.trim()) {
-      toast.error("Name is required.");
+      toast.error(t("auth.toast.nameRequired"));
       return;
     }
 
     persistCredentials();
-    toast.success("Credentials saved.");
+    toast.success(t("auth.toast.credentialsSaved"));
     navigate({ to: "/" });
   };
 
@@ -190,7 +193,7 @@ export default function AuthPage() {
     setName(storedValuesAfterGoogle.name);
     setDevSub(storedValuesAfterGoogle.sub);
 
-    toast.success("Signed in with Google.");
+    toast.success(t("auth.toast.googleSignedIn"));
     navigate({ to: "/" });
   };
 
@@ -202,7 +205,7 @@ export default function AuthPage() {
     setName("");
     setPassword("");
     queryClient.clear();
-    toast.success("Saved credentials cleared.");
+    toast.success(t("auth.toast.credentialsCleared"));
   };
 
   return (
@@ -217,12 +220,15 @@ export default function AuthPage() {
         transition={{ duration: 0.45 }}
         className="relative z-10 w-full max-w-md"
       >
+        <div className="mb-4 flex justify-end">
+          <LanguageSwitcher />
+        </div>
         <div className="mb-7 flex items-center justify-center gap-2">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
             <Zap className="h-5 w-5 text-primary-foreground" />
           </div>
           <span className="text-xl font-bold tracking-tight text-foreground">
-            Blaze
+            {t("auth.brand")}
           </span>
         </div>
 
@@ -237,16 +243,14 @@ export default function AuthPage() {
                 transition={{ duration: 0.18 }}
               >
                 <CardTitle>
-                  {mode === "login" && "Welcome back"}
-                  {mode === "register" && "Create account"}
-                  {mode === "forgot" && "Reset password"}
+                  {mode === "login" && t("auth.title.login")}
+                  {mode === "register" && t("auth.title.register")}
+                  {mode === "forgot" && t("auth.title.forgot")}
                 </CardTitle>
                 <CardDescription className="mt-1.5">
-                  {mode === "login" && "Sign in to continue to your workspace"}
-                  {mode === "register" &&
-                    "Create a new account and continue to the app"}
-                  {mode === "forgot" &&
-                    "Enter your email to receive a reset link"}
+                  {mode === "login" && t("auth.description.login")}
+                  {mode === "register" && t("auth.description.register")}
+                  {mode === "forgot" && t("auth.description.forgot")}
                 </CardDescription>
               </motion.div>
             </AnimatePresence>
@@ -260,7 +264,7 @@ export default function AuthPage() {
               onClick={handleGoogleLogin}
             >
               <GoogleIcon />
-              Continue with Google
+              {t("auth.button.google")}
             </Button>
 
             {mode !== "forgot" && (
@@ -268,19 +272,19 @@ export default function AuthPage() {
                 <div className="relative">
                   <Separator />
                   <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card px-3 text-xs text-muted-foreground">
-                    or
+                    {t("auth.separator.or")}
                   </span>
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-3">
                   {mode === "register" && (
                     <div className="space-y-1.5">
-                      <Label htmlFor="auth-name">Name</Label>
+                      <Label htmlFor="auth-name">{t("auth.label.name")}</Label>
                       <div className="relative">
                         <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                         <Input
                           id="auth-name"
-                          placeholder="Alex Blaze"
+                          placeholder={t("auth.placeholder.name")}
                           value={name}
                           onChange={(event) => setName(event.target.value)}
                           className="h-10 pl-9"
@@ -290,13 +294,13 @@ export default function AuthPage() {
                   )}
 
                   <div className="space-y-1.5">
-                    <Label htmlFor="auth-email">Email</Label>
+                    <Label htmlFor="auth-email">{t("auth.label.email")}</Label>
                     <div className="relative">
                       <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                       <Input
                         id="auth-email"
                         type="email"
-                        placeholder="you@company.com"
+                        placeholder={t("auth.placeholder.email")}
                         value={email}
                         onChange={(event) => setEmail(event.target.value)}
                         className="h-10 pl-9"
@@ -306,14 +310,16 @@ export default function AuthPage() {
 
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
-                      <Label htmlFor="auth-password">Password</Label>
+                      <Label htmlFor="auth-password">
+                        {t("auth.label.password")}
+                      </Label>
                       {mode === "login" && (
                         <button
                           type="button"
                           onClick={() => setMode("forgot")}
                           className="text-xs text-primary hover:underline"
                         >
-                          Forgot password?
+                          {t("auth.button.forgotPassword")}
                         </button>
                       )}
                     </div>
@@ -322,7 +328,7 @@ export default function AuthPage() {
                       <Input
                         id="auth-password"
                         type="password"
-                        placeholder="........"
+                        placeholder={t("auth.placeholder.password")}
                         value={password}
                         onChange={(event) => setPassword(event.target.value)}
                         className="h-10 pl-9"
@@ -334,7 +340,9 @@ export default function AuthPage() {
                     type="submit"
                     className="mt-2 h-10 w-full gap-2 font-semibold"
                   >
-                    {mode === "login" ? "Sign in" : "Create account"}
+                    {mode === "login"
+                      ? t("auth.button.signIn")
+                      : t("auth.button.createAccount")}
                     <ArrowRight className="h-4 w-4" />
                   </Button>
                 </form>
@@ -344,13 +352,13 @@ export default function AuthPage() {
             {mode === "forgot" && (
               <form onSubmit={handleSubmit} className="space-y-3">
                 <div className="space-y-1.5">
-                  <Label htmlFor="reset-email">Email</Label>
+                  <Label htmlFor="reset-email">{t("auth.label.email")}</Label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
                       id="reset-email"
                       type="email"
-                      placeholder="you@company.com"
+                      placeholder={t("auth.placeholder.email")}
                       value={email}
                       onChange={(event) => setEmail(event.target.value)}
                       className="h-10 pl-9"
@@ -361,7 +369,7 @@ export default function AuthPage() {
                   type="submit"
                   className="h-10 w-full gap-2 font-semibold"
                 >
-                  Send reset link
+                  {t("auth.button.sendResetLink")}
                   <ArrowRight className="h-4 w-4" />
                 </Button>
               </form>
@@ -369,12 +377,12 @@ export default function AuthPage() {
 
             <div className="space-y-2 rounded-md border border-border/70 bg-muted/40 p-3">
               <div className="space-y-1.5">
-                <Label htmlFor="auth-token">Bearer token (optional)</Label>
+                <Label htmlFor="auth-token">{t("auth.label.token")}</Label>
                 <div className="relative">
                   <KeyRound className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     id="auth-token"
-                    placeholder="eyJ..."
+                    placeholder={t("auth.placeholder.token")}
                     value={token}
                     onChange={(event) => setToken(event.target.value)}
                     className="h-10 pl-9"
@@ -382,10 +390,10 @@ export default function AuthPage() {
                 </div>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="auth-dev-sub">Dev user sub (optional)</Label>
+                <Label htmlFor="auth-dev-sub">{t("auth.label.devSub")}</Label>
                 <Input
                   id="auth-dev-sub"
-                  placeholder="dev-user"
+                  placeholder={t("auth.placeholder.devSub")}
                   value={devSub}
                   onChange={(event) => setDevSub(event.target.value)}
                   className="h-10"
@@ -398,32 +406,32 @@ export default function AuthPage() {
                 onClick={handleClearCredentials}
               >
                 <Eraser className="h-4 w-4" />
-                Clear saved credentials
+                {t("auth.button.clearCredentials")}
               </Button>
             </div>
 
             <div className="pt-1 text-center text-sm text-muted-foreground">
               {mode === "login" && (
                 <>
-                  No account yet?{" "}
+                  {t("auth.prompt.noAccount")}{" "}
                   <button
                     type="button"
                     onClick={() => setMode("register")}
                     className="font-medium text-primary hover:underline"
                   >
-                    Create one
+                    {t("auth.button.createOne")}
                   </button>
                 </>
               )}
               {mode === "register" && (
                 <>
-                  Already have an account?{" "}
+                  {t("auth.prompt.haveAccount")}{" "}
                   <button
                     type="button"
                     onClick={() => setMode("login")}
                     className="font-medium text-primary hover:underline"
                   >
-                    Sign in
+                    {t("auth.button.signIn")}
                   </button>
                 </>
               )}
@@ -433,7 +441,7 @@ export default function AuthPage() {
                   onClick={() => setMode("login")}
                   className="font-medium text-primary hover:underline"
                 >
-                  Back to sign in
+                  {t("auth.button.backToSignIn")}
                 </button>
               )}
             </div>
@@ -441,7 +449,7 @@ export default function AuthPage() {
         </Card>
 
         <p className="mt-5 text-center text-xs text-muted-foreground">
-          Auth page currently stores credentials locally for client-server mode.
+          {t("auth.note.localStorage")}
         </p>
       </motion.div>
     </div>

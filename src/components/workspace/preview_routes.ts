@@ -57,9 +57,12 @@ export function extractPreviewPathsFromAppSource(source: string): string[] {
   return sortPreviewPaths(Array.from(previewPaths));
 }
 
-export function getPreviewPathLabel(pathValue: string): string {
+export function getPreviewPathLabel(
+  pathValue: string,
+  homeLabel: string,
+): string {
   if (pathValue === "/") {
-    return "Home (/)";
+    return homeLabel;
   }
   return pathValue;
 }

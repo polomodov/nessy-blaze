@@ -8,6 +8,7 @@ import {
   Smartphone,
   Tablet,
 } from "lucide-react";
+import { useI18n } from "@/contexts/I18nContext";
 import { IpcClient } from "@/ipc/ipc_client";
 import type { AppOutput } from "@/ipc/ipc_types";
 import {
@@ -35,14 +36,14 @@ function extractProxyUrl(output: AppOutput): string | null {
   return proxyUrlMatch?.[1] ?? null;
 }
 
-function resolveErrorMessage(error: unknown): string {
+function resolveErrorMessage(error: unknown, fallbackMessage: string): string {
   if (typeof error === "string") {
     return error;
   }
   if (error instanceof Error && error.message) {
     return error.message;
   }
-  return "Failed to start preview app.";
+  return fallbackMessage;
 }
 
 interface BlazePreviewPanelProps {
@@ -50,6 +51,7 @@ interface BlazePreviewPanelProps {
 }
 
 export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
+  const { t } = useI18n();
   const [device, setDevice] = useState<Device>("desktop");
   const [appUrl, setAppUrl] = useState<string | null>(null);
   const [previewPaths, setPreviewPaths] = useState<string[]>(["/"]);
@@ -155,7 +157,7 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
         if (cancelled) {
           return;
         }
-        setError(resolveErrorMessage(runError));
+        setError(resolveErrorMessage(runError, t("preview.error.startFailed")));
         setIsStarting(false);
       }
     };
@@ -165,7 +167,7 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
     return () => {
       cancelled = true;
     };
-  }, [activeAppId]);
+  }, [activeAppId, t]);
 
   useEffect(() => {
     return () => {
@@ -200,8 +202,8 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
                     ? "bg-muted text-foreground"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
-                title={item}
-                aria-label={item}
+                title={t(`preview.device.${item}`)}
+                aria-label={t(`preview.device.${item}`)}
               >
                 <Icon size={16} />
               </button>
@@ -209,12 +211,14 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
           })}
           {activeAppId !== null && (
             <div className="ml-3 border-l border-border pl-3 text-xs text-muted-foreground">
-              App #{activeAppId}
+              {t("preview.label.appId", { id: activeAppId })}
             </div>
           )}
           {activeAppId !== null && (
             <label className="ml-2 flex items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-1">
-              <span className="text-[11px] text-muted-foreground">Page</span>
+              <span className="text-[11px] text-muted-foreground">
+                {t("preview.label.page")}
+              </span>
               <select
                 value={selectedPath}
                 onChange={(event) => {
@@ -235,12 +239,12 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
                     })
                     .catch(() => {});
                 }}
-                aria-label="Preview page"
+                aria-label={t("preview.aria.pageSelect")}
                 className="max-w-[180px] rounded bg-transparent text-xs text-foreground outline-none"
               >
                 {previewPaths.map((pathValue) => (
                   <option key={pathValue} value={pathValue}>
-                    {getPreviewPathLabel(pathValue)}
+                    {getPreviewPathLabel(pathValue, t("preview.route.home"))}
                   </option>
                 ))}
               </select>
@@ -250,11 +254,11 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
         <div className="flex items-center gap-1">
           <button className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
             <Eye size={14} />
-            Preview
+            {t("preview.button.preview")}
           </button>
           <button className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
             <Download size={14} />
-            Export
+            {t("preview.button.export")}
           </button>
           <button
             onClick={() => {
@@ -267,7 +271,7 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
               }
             }}
             className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-            aria-label="Open in new tab"
+            aria-label={t("preview.aria.openNewTab")}
             disabled={!resolvedPreviewUrl}
           >
             <ExternalLink size={14} />
@@ -286,16 +290,16 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
                 <Monitor size={20} className="text-muted-foreground" />
               </div>
               <h3 className="mb-1 text-sm font-medium text-foreground">
-                App preview
+                {t("preview.empty.title")}
               </h3>
               <p className="max-w-xs text-xs text-muted-foreground">
-                Send a message in chat to create an app and run live preview.
+                {t("preview.empty.subtitle")}
               </p>
             </div>
           ) : error ? (
             <div className="flex h-full min-h-[520px] flex-col items-center justify-center p-8 text-center">
               <p className="text-sm font-medium text-destructive">
-                Failed to start preview
+                {t("preview.error.title")}
               </p>
               <p className="mt-2 max-w-md text-xs text-muted-foreground">
                 {error}
@@ -308,12 +312,12 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
                 className="animate-spin text-muted-foreground"
               />
               <p className="text-sm text-muted-foreground">
-                Starting app on preview port...
+                {t("preview.loading")}
               </p>
             </div>
           ) : (
             <iframe
-              title="Generated app preview"
+              title={t("preview.iframe.title")}
               src={resolvedPreviewUrl}
               className="h-full min-h-[520px] w-full border-0"
             />

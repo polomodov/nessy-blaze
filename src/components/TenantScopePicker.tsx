@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Building2, BriefcaseBusiness } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/contexts/I18nContext";
 import { IpcClient } from "@/ipc/ipc_client";
 import {
   getConfiguredBackendMode,
@@ -25,6 +26,7 @@ interface TenantScopePickerProps {
 }
 
 export function TenantScopePicker({ onScopeChange }: TenantScopePickerProps) {
+  const { t } = useI18n();
   const [scope, setScope] = useState(() => getConfiguredTenantScope());
   const [isSwitchingScope, setIsSwitchingScope] = useState(false);
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
@@ -107,14 +109,14 @@ export function TenantScopePicker({ onScopeChange }: TenantScopePickerProps) {
         setCreateWorkspaceError(
           error instanceof Error
             ? error.message
-            : "Workspace created, but failed to switch scope",
+            : t("tenant.error.switchAfterCreate"),
         );
       } finally {
         setIsSwitchingScope(false);
       }
     },
     onError: (error) => {
-      setCreateWorkspaceError(error?.message || "Failed to create workspace");
+      setCreateWorkspaceError(error?.message || t("tenant.error.createFailed"));
     },
   });
   const isCreatingWorkspace = createWorkspaceMutation.isPending;
@@ -160,7 +162,7 @@ export function TenantScopePicker({ onScopeChange }: TenantScopePickerProps) {
 
     const trimmedName = newWorkspaceName.trim();
     if (!trimmedName) {
-      setCreateWorkspaceError("Workspace name is required");
+      setCreateWorkspaceError(t("tenant.error.nameRequired"));
       return;
     }
 
@@ -231,26 +233,26 @@ export function TenantScopePicker({ onScopeChange }: TenantScopePickerProps) {
       data-testid="tenant-scope-picker"
     >
       <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-        Tenant Scope
+        {t("tenant.scope.title")}
       </div>
 
       <div className="space-y-1">
         <div className="flex items-center gap-1.5 px-2 text-xs text-muted-foreground">
           <Building2 className="h-3.5 w-3.5" />
-          <span>Organizations</span>
+          <span>{t("tenant.orgs.title")}</span>
         </div>
 
         {organizationsQuery.isLoading ? (
           <div className="px-2 py-1 text-xs text-muted-foreground">
-            Loading organizations...
+            {t("tenant.orgs.loading")}
           </div>
         ) : organizationsQuery.error ? (
           <div className="px-2 py-1 text-xs text-red-500">
-            Failed to load organizations
+            {t("tenant.orgs.failed")}
           </div>
         ) : organizations.length === 0 ? (
           <div className="px-2 py-1 text-xs text-muted-foreground">
-            No organizations found
+            {t("tenant.orgs.empty")}
           </div>
         ) : (
           organizations.map((organization) => {
@@ -281,20 +283,20 @@ export function TenantScopePicker({ onScopeChange }: TenantScopePickerProps) {
       <div className="space-y-1">
         <div className="flex items-center gap-1.5 px-2 text-xs text-muted-foreground">
           <BriefcaseBusiness className="h-3.5 w-3.5" />
-          <span>Workspaces</span>
+          <span>{t("tenant.workspaces.title")}</span>
         </div>
 
         {workspacesQuery.isLoading ? (
           <div className="px-2 py-1 text-xs text-muted-foreground">
-            Loading workspaces...
+            {t("tenant.workspaces.loading")}
           </div>
         ) : workspacesQuery.error ? (
           <div className="px-2 py-1 text-xs text-red-500">
-            Failed to load workspaces
+            {t("tenant.workspaces.failed")}
           </div>
         ) : workspaces.length === 0 ? (
           <div className="px-2 py-1 text-xs text-muted-foreground">
-            No workspaces found
+            {t("tenant.workspaces.empty")}
           </div>
         ) : (
           workspaces.map((workspace) => {
@@ -318,7 +320,7 @@ export function TenantScopePicker({ onScopeChange }: TenantScopePickerProps) {
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate">{workspace.name}</span>
                   <span className="text-[10px] uppercase text-muted-foreground">
-                    {workspace.type}
+                    {t(`tenant.workspace.type.${workspace.type}`)}
                   </span>
                 </div>
               </button>
@@ -342,7 +344,7 @@ export function TenantScopePicker({ onScopeChange }: TenantScopePickerProps) {
                 setCreateWorkspaceError(null);
               }
             }}
-            placeholder="New workspace name"
+            placeholder={t("tenant.input.newWorkspace")}
             className="w-full rounded-md border border-sidebar-border/80 bg-background px-2 py-1 text-xs"
             disabled={!canCreateWorkspace || !activeOrgId || isBusy}
           />
@@ -356,11 +358,13 @@ export function TenantScopePicker({ onScopeChange }: TenantScopePickerProps) {
               "border border-sidebar-border/80",
             )}
           >
-            {isCreatingWorkspace ? "Creating workspace..." : "Create workspace"}
+            {isCreatingWorkspace
+              ? t("tenant.button.creatingWorkspace")
+              : t("tenant.button.createWorkspace")}
           </button>
           {!canCreateWorkspace && activeOrgId ? (
             <div className="text-[11px] text-muted-foreground">
-              Only owner/admin can create workspaces
+              {t("tenant.hint.ownerAdminOnly")}
             </div>
           ) : null}
           {createWorkspaceError ? (

@@ -14,8 +14,11 @@ import {
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { useI18n } from "@/contexts/I18nContext";
 import { IpcClient } from "@/ipc/ipc_client";
 import { getConfiguredTenantScope } from "@/ipc/backend_client";
+import { getDateFnsLocale, getIntlLocaleCode } from "@/i18n/date_locale";
 import { TenantScopePicker } from "@/components/TenantScopePicker";
 
 type WorkspaceProject = {
@@ -50,9 +53,22 @@ function normalizeProjectDate(value: unknown): Date | null {
   return null;
 }
 
-function getDateLabel(value: Date | null): string {
+function getDateLabel(
+  value: Date | null,
+  {
+    unknownDateLabel,
+    todayLabel,
+    yesterdayLabel,
+    localeCode,
+  }: {
+    unknownDateLabel: string;
+    todayLabel: string;
+    yesterdayLabel: string;
+    localeCode: string;
+  },
+): string {
   if (!value) {
-    return "Unknown date";
+    return unknownDateLabel;
   }
 
   const now = new Date();
@@ -62,7 +78,7 @@ function getDateLabel(value: Date | null): string {
     now.getDate() === value.getDate();
 
   if (isSameDate) {
-    return "Today";
+    return todayLabel;
   }
 
   const yesterday = new Date(now);
@@ -73,10 +89,10 @@ function getDateLabel(value: Date | null): string {
     yesterday.getDate() === value.getDate();
 
   if (isYesterday) {
-    return "Yesterday";
+    return yesterdayLabel;
   }
 
-  return value.toLocaleDateString(undefined, {
+  return value.toLocaleDateString(localeCode, {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -93,8 +109,11 @@ export function BlazeSidebar({
   onSelectProject,
   onNewProject,
 }: BlazeSidebarProps) {
+  const { language, t } = useI18n();
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState(() => getConfiguredTenantScope());
+  const dateFnsLocale = useMemo(() => getDateFnsLocale(language), [language]);
+  const intlLocaleCode = useMemo(() => getIntlLocaleCode(language), [language]);
 
   const projectsQuery = useQuery<
     { apps: Array<{ id: number; name: string; createdAt: unknown }> },
@@ -157,17 +176,17 @@ export function BlazeSidebar({
           <button
             onClick={collapsed ? onToggleCollapse : undefined}
             className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-primary"
-            aria-label="Open workspace sidebar"
+            aria-label={t("sidebar.aria.open")}
           >
             <Flame size={16} className="text-primary-foreground" />
           </button>
           {!collapsed && (
             <div className="min-w-0">
               <h1 className="truncate text-sm font-bold text-foreground">
-                Nessy Blaze
+                {t("sidebar.brand.title")}
               </h1>
               <p className="truncate text-[11px] text-muted-foreground">
-                From idea to production
+                {t("sidebar.brand.subtitle")}
               </p>
             </div>
           )}
@@ -177,8 +196,8 @@ export function BlazeSidebar({
           <button
             onClick={onToggleCollapse}
             className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground"
-            title="Collapse panel"
-            aria-label="Collapse panel"
+            title={t("sidebar.title.collapse")}
+            aria-label={t("sidebar.aria.collapse")}
           >
             <PanelLeftClose size={16} />
           </button>
@@ -193,8 +212,8 @@ export function BlazeSidebar({
               setTimeout(onNewProject, 250);
             }}
             className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-all hover:brightness-105"
-            title="New project"
-            aria-label="New project"
+            title={t("sidebar.title.newProject")}
+            aria-label={t("sidebar.aria.newProject")}
           >
             <Plus size={16} />
           </button>
@@ -215,7 +234,10 @@ export function BlazeSidebar({
                     ? "bg-muted text-foreground"
                     : "text-muted-foreground hover:bg-surface-hover hover:text-foreground"
                 }`}
-                title={project.title || `Project #${project.id}`}
+                title={
+                  project.title ||
+                  t("sidebar.projectFallback", { id: project.id })
+                }
                 aria-label={project.title}
               >
                 <Folder size={16} />
@@ -229,20 +251,26 @@ export function BlazeSidebar({
             onClick={onToggleTheme}
             className="mb-1 flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground"
             title={
-              isDarkMode ? "Switch to light theme" : "Switch to dark theme"
+              isDarkMode
+                ? t("sidebar.title.switchToLight")
+                : t("sidebar.title.switchToDark")
             }
             aria-label={
-              isDarkMode ? "Switch to light theme" : "Switch to dark theme"
+              isDarkMode
+                ? t("sidebar.aria.switchToLight")
+                : t("sidebar.aria.switchToDark")
             }
           >
             {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
           </button>
 
+          <LanguageSwitcher variant="compact" className="mb-1" />
+
           <button
             onClick={onToggleCollapse}
             className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground"
-            title="Expand panel"
-            aria-label="Expand panel"
+            title={t("sidebar.title.expand")}
+            aria-label={t("sidebar.aria.expand")}
           >
             <PanelLeftOpen size={16} />
           </button>
@@ -255,7 +283,7 @@ export function BlazeSidebar({
               className="flex w-full items-center gap-2 rounded-lg bg-primary px-3 py-2.5 text-sm font-medium text-primary-foreground transition-all hover:brightness-105 active:scale-[0.98]"
             >
               <Plus size={16} />
-              New project
+              {t("sidebar.button.newProject")}
             </button>
           </div>
 
@@ -268,7 +296,7 @@ export function BlazeSidebar({
               <Search size={14} className="text-muted-foreground" />
               <input
                 type="text"
-                placeholder="Search projects..."
+                placeholder={t("sidebar.search.placeholder")}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
@@ -279,19 +307,24 @@ export function BlazeSidebar({
           <div className="scrollbar-thin flex-1 overflow-y-auto px-3 pt-3">
             {projectsQuery.isLoading ? (
               <div className="rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground">
-                Loading projects...
+                {t("sidebar.loadingProjects")}
               </div>
             ) : projectsQuery.error ? (
               <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-                Failed to load projects history
+                {t("sidebar.failedProjects")}
               </div>
             ) : filteredProjects.length === 0 ? (
               <div className="rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground">
-                No projects found for this workspace
+                {t("sidebar.emptyProjects")}
               </div>
             ) : (
               filteredProjects.map((project) => {
-                const dateLabel = getDateLabel(project.createdAt);
+                const dateLabel = getDateLabel(project.createdAt, {
+                  unknownDateLabel: t("sidebar.date.unknown"),
+                  todayLabel: t("sidebar.date.today"),
+                  yesterdayLabel: t("sidebar.date.yesterday"),
+                  localeCode: intlLocaleCode,
+                });
                 const shouldShowDate = dateLabel !== previousDate;
                 previousDate = dateLabel;
                 const isActive = project.id === activeProjectId;
@@ -323,8 +356,9 @@ export function BlazeSidebar({
                         {project.createdAt
                           ? formatDistanceToNow(project.createdAt, {
                               addSuffix: true,
+                              locale: dateFnsLocale,
                             })
-                          : "unknown"}
+                          : t("sidebar.projectTimeUnknown")}
                       </span>
                     </button>
                   </div>
@@ -334,21 +368,28 @@ export function BlazeSidebar({
           </div>
 
           <div className="border-t border-border px-3 py-2">
-            <button
-              onClick={onToggleTheme}
-              className="mb-2 flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground"
-            >
-              {isDarkMode ? <Sun size={14} /> : <Moon size={14} />}
-              {isDarkMode ? "Light theme" : "Dark theme"}
-            </button>
+            <div className="mb-2 flex items-center gap-2">
+              <button
+                onClick={onToggleTheme}
+                className="flex flex-1 items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground"
+              >
+                {isDarkMode ? <Sun size={14} /> : <Moon size={14} />}
+                {isDarkMode
+                  ? t("sidebar.theme.light")
+                  : t("sidebar.theme.dark")}
+              </button>
+              <LanguageSwitcher variant="compact" />
+            </div>
 
             <p className="mb-1 px-2 pt-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-              Scope Summary
+              {t("sidebar.scope.title")}
             </p>
             <div className="rounded-lg border border-border/80 px-2.5 py-2 text-xs text-muted-foreground">
               <div className="mb-1 flex items-center gap-1.5">
                 <AppWindow size={12} />
-                <span>{projects.length} projects in scope</span>
+                <span>
+                  {t("sidebar.scope.projectsCount", { count: projects.length })}
+                </span>
               </div>
               <div className="truncate">
                 {scope.orgId}/{scope.workspaceId}

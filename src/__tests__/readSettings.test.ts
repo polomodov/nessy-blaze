@@ -78,6 +78,7 @@ describe("readSettings", () => {
           "selectedThemeId": "default",
           "telemetryConsent": "unset",
           "telemetryUserId": "[scrubbed]",
+          "uiLanguage": "ru",
         }
       `);
     });
@@ -112,6 +113,7 @@ describe("readSettings", () => {
       // Should still have defaults for missing properties
       expect(result.enableAutoUpdate).toBe(true);
       expect(result.releaseChannel).toBe("stable");
+      expect(result.uiLanguage).toBe("ru");
     });
 
     it("should decrypt encrypted provider API keys", () => {
@@ -333,6 +335,7 @@ describe("readSettings", () => {
           "selectedThemeId": "default",
           "telemetryConsent": "unset",
           "telemetryUserId": "[scrubbed]",
+          "uiLanguage": "ru",
         }
       `);
     });

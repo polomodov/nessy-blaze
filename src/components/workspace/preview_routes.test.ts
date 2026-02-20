@@ -34,11 +34,11 @@ describe("extractPreviewPathsFromAppSource", () => {
 
 describe("getPreviewPathLabel", () => {
   it("formats root path label as home", () => {
-    expect(getPreviewPathLabel("/")).toBe("Home (/)");
+    expect(getPreviewPathLabel("/", "Home (/)")).toBe("Home (/)");
   });
 
   it("keeps non-root paths unchanged", () => {
-    expect(getPreviewPathLabel("/about")).toBe("/about");
+    expect(getPreviewPathLabel("/about", "Home (/)")).toBe("/about");
   });
 });
 

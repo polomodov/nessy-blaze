@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ChevronDown,
@@ -10,8 +10,10 @@ import {
   Send,
   Sparkles,
 } from "lucide-react";
+import { useI18n } from "@/contexts/I18nContext";
 import { IpcClient } from "@/ipc/ipc_client";
 import type { Message as BackendMessage } from "@/ipc/ipc_types";
+import type { TranslationParams } from "@/i18n/types";
 
 type StatusBlock = {
   title: string;
@@ -26,35 +28,32 @@ type Message = {
   statusBlocks?: StatusBlock[];
 };
 
-const ASSISTANT_ACTION_ONLY_MESSAGE =
-  "Assistant responded with internal actions.";
+type TranslateFn = (key: string, params?: TranslationParams) => string;
 
-const starterPrompts = [
-  {
-    icon: Globe,
-    label: "Landing page",
-    prompt:
-      "Build a promo landing page with a hero section, value props, and a lead form.",
-  },
-  {
-    icon: Code2,
-    label: "Update section",
-    prompt:
-      "Update the pricing section and add a new Premium plan at $29/month.",
-  },
-  {
-    icon: Image,
-    label: "Promo banner",
-    prompt:
-      "Create a high-contrast promo banner for 30% cashback with a yellow accent.",
-  },
-  {
-    icon: RotateCcw,
-    label: "Redesign",
-    prompt:
-      "Redesign the About page in a modern and minimalist style with clear typography.",
-  },
-];
+function buildStarterPrompts(t: TranslateFn) {
+  return [
+    {
+      icon: Globe,
+      label: t("chat.starter.landing.label"),
+      prompt: t("chat.starter.landing.prompt"),
+    },
+    {
+      icon: Code2,
+      label: t("chat.starter.update.label"),
+      prompt: t("chat.starter.update.prompt"),
+    },
+    {
+      icon: Image,
+      label: t("chat.starter.banner.label"),
+      prompt: t("chat.starter.banner.prompt"),
+    },
+    {
+      icon: RotateCcw,
+      label: t("chat.starter.redesign.label"),
+      prompt: t("chat.starter.redesign.prompt"),
+    },
+  ];
+}
 
 const MIN_INPUT_HEIGHT = 40;
 const MAX_INPUT_HEIGHT = 120;
@@ -101,7 +100,10 @@ function decodeXmlEntities(content: string): string {
     .replace(/&amp;/g, "&");
 }
 
-function extractStatusBlocks(content: string): {
+function extractStatusBlocks(
+  content: string,
+  defaultStatusTitle: string,
+): {
   contentWithoutStatus: string;
   statusBlocks: StatusBlock[];
 } {
@@ -113,8 +115,7 @@ function extractStatusBlocks(content: string): {
       const bodySource = (groups?.body as string | undefined) ?? body;
       const titleMatch = attrsSource.match(/\btitle="([^"]*)"/i);
       const title =
-        decodeXmlEntities((titleMatch?.[1] ?? "").trim()) ||
-        "Diagnostic details";
+        decodeXmlEntities((titleMatch?.[1] ?? "").trim()) || defaultStatusTitle;
       const summaryBody = decodeXmlEntities(String(bodySource).trim());
       if (!summaryBody) {
         return "";
@@ -174,7 +175,13 @@ function generateAppName(prompt: string): string {
   return `Blaze Project ${Date.now()}`;
 }
 
-function mapBackendMessages(messages: BackendMessage[]): Message[] {
+function mapBackendMessages(
+  messages: BackendMessage[],
+  options: {
+    assistantActionOnlyMessage: string;
+    defaultStatusTitle: string;
+  },
+): Message[] {
   return messages
     .filter(
       (message) => message.role === "user" || message.role === "assistant",
@@ -183,7 +190,7 @@ function mapBackendMessages(messages: BackendMessage[]): Message[] {
       const isAssistant = message.role === "assistant";
       const rawContent = message.content ?? "";
       const { contentWithoutStatus, statusBlocks } = isAssistant
-        ? extractStatusBlocks(rawContent)
+        ? extractStatusBlocks(rawContent, options.defaultStatusTitle)
         : { contentWithoutStatus: rawContent, statusBlocks: [] };
       const strippedContent = isAssistant
         ? stripControlMarkup(contentWithoutStatus)
@@ -195,7 +202,7 @@ function mapBackendMessages(messages: BackendMessage[]): Message[] {
         statusBlocks.length === 0;
       const content = isAssistant
         ? isAssistantActionOnly
-          ? ASSISTANT_ACTION_ONLY_MESSAGE
+          ? options.assistantActionOnlyMessage
           : strippedContent
         : message.content;
       const role: Message["role"] = isAssistant ? "agent" : "user";
@@ -216,15 +223,20 @@ function mapBackendMessages(messages: BackendMessage[]): Message[] {
     );
 }
 
-function hasHiddenAssistantActivity(messages: BackendMessage[]): boolean {
+function hasHiddenAssistantActivity(
+  messages: BackendMessage[],
+  defaultStatusTitle: string,
+): boolean {
   return messages.some((message) => {
     if (message.role !== "assistant") {
       return false;
     }
 
     const rawContent = message.content ?? "";
-    const { contentWithoutStatus, statusBlocks } =
-      extractStatusBlocks(rawContent);
+    const { contentWithoutStatus, statusBlocks } = extractStatusBlocks(
+      rawContent,
+      defaultStatusTitle,
+    );
     if (rawContent.trim().length === 0) {
       return false;
     }
@@ -236,14 +248,14 @@ function hasHiddenAssistantActivity(messages: BackendMessage[]): boolean {
   });
 }
 
-function resolveErrorMessage(error: unknown): string {
+function resolveErrorMessage(error: unknown, fallbackMessage: string): string {
   if (typeof error === "string") {
     return error;
   }
   if (error instanceof Error && error.message) {
     return error.message;
   }
-  return "Failed to send message. Please try again.";
+  return fallbackMessage;
 }
 
 interface BlazeChatAreaProps {
@@ -255,6 +267,28 @@ export function BlazeChatArea({
   activeAppId,
   onAppCreated,
 }: BlazeChatAreaProps) {
+  const { t } = useI18n();
+  const starterPrompts = useMemo(() => buildStarterPrompts(t), [t]);
+  const messageMapperOptions = useMemo(
+    () => ({
+      assistantActionOnlyMessage: t("chat.assistantActionOnly"),
+      defaultStatusTitle: t("chat.diagnostic.defaultTitle"),
+    }),
+    [t],
+  );
+  const mapMessages = useCallback(
+    (backendMessages: BackendMessage[]) =>
+      mapBackendMessages(backendMessages, messageMapperOptions),
+    [messageMapperOptions],
+  );
+  const hasHiddenActivity = useCallback(
+    (backendMessages: BackendMessage[]) =>
+      hasHiddenAssistantActivity(
+        backendMessages,
+        messageMapperOptions.defaultStatusTitle,
+      ),
+    [messageMapperOptions.defaultStatusTitle],
+  );
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [appId, setAppId] = useState<number | null>(null);
@@ -350,13 +384,11 @@ export function BlazeChatArea({
           return;
         }
 
-        const mappedMessages = mapBackendMessages(chat.messages);
+        const mappedMessages = mapMessages(chat.messages);
         if (mappedMessages.length > 0) {
           selectedChatId = chat.id;
           selectedMessages = mappedMessages;
-          selectedHasHiddenAgentActivity = hasHiddenAssistantActivity(
-            chat.messages,
-          );
+          selectedHasHiddenAgentActivity = hasHiddenActivity(chat.messages);
           break;
         }
       }
@@ -369,10 +401,8 @@ export function BlazeChatArea({
           return;
         }
         selectedChatId = latestChat.id;
-        selectedMessages = mapBackendMessages(latestChat.messages);
-        selectedHasHiddenAgentActivity = hasHiddenAssistantActivity(
-          latestChat.messages,
-        );
+        selectedMessages = mapMessages(latestChat.messages);
+        selectedHasHiddenAgentActivity = hasHiddenActivity(latestChat.messages);
       }
 
       visibleChatIdRef.current = selectedChatId;
@@ -390,7 +420,7 @@ export function BlazeChatArea({
       if (cancelled) {
         return;
       }
-      setError(resolveErrorMessage(historyError));
+      setError(resolveErrorMessage(historyError, t("chat.error.sendFailed")));
       setChatId(null);
       setMessages([]);
     });
@@ -398,7 +428,7 @@ export function BlazeChatArea({
     return () => {
       cancelled = true;
     };
-  }, [activeAppId]);
+  }, [activeAppId, hasHiddenActivity, mapMessages, t]);
 
   const sendMessage = async () => {
     if (!input.trim()) return;
@@ -457,8 +487,8 @@ export function BlazeChatArea({
           if (visibleChatIdRef.current !== streamChatId) {
             return;
           }
-          setMessages(mapBackendMessages(updatedMessages));
-          setIsHiddenAgentActivity(hasHiddenAssistantActivity(updatedMessages));
+          setMessages(mapMessages(updatedMessages));
+          setIsHiddenAgentActivity(hasHiddenActivity(updatedMessages));
         },
         onEnd: () => {
           pendingStreamChatIdsRef.current.delete(streamChatId);
@@ -477,7 +507,7 @@ export function BlazeChatArea({
         },
       });
     } catch (sendError) {
-      setError(resolveErrorMessage(sendError));
+      setError(resolveErrorMessage(sendError, t("chat.error.sendFailed")));
       setIsTyping(false);
     }
   };
@@ -517,10 +547,10 @@ export function BlazeChatArea({
                 <Sparkles size={28} className="text-primary-foreground" />
               </div>
               <h2 className="mb-2 text-2xl font-bold text-foreground">
-                Nessy Blaze
+                {t("chat.empty.title")}
               </h2>
               <p className="mb-8 text-muted-foreground">
-                Describe the page you need, and the agent will draft it for you.
+                {t("chat.empty.subtitle")}
               </p>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 {starterPrompts.map((item, index) => (
@@ -629,8 +659,8 @@ export function BlazeChatArea({
                   </div>
                   <p className="mt-2 text-xs text-muted-foreground">
                     {isHiddenAgentActivity
-                      ? "Agent is thinking and applying changes..."
-                      : "Agent is drafting a response..."}
+                      ? t("chat.typing.thinking")
+                      : t("chat.typing.drafting")}
                   </p>
                 </div>
               </motion.div>
@@ -648,7 +678,7 @@ export function BlazeChatArea({
               value={input}
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={onInputKeyDown}
-              placeholder="Describe what should be built..."
+              placeholder={t("chat.input.placeholder")}
               rows={1}
               className="w-full resize-none bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
             />
@@ -667,7 +697,7 @@ export function BlazeChatArea({
           </p>
         )}
         <p className="mx-auto mt-2 max-w-2xl text-center text-xs text-muted-foreground">
-          The agent drafts pages based on your design system.
+          {t("chat.footer.hint")}
         </p>
       </div>
     </div>

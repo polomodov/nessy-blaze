@@ -80,6 +80,7 @@ const DEFAULT_USER_SETTINGS: UserSettings = UserSettingsSchema.parse({
   releaseChannel: "stable",
   selectedTemplateId: DEFAULT_TEMPLATE_ID,
   selectedThemeId: DEFAULT_THEME_ID,
+  uiLanguage: "ru",
   isRunning: false,
   enableNativeGit: true,
 });
