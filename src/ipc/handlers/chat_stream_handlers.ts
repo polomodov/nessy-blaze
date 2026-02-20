@@ -211,6 +211,20 @@ export function buildDiagnosticStatusTag({
   return `<blaze-status title="${escapeXml(DIAGNOSTIC_TITLE)}">${escapedPayload}</blaze-status>`;
 }
 
+export function extractActionTagsForManualApproval(
+  rawResponse: string,
+): string {
+  const actionableTags = rawResponse.match(
+    /<(blaze-(?:chat-summary|write|search-replace|rename|delete|add-dependency|execute-sql|command))\b[^>]*>[\s\S]*?<\/\1>/gi,
+  );
+
+  if (!actionableTags) {
+    return "";
+  }
+
+  return actionableTags.join("\n\n").trim();
+}
+
 function buildFallbackSummary({
   status,
   autoApplied,
@@ -1736,6 +1750,13 @@ ${problemReport.problems
           chatSummary,
           uiLanguage: settings.uiLanguage,
         });
+      }
+
+      if (!autoApplied) {
+        const actionableTags = extractActionTagsForManualApproval(fullResponse);
+        if (actionableTags) {
+          summaryMessageContent = `${summaryMessageContent.trim()}\n\n${actionableTags}`;
+        }
       }
 
       await db.insert(messages).values({

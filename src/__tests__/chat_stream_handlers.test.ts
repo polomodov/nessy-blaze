@@ -12,6 +12,7 @@ import {
   removeBlazeTags,
   hasUnclosedBlazeWrite,
   buildDiagnosticStatusTag,
+  extractActionTagsForManualApproval,
 } from "../ipc/handlers/chat_stream_handlers";
 import fs from "node:fs";
 import { db } from "../db";
@@ -1181,6 +1182,32 @@ describe("buildDiagnosticStatusTag", () => {
     expect(tag).toContain("Auto-applied: no");
     expect(tag).toContain("Apply error: Failed to create commit");
     expect(tag).toContain("Extra files error: Git permissions error");
+  });
+});
+
+describe("extractActionTagsForManualApproval", () => {
+  it("keeps only actionable blaze tags for manual approval payload", () => {
+    const payload = extractActionTagsForManualApproval(`
+      Here is my plan:
+      <blaze-chat-summary>Update landing hero</blaze-chat-summary>
+      <blaze-write path="src/App.tsx">export default function App(){return <div/>}</blaze-write>
+      <blaze-command type="rebuild"></blaze-command>
+      Thanks!
+    `);
+
+    expect(payload).toContain("<blaze-chat-summary>Update landing hero");
+    expect(payload).toContain('<blaze-write path="src/App.tsx">');
+    expect(payload).toContain('<blaze-command type="rebuild">');
+    expect(payload).not.toContain("Here is my plan");
+    expect(payload).not.toContain("Thanks!");
+  });
+
+  it("returns empty string when there are no actionable blaze tags", () => {
+    const payload = extractActionTagsForManualApproval(
+      "No actionable tags in this response.",
+    );
+
+    expect(payload).toBe("");
   });
 });
 

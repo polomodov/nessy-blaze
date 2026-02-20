@@ -786,7 +786,7 @@ function ChatInputActions({
         </div>
 
         {/* Row 2: Buttons and Toggle */}
-        <div className="flex items-center justify-start space-x-2">
+        <div className="flex flex-wrap items-center justify-start gap-2">
           <Button
             className="px-8"
             size="sm"
@@ -817,7 +817,7 @@ function ChatInputActions({
             )}
             Reject
           </Button>
-          <div className="flex items-center space-x-1 ml-auto">
+          <div className="ml-auto flex min-w-0 items-center">
             <AutoApproveSwitch />
           </div>
         </div>

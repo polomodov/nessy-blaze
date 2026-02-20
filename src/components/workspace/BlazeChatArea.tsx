@@ -11,8 +11,10 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useI18n } from "@/contexts/I18nContext";
+import { useSettings } from "@/hooks/useSettings";
 import { IpcClient } from "@/ipc/ipc_client";
 import type { Message as BackendMessage } from "@/ipc/ipc_types";
+import type { ProposalResult } from "@/lib/schemas";
 import type { TranslationParams } from "@/i18n/types";
 
 type StatusBlock = {
@@ -22,13 +24,41 @@ type StatusBlock = {
 
 type Message = {
   id: string;
+  backendId?: number;
   content: string;
   role: "user" | "agent";
   isAssistantActionOnly?: boolean;
   statusBlocks?: StatusBlock[];
+  sourceCommitHash?: string | null;
+};
+
+type PendingCodeProposal = {
+  chatId: number;
+  messageId: number;
+  title: string;
+  filesCount: number;
+  packagesCount: number;
+  sqlQueriesCount: number;
 };
 
 type TranslateFn = (key: string, params?: TranslationParams) => string;
+
+function toPendingCodeProposal(
+  proposalResult: ProposalResult | null,
+): PendingCodeProposal | null {
+  if (!proposalResult || proposalResult.proposal.type !== "code-proposal") {
+    return null;
+  }
+
+  return {
+    chatId: proposalResult.chatId,
+    messageId: proposalResult.messageId,
+    title: proposalResult.proposal.title,
+    filesCount: proposalResult.proposal.filesChanged.length,
+    packagesCount: proposalResult.proposal.packagesAdded.length,
+    sqlQueriesCount: proposalResult.proposal.sqlQueries.length,
+  };
+}
 
 function buildStarterPrompts(t: TranslateFn) {
   return [
@@ -187,6 +217,10 @@ function mapBackendMessages(
       (message) => message.role === "user" || message.role === "assistant",
     )
     .map((message) => {
+      const parsedBackendId = Number(message.id);
+      const backendId = Number.isFinite(parsedBackendId)
+        ? parsedBackendId
+        : undefined;
       const isAssistant = message.role === "assistant";
       const rawContent = message.content ?? "";
       const { contentWithoutStatus, statusBlocks } = isAssistant
@@ -209,10 +243,12 @@ function mapBackendMessages(
 
       return {
         id: String(message.id),
+        backendId,
         role,
         content,
         isAssistantActionOnly,
         statusBlocks,
+        sourceCommitHash: message.sourceCommitHash ?? null,
       };
     })
     .filter(
@@ -221,6 +257,24 @@ function mapBackendMessages(
         message.content.length > 0 ||
         (message.statusBlocks?.length ?? 0) > 0,
     );
+}
+
+function findPreviousUserBackendMessageId(
+  mappedMessages: Message[],
+  assistantMessageIndex: number,
+): number | null {
+  for (let index = assistantMessageIndex - 1; index >= 0; index -= 1) {
+    const message = mappedMessages[index];
+    if (message?.role !== "user") {
+      continue;
+    }
+
+    if (typeof message.backendId === "number") {
+      return message.backendId;
+    }
+  }
+
+  return null;
 }
 
 function hasHiddenAssistantActivity(
@@ -268,6 +322,7 @@ export function BlazeChatArea({
   onAppCreated,
 }: BlazeChatAreaProps) {
   const { t } = useI18n();
+  const { settings } = useSettings();
   const starterPrompts = useMemo(() => buildStarterPrompts(t), [t]);
   const messageMapperOptions = useMemo(
     () => ({
@@ -295,7 +350,13 @@ export function BlazeChatArea({
   const [chatId, setChatId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
+  const [isApproving, setIsApproving] = useState(false);
+  const [revertingMessageId, setRevertingMessageId] = useState<string | null>(
+    null,
+  );
   const [isHiddenAgentActivity, setIsHiddenAgentActivity] = useState(false);
+  const [pendingCodeProposal, setPendingCodeProposal] =
+    useState<PendingCodeProposal | null>(null);
   const [expandedStatusKeys, setExpandedStatusKeys] = useState<Set<string>>(
     new Set(),
   );
@@ -304,9 +365,38 @@ export function BlazeChatArea({
   const visibleChatIdRef = useRef<number | null>(null);
   const pendingStreamChatIdsRef = useRef<Set<number>>(new Set());
 
+  const syncPendingCodeProposal = useCallback(
+    async (targetChatId: number | null) => {
+      if (!targetChatId || settings?.autoApproveChanges) {
+        setPendingCodeProposal(null);
+        return;
+      }
+
+      try {
+        const proposalResult =
+          await IpcClient.getInstance().getProposal(targetChatId);
+        if (visibleChatIdRef.current !== targetChatId) {
+          return;
+        }
+        setPendingCodeProposal(toPendingCodeProposal(proposalResult));
+      } catch (proposalError) {
+        if (visibleChatIdRef.current !== targetChatId) {
+          return;
+        }
+        console.error("Failed to load pending proposal:", proposalError);
+        setPendingCodeProposal(null);
+      }
+    },
+    [settings?.autoApproveChanges],
+  );
+
   useEffect(() => {
     visibleChatIdRef.current = chatId;
   }, [chatId]);
+
+  useEffect(() => {
+    void syncPendingCodeProposal(chatId);
+  }, [chatId, syncPendingCodeProposal]);
 
   const resizeInput = useCallback(() => {
     const textarea = inputRef.current;
@@ -347,6 +437,7 @@ export function BlazeChatArea({
         setChatId(null);
         visibleChatIdRef.current = null;
         setMessages([]);
+        setRevertingMessageId(null);
         setIsTyping(false);
         setIsHiddenAgentActivity(false);
         return;
@@ -408,6 +499,7 @@ export function BlazeChatArea({
       visibleChatIdRef.current = selectedChatId;
       setChatId(selectedChatId);
       setMessages(selectedMessages);
+      setRevertingMessageId(null);
       const isSelectedChatPending =
         pendingStreamChatIdsRef.current.has(selectedChatId);
       setIsTyping(isSelectedChatPending);
@@ -433,6 +525,7 @@ export function BlazeChatArea({
   const sendMessage = async () => {
     if (!input.trim()) return;
     if (isTyping) return;
+    if (pendingCodeProposal && !settings?.autoApproveChanges) return;
 
     const prompt = input.trim();
     setError(null);
@@ -447,6 +540,7 @@ export function BlazeChatArea({
     setInput("");
     setIsTyping(true);
     setIsHiddenAgentActivity(false);
+    setPendingCodeProposal(null);
     let activeChatId = chatId;
     let appIdForMessage = appId;
 
@@ -496,6 +590,7 @@ export function BlazeChatArea({
             setIsTyping(false);
             setIsHiddenAgentActivity(false);
           }
+          void syncPendingCodeProposal(streamChatId);
         },
         onError: (streamError) => {
           pendingStreamChatIdsRef.current.delete(streamChatId);
@@ -512,6 +607,93 @@ export function BlazeChatArea({
     }
   };
 
+  const handleApprovePendingChanges = async () => {
+    if (!pendingCodeProposal || isTyping || isApproving) {
+      return;
+    }
+
+    setIsApproving(true);
+    setError(null);
+    try {
+      await IpcClient.getInstance().approveProposal({
+        chatId: pendingCodeProposal.chatId,
+        messageId: pendingCodeProposal.messageId,
+      });
+      const refreshedChat = await IpcClient.getInstance().getChat(
+        pendingCodeProposal.chatId,
+      );
+
+      if (visibleChatIdRef.current === pendingCodeProposal.chatId) {
+        setMessages(mapMessages(refreshedChat.messages));
+        setIsHiddenAgentActivity(hasHiddenActivity(refreshedChat.messages));
+      }
+      await syncPendingCodeProposal(pendingCodeProposal.chatId);
+    } catch (approveError) {
+      setError(
+        resolveErrorMessage(approveError, t("chat.error.approveFailed")),
+      );
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
+  const handleRollbackMessage = async (
+    assistantMessageId: string,
+    assistantMessageIndex: number,
+  ) => {
+    if (isTyping || revertingMessageId) {
+      return;
+    }
+
+    const assistantMessage = messages[assistantMessageIndex];
+    if (
+      !assistantMessage ||
+      assistantMessage.role !== "agent" ||
+      !assistantMessage.sourceCommitHash
+    ) {
+      return;
+    }
+
+    if (!appId || !chatId) {
+      setError(t("chat.error.rollbackFailed"));
+      return;
+    }
+
+    const previousUserMessageId = findPreviousUserBackendMessageId(
+      messages,
+      assistantMessageIndex,
+    );
+
+    setRevertingMessageId(assistantMessageId);
+    setError(null);
+    try {
+      await IpcClient.getInstance().revertVersion({
+        appId,
+        previousVersionId: assistantMessage.sourceCommitHash,
+        currentChatMessageId:
+          previousUserMessageId === null
+            ? undefined
+            : {
+                chatId,
+                messageId: previousUserMessageId,
+              },
+      });
+
+      const refreshedChat = await IpcClient.getInstance().getChat(chatId);
+      if (visibleChatIdRef.current === chatId) {
+        setMessages(mapMessages(refreshedChat.messages));
+        setIsHiddenAgentActivity(hasHiddenActivity(refreshedChat.messages));
+      }
+      await syncPendingCodeProposal(chatId);
+    } catch (revertError) {
+      setError(
+        resolveErrorMessage(revertError, t("chat.error.rollbackFailed")),
+      );
+    } finally {
+      setRevertingMessageId(null);
+    }
+  };
+
   const onInputKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
@@ -520,6 +702,8 @@ export function BlazeChatArea({
   };
 
   const isEmpty = messages.length === 0;
+  const hasPendingManualProposal =
+    !settings?.autoApproveChanges && pendingCodeProposal !== null;
   const toggleStatusKey = (key: string) => {
     setExpandedStatusKeys((previous) => {
       const next = new Set(previous);
@@ -584,7 +768,7 @@ export function BlazeChatArea({
         ) : (
           <div className="mx-auto max-w-2xl px-6 py-6">
             <AnimatePresence>
-              {messages.map((message) => (
+              {messages.map((message, messageIndex) => (
                 <motion.div
                   key={message.id}
                   initial={{ opacity: 0, y: 8 }}
@@ -640,6 +824,27 @@ export function BlazeChatArea({
                         </div>
                       );
                     })}
+                    {message.role === "agent" && message.sourceCommitHash && (
+                      <div className="mt-3 border-t border-border/60 pt-2">
+                        <button
+                          type="button"
+                          data-testid={`rollback-button-${message.id}`}
+                          onClick={() => {
+                            void handleRollbackMessage(
+                              message.id,
+                              messageIndex,
+                            );
+                          }}
+                          disabled={Boolean(revertingMessageId) || isTyping}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <RotateCcw size={12} />
+                          {revertingMessageId === message.id
+                            ? t("chat.rollback.button.reverting")
+                            : t("chat.rollback.button")}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </motion.div>
               ))}
@@ -671,6 +876,35 @@ export function BlazeChatArea({
       </div>
 
       <div className="border-t border-border bg-card px-4 py-4">
+        {hasPendingManualProposal && pendingCodeProposal && (
+          <div className="mx-auto mb-3 flex max-w-2xl items-center justify-between gap-3 rounded-xl border border-primary/30 bg-primary/5 px-3 py-2.5">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-foreground">
+                {t("chat.manualApply.title")}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t("chat.manualApply.summary", {
+                  files: pendingCodeProposal.filesCount,
+                  packages: pendingCodeProposal.packagesCount,
+                  sqlQueries: pendingCodeProposal.sqlQueriesCount,
+                })}
+              </p>
+            </div>
+            <button
+              type="button"
+              data-testid="manual-approve-button"
+              onClick={() => {
+                void handleApprovePendingChanges();
+              }}
+              disabled={isApproving || isTyping}
+              className="flex-shrink-0 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition-all hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isApproving
+                ? t("chat.manualApply.button.approving")
+                : t("chat.manualApply.button.approve")}
+            </button>
+          </div>
+        )}
         <div className="mx-auto flex max-w-2xl items-end gap-3">
           <div className="flex-1 rounded-xl border border-border bg-surface px-4 py-3 transition-colors focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20">
             <textarea
@@ -685,7 +919,7 @@ export function BlazeChatArea({
           </div>
           <button
             onClick={sendMessage}
-            disabled={!input.trim() || isTyping}
+            disabled={!input.trim() || isTyping || hasPendingManualProposal}
             className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-all hover:brightness-105 active:scale-95 disabled:opacity-40 disabled:hover:brightness-100"
           >
             <Send size={18} />

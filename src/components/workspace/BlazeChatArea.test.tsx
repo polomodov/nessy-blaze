@@ -14,12 +14,26 @@ const {
   getChatsMock,
   getChatMock,
   createChatMock,
+  getProposalMock,
+  approveProposalMock,
+  revertVersionMock,
 } = vi.hoisted(() => ({
   createAppMock: vi.fn(),
   streamMessageMock: vi.fn(),
   getChatsMock: vi.fn(),
   getChatMock: vi.fn(),
   createChatMock: vi.fn(),
+  getProposalMock: vi.fn(),
+  approveProposalMock: vi.fn(),
+  revertVersionMock: vi.fn(),
+}));
+
+const { settingsRef } = vi.hoisted(() => ({
+  settingsRef: {
+    current: { autoApproveChanges: false } as {
+      autoApproveChanges?: boolean;
+    } | null,
+  },
 }));
 
 vi.mock("@/ipc/ipc_client", () => ({
@@ -30,15 +44,56 @@ vi.mock("@/ipc/ipc_client", () => ({
       getChats: getChatsMock,
       getChat: getChatMock,
       createChat: createChatMock,
+      getProposal: getProposalMock,
+      approveProposal: approveProposalMock,
+      revertVersion: revertVersionMock,
     })),
   },
 }));
 
+vi.mock("@/hooks/useSettings", () => ({
+  useSettings: () => ({
+    settings: settingsRef.current,
+  }),
+}));
+
+function buildPendingProposal(chatId = 77, messageId = 2) {
+  return {
+    chatId,
+    messageId,
+    proposal: {
+      type: "code-proposal" as const,
+      title: "Apply landing updates",
+      securityRisks: [],
+      filesChanged: [
+        {
+          name: "App.tsx",
+          path: "src/App.tsx",
+          summary: "Update hero",
+          type: "write" as const,
+          isServerFunction: false,
+        },
+      ],
+      packagesAdded: ["zod"],
+      sqlQueries: [{ content: "select 1;" }],
+    },
+  };
+}
+
 describe("BlazeChatArea", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    settingsRef.current = { autoApproveChanges: false };
     streamMessageMock.mockImplementation(() => {});
     getChatsMock.mockResolvedValue([]);
+    getProposalMock.mockResolvedValue(null);
+    approveProposalMock.mockResolvedValue({
+      extraFiles: undefined,
+      extraFilesError: undefined,
+    });
+    revertVersionMock.mockResolvedValue({
+      successMessage: "Restored version",
+    });
     getChatMock.mockResolvedValue({
       id: 0,
       appId: 0,
@@ -452,6 +507,154 @@ Files to write: 1</blaze-status>`,
     ).toBeTruthy();
     expect(screen.queryByText(/const x = 1/)).toBeNull();
     expect(screen.queryByText(/blaze-write/i)).toBeNull();
+  });
+
+  it("shows manual approve button when a code proposal is pending", async () => {
+    render(<BlazeChatArea />);
+
+    const input = screen.getByPlaceholderText("Опишите, что нужно собрать...");
+    fireEvent.change(input, { target: { value: "Update landing page hero" } });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => {
+      expect(streamMessageMock).toHaveBeenCalledTimes(1);
+    });
+
+    getProposalMock.mockResolvedValue(buildPendingProposal());
+    const streamOptions = streamMessageMock.mock.calls[0][1];
+
+    act(() => {
+      streamOptions.onEnd({ chatId: 77, updatedFiles: false });
+    });
+
+    await waitFor(() => {
+      expect(getProposalMock).toHaveBeenCalledWith(77);
+      expect(screen.getByTestId("manual-approve-button")).toBeTruthy();
+    });
+
+    expect(screen.getByText("Изменения ждут ручного аппрува")).toBeTruthy();
+  });
+
+  it("approves pending proposal from manual approve button", async () => {
+    render(<BlazeChatArea />);
+
+    const input = screen.getByPlaceholderText("Опишите, что нужно собрать...");
+    fireEvent.change(input, { target: { value: "Apply CTA updates" } });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => {
+      expect(streamMessageMock).toHaveBeenCalledTimes(1);
+    });
+
+    getProposalMock.mockResolvedValue(buildPendingProposal(77, 21));
+    const streamOptions = streamMessageMock.mock.calls[0][1];
+
+    act(() => {
+      streamOptions.onEnd({ chatId: 77, updatedFiles: false });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("manual-approve-button")).toBeTruthy();
+    });
+
+    getChatMock.mockResolvedValueOnce({
+      id: 77,
+      appId: 42,
+      title: "Chat",
+      messages: [
+        { id: 1, role: "user", content: "Apply CTA updates" },
+        { id: 2, role: "assistant", content: "Готово, изменения применены." },
+      ],
+    });
+    getProposalMock.mockResolvedValueOnce(null);
+
+    fireEvent.click(screen.getByTestId("manual-approve-button"));
+
+    await waitFor(() => {
+      expect(approveProposalMock).toHaveBeenCalledWith({
+        chatId: 77,
+        messageId: 21,
+      });
+      expect(screen.queryByTestId("manual-approve-button")).toBeNull();
+    });
+  });
+
+  it("does not show manual approve button in auto-apply mode", async () => {
+    settingsRef.current = { autoApproveChanges: true };
+    render(<BlazeChatArea />);
+
+    const input = screen.getByPlaceholderText("Опишите, что нужно собрать...");
+    fireEvent.change(input, { target: { value: "Update landing page hero" } });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => {
+      expect(streamMessageMock).toHaveBeenCalledTimes(1);
+    });
+
+    getProposalMock.mockResolvedValue(buildPendingProposal());
+    const streamOptions = streamMessageMock.mock.calls[0][1];
+
+    act(() => {
+      streamOptions.onEnd({ chatId: 77, updatedFiles: true });
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("manual-approve-button")).toBeNull();
+    });
+    expect(getProposalMock).not.toHaveBeenCalled();
+  });
+
+  it("rolls back changes from assistant message with source commit hash", async () => {
+    getChatsMock.mockResolvedValue([
+      {
+        id: 51,
+        appId: 88,
+        title: "Rollback chat",
+        createdAt: new Date("2026-02-20T00:00:00.000Z"),
+      },
+    ]);
+    getChatMock.mockResolvedValueOnce({
+      id: 51,
+      appId: 88,
+      title: "Rollback chat",
+      messages: [
+        { id: 100, role: "user", content: "Update hero block" },
+        {
+          id: 101,
+          role: "assistant",
+          content: "Выполнил изменения.",
+          sourceCommitHash: "abc123def",
+        },
+      ],
+    });
+
+    render(<BlazeChatArea activeAppId={88} />);
+
+    await waitFor(() => {
+      expect(getChatsMock).toHaveBeenCalledWith(88);
+      expect(screen.getByTestId("rollback-button-101")).toBeTruthy();
+    });
+
+    getChatMock.mockResolvedValueOnce({
+      id: 51,
+      appId: 88,
+      title: "Rollback chat",
+      messages: [{ id: 100, role: "user", content: "Update hero block" }],
+    });
+
+    fireEvent.click(screen.getByTestId("rollback-button-101"));
+
+    await waitFor(() => {
+      expect(revertVersionMock).toHaveBeenCalledWith({
+        appId: 88,
+        previousVersionId: "abc123def",
+        currentChatMessageId: {
+          chatId: 51,
+          messageId: 100,
+        },
+      });
+      expect(getChatMock).toHaveBeenCalledWith(51);
+    });
   });
 
   it("does not show code from an unclosed blaze block during streaming", async () => {

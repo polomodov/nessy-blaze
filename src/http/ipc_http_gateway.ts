@@ -3,7 +3,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import net from "node:net";
-import { and, asc, desc, eq, ilike } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, ilike } from "drizzle-orm";
 import git from "isomorphic-git";
 import killPort from "kill-port";
 import { initializeDatabase, db } from "../db";
@@ -55,6 +55,17 @@ import {
   searchAppsForScope,
   toggleAppFavoriteForScope,
 } from "./scoped_repositories";
+import { processFullResponseActions } from "../ipc/processors/response_processor";
+import {
+  getBlazeAddDependencyTags,
+  getBlazeChatSummaryTag,
+  getBlazeDeleteTags,
+  getBlazeExecuteSqlTags,
+  getBlazeRenameTags,
+  getBlazeSearchReplaceTags,
+  getBlazeWriteTags,
+} from "../ipc/utils/blaze_tag_parser";
+import { isServerFunction } from "../supabase_admin/supabase_utils";
 
 interface InvokeMeta {
   requestContext?: RequestContext;
@@ -132,6 +143,74 @@ async function stageAllFiles(dir: string): Promise<void> {
   for (const [filepath, headStatus, workdirStatus] of matrix) {
     if (headStatus === 0 && workdirStatus === 2) {
       await git.add({ fs, dir, filepath });
+    }
+  }
+}
+
+async function isGitWorkingTreeClean(dir: string): Promise<boolean> {
+  const matrix = await git.statusMatrix({ fs, dir });
+  return matrix.every(
+    ([, headStatus, workdirStatus, stageStatus]) =>
+      headStatus === 1 && workdirStatus === 1 && stageStatus === 1,
+  );
+}
+
+async function stageWorkspaceToTargetCommit(
+  dir: string,
+  targetOid: string,
+): Promise<void> {
+  const currentCommit = await git.resolveRef({
+    fs,
+    dir,
+    ref: "HEAD",
+  });
+
+  if (currentCommit === targetOid) {
+    return;
+  }
+
+  if (!(await isGitWorkingTreeClean(dir))) {
+    throw new Error("Cannot revert: working tree has uncommitted changes.");
+  }
+
+  const matrix = await git.statusMatrix({
+    fs,
+    dir,
+    ref: targetOid,
+  });
+
+  for (const [filepath, headStatus, workdirStatus] of matrix) {
+    const absoluteFilePath = path.join(dir, filepath);
+    if (headStatus === 1) {
+      if (workdirStatus === 1) {
+        continue;
+      }
+
+      const { blob } = await git.readBlob({
+        fs,
+        dir,
+        oid: targetOid,
+        filepath,
+      });
+      await fs.promises.mkdir(path.dirname(absoluteFilePath), {
+        recursive: true,
+      });
+      await fs.promises.writeFile(absoluteFilePath, Buffer.from(blob));
+      await git.add({ fs, dir, filepath });
+      continue;
+    }
+
+    if (headStatus === 0 && workdirStatus !== 0) {
+      await fs.promises.rm(absoluteFilePath, { force: true });
+      try {
+        await git.remove({
+          fs,
+          dir,
+          filepath,
+        });
+      } catch {
+        // Ignore files that are only present in the working tree.
+      }
     }
   }
 }
@@ -278,6 +357,60 @@ function mapMessageRow(row: MessageRow) {
     model: row.model ?? null,
     aiMessagesJson: row.aiMessagesJson ?? null,
     createdAt: toIsoDate(row.createdAt),
+  };
+}
+
+function buildCodeProposalFromMessage(messageContent: string) {
+  const proposalTitle = getBlazeChatSummaryTag(messageContent);
+  const proposalWriteFiles = getBlazeWriteTags(messageContent);
+  const proposalSearchReplaceFiles = getBlazeSearchReplaceTags(messageContent);
+  const proposalRenameFiles = getBlazeRenameTags(messageContent);
+  const proposalDeleteFiles = getBlazeDeleteTags(messageContent);
+  const proposalExecuteSqlQueries = getBlazeExecuteSqlTags(messageContent);
+  const packagesAdded = getBlazeAddDependencyTags(messageContent);
+
+  const filesChanged = [
+    ...proposalWriteFiles.concat(proposalSearchReplaceFiles).map((tag) => ({
+      name: path.basename(tag.path),
+      path: tag.path,
+      summary: tag.description ?? "(no change summary found)",
+      type: "write" as const,
+      isServerFunction: isServerFunction(tag.path),
+    })),
+    ...proposalRenameFiles.map((tag) => ({
+      name: path.basename(tag.to),
+      path: tag.to,
+      summary: `Rename from ${tag.from} to ${tag.to}`,
+      type: "rename" as const,
+      isServerFunction: isServerFunction(tag.to),
+    })),
+    ...proposalDeleteFiles.map((tagPath) => ({
+      name: path.basename(tagPath),
+      path: tagPath,
+      summary: "Delete file",
+      type: "delete" as const,
+      isServerFunction: isServerFunction(tagPath),
+    })),
+  ];
+
+  if (
+    filesChanged.length === 0 &&
+    packagesAdded.length === 0 &&
+    proposalExecuteSqlQueries.length === 0
+  ) {
+    return null;
+  }
+
+  return {
+    type: "code-proposal" as const,
+    title: proposalTitle ?? "Proposed File Changes",
+    securityRisks: [],
+    filesChanged,
+    packagesAdded,
+    sqlQueries: proposalExecuteSqlQueries.map((query) => ({
+      content: query.content,
+      description: query.description,
+    })),
   };
 }
 
@@ -1532,6 +1665,343 @@ const handlers: Record<string, InvokeHandler> = {
       createdAt: toIsoDate(chatRow.createdAt),
       messages: messageRows.map(mapMessageRow),
     };
+  },
+
+  async "revert-version"(args, meta) {
+    const [payload] = args as [
+      | {
+          appId?: number;
+          previousVersionId?: string;
+          currentChatMessageId?: {
+            chatId?: number;
+            messageId?: number;
+          };
+        }
+      | undefined,
+    ];
+    const appId = payload?.appId;
+    const previousVersionId = payload?.previousVersionId;
+    const currentChatMessageId = payload?.currentChatMessageId;
+
+    if (typeof appId !== "number") {
+      throw new Error("Invalid app ID");
+    }
+    if (
+      typeof previousVersionId !== "string" ||
+      previousVersionId.length === 0
+    ) {
+      throw new Error("Invalid version ID");
+    }
+
+    return withLock(appId, async () => {
+      const scopedContext = getRequestContext(meta);
+      let appPath: string;
+      if (scopedContext) {
+        requireRoleForMutation(scopedContext);
+        const app = await getAppByIdForScope(scopedContext, appId);
+        appPath = getBlazeAppPath(app.path);
+      } else {
+        if (isMultitenantEnforced()) {
+          throw new HttpError(
+            400,
+            "TENANT_SCOPE_REQUIRED",
+            "revert-version requires tenant scope in enforce mode",
+          );
+        }
+
+        const app = await db.query.apps.findFirst({
+          where: eq(apps.id, appId),
+          columns: {
+            path: true,
+          },
+        });
+        if (!app?.path) {
+          throw new Error("App not found");
+        }
+        appPath = getBlazeAppPath(app.path);
+      }
+
+      await git.checkout({ fs, dir: appPath, ref: "main" });
+      await stageWorkspaceToTargetCommit(appPath, previousVersionId);
+
+      const hasNoChangesToCommit = await isGitWorkingTreeClean(appPath);
+      if (!hasNoChangesToCommit) {
+        await git.commit({
+          fs,
+          dir: appPath,
+          message: `Reverted all changes back to version ${previousVersionId}`,
+          author: {
+            name: "Blaze",
+            email: "noreply@blaze.sh",
+          },
+        });
+      }
+
+      if (currentChatMessageId) {
+        if (
+          typeof currentChatMessageId.chatId !== "number" ||
+          typeof currentChatMessageId.messageId !== "number"
+        ) {
+          throw new Error("Invalid current chat message ID");
+        }
+
+        const whereConditions = [
+          eq(messages.chatId, currentChatMessageId.chatId),
+          gte(messages.id, currentChatMessageId.messageId),
+        ];
+        if (scopedContext) {
+          await getChatForScope(scopedContext, currentChatMessageId.chatId);
+          whereConditions.push(
+            eq(messages.organizationId, scopedContext.orgId),
+            eq(messages.workspaceId, scopedContext.workspaceId),
+          );
+        }
+
+        await db.delete(messages).where(and(...whereConditions));
+      } else {
+        const messageLookupWhere = [eq(messages.commitHash, previousVersionId)];
+        if (scopedContext) {
+          messageLookupWhere.push(
+            eq(messages.organizationId, scopedContext.orgId),
+            eq(messages.workspaceId, scopedContext.workspaceId),
+          );
+        }
+
+        const messageWithCommit = await db.query.messages.findFirst({
+          where: and(...messageLookupWhere),
+          columns: {
+            id: true,
+            chatId: true,
+          },
+        });
+
+        if (messageWithCommit) {
+          const deleteWhereConditions = [
+            eq(messages.chatId, messageWithCommit.chatId),
+            gt(messages.id, messageWithCommit.id),
+          ];
+          if (scopedContext) {
+            deleteWhereConditions.push(
+              eq(messages.organizationId, scopedContext.orgId),
+              eq(messages.workspaceId, scopedContext.workspaceId),
+            );
+          }
+
+          await db.delete(messages).where(and(...deleteWhereConditions));
+        }
+      }
+
+      if (hasNoChangesToCommit) {
+        return {
+          warningMessage: "No changes were needed for rollback.",
+        };
+      }
+
+      return {
+        successMessage: "Restored version",
+      };
+    });
+  },
+
+  async "get-proposal"(args, meta) {
+    const [payload] = args as [{ chatId?: number } | undefined];
+    const chatId = payload?.chatId;
+    if (typeof chatId !== "number") {
+      throw new Error("Invalid chat ID");
+    }
+
+    return withLock(`get-proposal:${chatId}`, async () => {
+      const scopedContext = getRequestContext(meta);
+      let latestAssistantMessage:
+        | {
+            id: number;
+            content: string;
+            approvalState: "approved" | "rejected" | null;
+          }
+        | undefined;
+
+      if (scopedContext) {
+        const chat = await getChatForScope(scopedContext, chatId);
+        latestAssistantMessage = [...chat.messages]
+          .reverse()
+          .find((message) => message.role === "assistant");
+      } else {
+        if (isMultitenantEnforced()) {
+          throw new HttpError(
+            400,
+            "TENANT_SCOPE_REQUIRED",
+            "get-proposal requires tenant scope in enforce mode",
+          );
+        }
+
+        latestAssistantMessage = await db.query.messages.findFirst({
+          where: and(
+            eq(messages.chatId, chatId),
+            eq(messages.role, "assistant"),
+          ),
+          orderBy: [desc(messages.createdAt), desc(messages.id)],
+          columns: {
+            id: true,
+            content: true,
+            approvalState: true,
+          },
+        });
+      }
+
+      if (
+        !latestAssistantMessage?.content ||
+        latestAssistantMessage.approvalState
+      ) {
+        return null;
+      }
+
+      const proposal = buildCodeProposalFromMessage(
+        latestAssistantMessage.content,
+      );
+      if (!proposal) {
+        return null;
+      }
+
+      return {
+        proposal,
+        chatId,
+        messageId: latestAssistantMessage.id,
+      };
+    });
+  },
+
+  async "approve-proposal"(args, meta) {
+    const [payload] = args as [{ chatId?: number; messageId?: number }];
+    const chatId = payload?.chatId;
+    const messageId = payload?.messageId;
+
+    if (typeof chatId !== "number") {
+      throw new Error("Invalid chat ID");
+    }
+    if (typeof messageId !== "number") {
+      throw new Error("Invalid message ID");
+    }
+
+    const settings = readUserSettings();
+    if (settings.selectedChatMode === "ask") {
+      throw new Error(
+        "Ask mode is not supported for proposal approval. Please switch to build mode.",
+      );
+    }
+
+    return withLock(`approve-proposal:${chatId}:${messageId}`, async () => {
+      const scopedContext = getRequestContext(meta);
+      const whereConditions = [
+        eq(messages.id, messageId),
+        eq(messages.chatId, chatId),
+        eq(messages.role, "assistant"),
+      ];
+
+      if (scopedContext) {
+        requireRoleForMutation(scopedContext);
+        await getChatForScope(scopedContext, chatId);
+        whereConditions.push(
+          eq(messages.organizationId, scopedContext.orgId),
+          eq(messages.workspaceId, scopedContext.workspaceId),
+        );
+      } else if (isMultitenantEnforced()) {
+        throw new HttpError(
+          400,
+          "TENANT_SCOPE_REQUIRED",
+          "approve-proposal requires tenant scope in enforce mode",
+        );
+      }
+
+      const messageToApprove = await db.query.messages.findFirst({
+        where: and(...whereConditions),
+        columns: {
+          content: true,
+        },
+      });
+
+      if (!messageToApprove?.content) {
+        throw new Error(
+          `Assistant message not found for chatId: ${chatId}, messageId: ${messageId}`,
+        );
+      }
+
+      const chatSummary = getBlazeChatSummaryTag(messageToApprove.content);
+      const processResult = await processFullResponseActions(
+        messageToApprove.content,
+        chatId,
+        {
+          chatSummary: chatSummary ?? undefined,
+          messageId,
+        },
+      );
+
+      if (processResult.error) {
+        throw new Error(
+          `Error processing actions for message ${messageId}: ${processResult.error}`,
+        );
+      }
+
+      return {
+        extraFiles: processResult.extraFiles,
+        extraFilesError: processResult.extraFilesError,
+      };
+    });
+  },
+
+  async "reject-proposal"(args, meta) {
+    const [payload] = args as [{ chatId?: number; messageId?: number }];
+    const chatId = payload?.chatId;
+    const messageId = payload?.messageId;
+
+    if (typeof chatId !== "number") {
+      throw new Error("Invalid chat ID");
+    }
+    if (typeof messageId !== "number") {
+      throw new Error("Invalid message ID");
+    }
+
+    return withLock(`reject-proposal:${chatId}:${messageId}`, async () => {
+      const scopedContext = getRequestContext(meta);
+      const whereConditions = [
+        eq(messages.id, messageId),
+        eq(messages.chatId, chatId),
+        eq(messages.role, "assistant"),
+      ];
+
+      if (scopedContext) {
+        requireRoleForMutation(scopedContext);
+        await getChatForScope(scopedContext, chatId);
+        whereConditions.push(
+          eq(messages.organizationId, scopedContext.orgId),
+          eq(messages.workspaceId, scopedContext.workspaceId),
+        );
+      } else if (isMultitenantEnforced()) {
+        throw new HttpError(
+          400,
+          "TENANT_SCOPE_REQUIRED",
+          "reject-proposal requires tenant scope in enforce mode",
+        );
+      }
+
+      const messageToReject = await db.query.messages.findFirst({
+        where: and(...whereConditions),
+        columns: {
+          id: true,
+        },
+      });
+
+      if (!messageToReject) {
+        throw new Error(
+          `Assistant message not found for chatId: ${chatId}, messageId: ${messageId}`,
+        );
+      }
+
+      await db
+        .update(messages)
+        .set({ approvalState: "rejected" })
+        .where(eq(messages.id, messageId));
+      return;
+    });
   },
 
   async "update-chat"(args, meta) {

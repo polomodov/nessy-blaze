@@ -7,6 +7,18 @@ export const ru = {
   "i18n.language.switchTo": "Переключить язык на {language}",
   "i18n.language.saveError":
     "Не удалось сохранить язык интерфейса. Возвращено предыдущее значение.",
+  "applyMode.label": "Режим применения изменений",
+  "applyMode.manual": "Ручной аппрув",
+  "applyMode.auto": "Авто",
+  "applyMode.compact.manual": "Ручной аппрув",
+  "applyMode.compact.auto": "Авто",
+  "applyMode.aria.label": "Режим применения изменений",
+  "applyMode.aria.manual": "Требовать аппрув перед применением изменений",
+  "applyMode.aria.auto": "Автоматически применять сгенерированные изменения",
+  "applyMode.toast.manualEnabled":
+    "Перед применением изменений требуется аппрув.",
+  "applyMode.toast.autoEnabled":
+    "Автоприменение сгенерированных изменений включено.",
 
   "auth.brand": "Blaze",
   "auth.title.login": "С возвращением",
@@ -79,6 +91,17 @@ export const ru = {
   "chat.diagnostic.defaultTitle": "Диагностические детали",
   "chat.error.sendFailed":
     "Не удалось отправить сообщение. Попробуйте еще раз.",
+  "chat.error.approveFailed":
+    "Не удалось применить изменения. Попробуйте еще раз.",
+  "chat.error.rollbackFailed":
+    "Не удалось откатить изменения. Попробуйте еще раз.",
+  "chat.manualApply.title": "Изменения ждут ручного аппрува",
+  "chat.manualApply.summary":
+    "Файлов: {files}, пакетов: {packages}, SQL-запросов: {sqlQueries}",
+  "chat.manualApply.button.approve": "Применить изменения",
+  "chat.manualApply.button.approving": "Применяем...",
+  "chat.rollback.button": "Откатить изменения",
+  "chat.rollback.button.reverting": "Откатываем...",
   "chat.empty.title": "Nessy Blaze",
   "chat.empty.subtitle":
     "Опишите нужную страницу, и агент подготовит черновик.",

@@ -58,6 +58,43 @@ describe("invokeIpcChannelOverHttp", () => {
   });
 
   (hasDatabaseUrl ? it : it.skip)(
+    "supports proposal channels over HTTP IPC",
+    async () => {
+      const appName = `http-ipc-proposal-${Date.now()}`;
+      const created = (await invokeIpcChannelOverHttp("create-app", [
+        { name: appName },
+      ])) as {
+        app: {
+          id: number;
+          resolvedPath: string;
+        };
+        chatId: number;
+      };
+
+      try {
+        const proposal = await invokeIpcChannelOverHttp("get-proposal", [
+          { chatId: created.chatId },
+        ]);
+        expect(proposal).toBeNull();
+
+        await expect(
+          invokeIpcChannelOverHttp("approve-proposal", [
+            { chatId: created.chatId, messageId: Number.MAX_SAFE_INTEGER },
+          ]),
+        ).rejects.toThrow("Assistant message not found");
+
+        await expect(
+          invokeIpcChannelOverHttp("reject-proposal", [
+            { chatId: created.chatId, messageId: Number.MAX_SAFE_INTEGER },
+          ]),
+        ).rejects.toThrow("Assistant message not found");
+      } finally {
+        fs.rmSync(created.app.resolvedPath, { recursive: true, force: true });
+      }
+    },
+  );
+
+  (hasDatabaseUrl ? it : it.skip)(
     "creates app via HTTP IPC gateway",
     async () => {
       const appName = `http-ipc-create-app-${Date.now()}`;
@@ -92,6 +129,55 @@ describe("invokeIpcChannelOverHttp", () => {
         expect(chat.initialCommitHash).toMatch(/^[a-f0-9]{40}$/);
       } finally {
         fs.rmSync(response.app.resolvedPath, { recursive: true, force: true });
+      }
+    },
+  );
+
+  (hasDatabaseUrl ? it : it.skip)(
+    "supports revert-version over HTTP IPC",
+    async () => {
+      const appName = `http-ipc-revert-version-${Date.now()}`;
+      const created = (await invokeIpcChannelOverHttp("create-app", [
+        { name: appName },
+      ])) as {
+        app: {
+          id: number;
+          resolvedPath: string;
+        };
+        chatId: number;
+      };
+
+      try {
+        const chat = (await invokeIpcChannelOverHttp("get-chat", [
+          created.chatId,
+        ])) as {
+          initialCommitHash: string | null;
+        };
+        expect(chat.initialCommitHash).toMatch(/^[a-f0-9]{40}$/);
+
+        const revertResponse = (await invokeIpcChannelOverHttp(
+          "revert-version",
+          [
+            {
+              appId: created.app.id,
+              previousVersionId: chat.initialCommitHash,
+              currentChatMessageId: {
+                chatId: created.chatId,
+                messageId: Number.MAX_SAFE_INTEGER,
+              },
+            },
+          ],
+        )) as {
+          successMessage?: string;
+          warningMessage?: string;
+        };
+
+        expect(
+          typeof revertResponse.successMessage === "string" ||
+            typeof revertResponse.warningMessage === "string",
+        ).toBe(true);
+      } finally {
+        fs.rmSync(created.app.resolvedPath, { recursive: true, force: true });
       }
     },
   );

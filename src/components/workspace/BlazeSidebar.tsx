@@ -15,6 +15,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { ChangeApplyModeSelector } from "@/components/ChangeApplyModeSelector";
 import { useI18n } from "@/contexts/I18nContext";
 import { IpcClient } from "@/ipc/ipc_client";
 import { getConfiguredTenantScope } from "@/ipc/backend_client";
@@ -379,6 +380,9 @@ export function BlazeSidebar({
                   : t("sidebar.theme.dark")}
               </button>
               <LanguageSwitcher variant="compact" />
+            </div>
+            <div className="mb-2 rounded-lg border border-border/80 p-1.5">
+              <ChangeApplyModeSelector showToast={false} />
             </div>
 
             <p className="mb-1 px-2 pt-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">

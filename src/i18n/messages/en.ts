@@ -5,6 +5,16 @@ export const en = {
   "i18n.language.switchTo": "Switch language to {language}",
   "i18n.language.saveError":
     "Failed to save language preference. Reverted to previous value.",
+  "applyMode.label": "Change apply mode",
+  "applyMode.manual": "Require approval",
+  "applyMode.auto": "Auto-apply changes",
+  "applyMode.compact.manual": "Review",
+  "applyMode.compact.auto": "Auto",
+  "applyMode.aria.label": "Change apply mode",
+  "applyMode.aria.manual": "Require approval before applying changes",
+  "applyMode.aria.auto": "Auto-apply generated changes",
+  "applyMode.toast.manualEnabled": "Approval required before applying changes.",
+  "applyMode.toast.autoEnabled": "Auto-apply enabled for generated changes.",
 
   "auth.brand": "Blaze",
   "auth.title.login": "Welcome back",
@@ -75,6 +85,16 @@ export const en = {
   "chat.assistantActionOnly": "Assistant responded with internal actions.",
   "chat.diagnostic.defaultTitle": "Diagnostic details",
   "chat.error.sendFailed": "Failed to send message. Please try again.",
+  "chat.error.approveFailed":
+    "Failed to apply pending changes. Please try again.",
+  "chat.error.rollbackFailed": "Failed to rollback changes. Please try again.",
+  "chat.manualApply.title": "Changes are waiting for manual approval",
+  "chat.manualApply.summary":
+    "{files} files, {packages} packages, {sqlQueries} SQL queries",
+  "chat.manualApply.button.approve": "Apply changes",
+  "chat.manualApply.button.approving": "Applying...",
+  "chat.rollback.button": "Rollback changes",
+  "chat.rollback.button.reverting": "Rolling back...",
   "chat.empty.title": "Nessy Blaze",
   "chat.empty.subtitle":
     "Describe the page you need, and the agent will draft it for you.",

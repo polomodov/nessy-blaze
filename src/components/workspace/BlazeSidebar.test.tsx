@@ -8,6 +8,15 @@ const { listAppsMock } = vi.hoisted(() => ({
   listAppsMock: vi.fn(),
 }));
 
+const { settingsRef, updateSettingsMock } = vi.hoisted(() => ({
+  settingsRef: {
+    current: { autoApproveChanges: true } as {
+      autoApproveChanges?: boolean;
+    } | null,
+  },
+  updateSettingsMock: vi.fn(),
+}));
+
 vi.mock("@/ipc/ipc_client", () => ({
   IpcClient: {
     getInstance: vi.fn(() => ({
@@ -16,6 +25,13 @@ vi.mock("@/ipc/ipc_client", () => ({
       listWorkspaces: vi.fn().mockResolvedValue([]),
     })),
   },
+}));
+
+vi.mock("@/hooks/useSettings", () => ({
+  useSettings: () => ({
+    settings: settingsRef.current,
+    updateSettings: updateSettingsMock,
+  }),
 }));
 
 function renderSidebar(
@@ -52,6 +68,8 @@ function renderSidebar(
 describe("BlazeSidebar", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    settingsRef.current = { autoApproveChanges: true };
+    updateSettingsMock.mockResolvedValue({ autoApproveChanges: true });
     listAppsMock.mockResolvedValue({
       apps: [
         {
@@ -134,5 +152,15 @@ describe("BlazeSidebar", () => {
 
     await screen.findByText("New Project");
     expect(listAppsMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("updates apply mode setting from the sidebar control", () => {
+    renderSidebar();
+
+    fireEvent.click(screen.getByTestId("apply-mode-manual"));
+
+    expect(updateSettingsMock).toHaveBeenCalledWith({
+      autoApproveChanges: false,
+    });
   });
 });
