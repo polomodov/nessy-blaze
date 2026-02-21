@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ChevronDown,
@@ -8,6 +15,7 @@ import {
   Image,
   RotateCcw,
   Send,
+  StopCircle,
   Sparkles,
 } from "lucide-react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
@@ -43,6 +51,7 @@ type Message = {
   backendId?: number;
   content: string;
   role: "user" | "agent";
+  createdAt?: Date | null;
   isAssistantActionOnly?: boolean;
   statusBlocks?: StatusBlock[];
   sourceCommitHash?: string | null;
@@ -103,6 +112,8 @@ function buildStarterPrompts(t: TranslateFn) {
 
 const MIN_INPUT_HEIGHT = 40;
 const MAX_INPUT_HEIGHT = 120;
+const INITIAL_VISIBLE_MESSAGES = 4;
+const HISTORY_LOAD_STEP = 4;
 
 function findFirstUnclosedControlTagIndex(content: string): number {
   const tagPattern = /<(\/?)(blaze-[\w-]+|think)(?:\s[^>]*)?>/gi;
@@ -262,6 +273,7 @@ function mapBackendMessages(
         backendId,
         role,
         content,
+        createdAt: parseMessageCreatedAt(message.createdAt),
         isAssistantActionOnly,
         statusBlocks,
         sourceCommitHash: message.sourceCommitHash ?? null,
@@ -328,6 +340,17 @@ function resolveErrorMessage(error: unknown, fallbackMessage: string): string {
   return fallbackMessage;
 }
 
+function parseMessageCreatedAt(value: Date | string | undefined): Date | null {
+  if (!value) {
+    return null;
+  }
+  const parsed = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return parsed;
+}
+
 interface BlazeChatAreaProps {
   activeAppId?: number | null;
   onAppCreated?: (appId: number) => void;
@@ -360,6 +383,25 @@ export function BlazeChatArea({
       ),
     [messageMapperOptions.defaultStatusTitle],
   );
+  const messageTimestampFormatter = useMemo(
+    () =>
+      new Intl.DateTimeFormat(
+        settings?.uiLanguage === "ru" ? "ru-RU" : "en-US",
+        {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        },
+      ),
+    [settings?.uiLanguage],
+  );
+  const formatMessageTimestamp = useCallback(
+    (timestamp: Date | null | undefined) =>
+      timestamp ? messageTimestampFormatter.format(timestamp) : null,
+    [messageTimestampFormatter],
+  );
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [appId, setAppId] = useState<number | null>(null);
@@ -371,6 +413,7 @@ export function BlazeChatArea({
     null,
   );
   const [isHiddenAgentActivity, setIsHiddenAgentActivity] = useState(false);
+  const [visibleStartIndex, setVisibleStartIndex] = useState(0);
   const [pendingCodeProposal, setPendingCodeProposal] =
     useState<PendingCodeProposal | null>(null);
   const [expandedStatusKeys, setExpandedStatusKeys] = useState<Set<string>>(
@@ -385,8 +428,39 @@ export function BlazeChatArea({
   );
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const visibleChatIdRef = useRef<number | null>(null);
   const pendingStreamChatIdsRef = useRef<Set<number>>(new Set());
+  const pendingPrependAdjustmentRef = useRef<{
+    previousHeight: number;
+    previousTop: number;
+  } | null>(null);
+  const shouldUseSmoothScrollRef = useRef(false);
+
+  const getHistoryWindowStart = useCallback(
+    (targetMessages: Message[]) =>
+      Math.max(0, targetMessages.length - INITIAL_VISIBLE_MESSAGES),
+    [],
+  );
+  const ensureScrollableHistory = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container || visibleStartIndex <= 0) {
+      return;
+    }
+    if (pendingPrependAdjustmentRef.current) {
+      return;
+    }
+    if (container.clientHeight <= 0) {
+      return;
+    }
+    const hasOverflow = container.scrollHeight > container.clientHeight + 1;
+    if (hasOverflow) {
+      return;
+    }
+    setVisibleStartIndex((previous) =>
+      Math.max(0, previous - HISTORY_LOAD_STEP),
+    );
+  }, [visibleStartIndex]);
 
   const syncPendingCodeProposal = useCallback(
     async (targetChatId: number | null) => {
@@ -446,8 +520,42 @@ export function BlazeChatArea({
   }, []);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const endElement = messagesEndRef.current;
+    if (!endElement) {
+      return;
+    }
+
+    endElement.scrollIntoView({
+      behavior: shouldUseSmoothScrollRef.current ? "smooth" : "auto",
+    });
+    shouldUseSmoothScrollRef.current = true;
   }, [messages, isTyping]);
+
+  useLayoutEffect(() => {
+    const pending = pendingPrependAdjustmentRef.current;
+    const container = scrollContainerRef.current;
+    if (!pending || !container) {
+      return;
+    }
+
+    const heightDelta = container.scrollHeight - pending.previousHeight;
+    container.scrollTop = pending.previousTop + heightDelta;
+    pendingPrependAdjustmentRef.current = null;
+  }, [visibleStartIndex, messages.length]);
+
+  useLayoutEffect(() => {
+    ensureScrollableHistory();
+  }, [ensureScrollableHistory, messages.length, visibleStartIndex]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      ensureScrollableHistory();
+    };
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [ensureScrollableHistory]);
 
   useEffect(() => {
     resizeInput();
@@ -468,6 +576,8 @@ export function BlazeChatArea({
         setChatId(null);
         visibleChatIdRef.current = null;
         setMessages([]);
+        setVisibleStartIndex(0);
+        shouldUseSmoothScrollRef.current = false;
         setRevertingMessageId(null);
         setIsTyping(false);
         setIsHiddenAgentActivity(false);
@@ -483,6 +593,8 @@ export function BlazeChatArea({
       if (chats.length === 0) {
         setChatId(null);
         setMessages([]);
+        setVisibleStartIndex(0);
+        shouldUseSmoothScrollRef.current = false;
         return;
       }
 
@@ -493,6 +605,8 @@ export function BlazeChatArea({
       if (!fallbackLatestChat) {
         setChatId(null);
         setMessages([]);
+        setVisibleStartIndex(0);
+        shouldUseSmoothScrollRef.current = false;
         return;
       }
 
@@ -530,6 +644,8 @@ export function BlazeChatArea({
       visibleChatIdRef.current = selectedChatId;
       setChatId(selectedChatId);
       setMessages(selectedMessages);
+      setVisibleStartIndex(getHistoryWindowStart(selectedMessages));
+      shouldUseSmoothScrollRef.current = false;
       setRevertingMessageId(null);
       const isSelectedChatPending =
         pendingStreamChatIdsRef.current.has(selectedChatId);
@@ -546,6 +662,8 @@ export function BlazeChatArea({
       setError(resolveErrorMessage(historyError, t("chat.error.sendFailed")));
       setChatId(null);
       setMessages([]);
+      setVisibleStartIndex(0);
+      shouldUseSmoothScrollRef.current = false;
     });
 
     return () => {
@@ -568,6 +686,7 @@ export function BlazeChatArea({
           id: `autofix-${Date.now()}`,
           role: "user",
           content: message,
+          createdAt: new Date(),
         },
       ]);
     };
@@ -606,7 +725,10 @@ export function BlazeChatArea({
 
           visibleChatIdRef.current = completedChatId;
           setChatId(completedChatId);
-          setMessages(mapMessages(refreshedChat.messages));
+          const nextMessages = mapMessages(refreshedChat.messages);
+          setMessages(nextMessages);
+          setVisibleStartIndex(getHistoryWindowStart(nextMessages));
+          shouldUseSmoothScrollRef.current = false;
           setIsHiddenAgentActivity(hasHiddenActivity(refreshedChat.messages));
           setIsTyping(false);
           await syncPendingCodeProposal(completedChatId);
@@ -642,6 +764,7 @@ export function BlazeChatArea({
       id: String(Date.now()),
       role: "user",
       content: prompt,
+      createdAt: new Date(),
     };
 
     setMessages((previous) => [...previous, userMessage]);
@@ -830,6 +953,17 @@ export function BlazeChatArea({
     }
   };
 
+  const handleCancelCurrentAction = () => {
+    if (!chatId) {
+      return;
+    }
+
+    pendingStreamChatIdsRef.current.delete(chatId);
+    setIsTyping(false);
+    setIsHiddenAgentActivity(false);
+    IpcClient.getInstance().cancelChatStream(chatId);
+  };
+
   const onInputKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
@@ -837,6 +971,28 @@ export function BlazeChatArea({
     }
   };
 
+  const handleMessagesScroll = (event: React.UIEvent<HTMLDivElement>): void => {
+    if (visibleStartIndex <= 0 || pendingPrependAdjustmentRef.current) {
+      return;
+    }
+
+    const container = event.currentTarget;
+    if (container.scrollTop > 64) {
+      return;
+    }
+
+    pendingPrependAdjustmentRef.current = {
+      previousHeight: container.scrollHeight,
+      previousTop: container.scrollTop,
+    };
+    setVisibleStartIndex((previous) =>
+      Math.max(0, previous - HISTORY_LOAD_STEP),
+    );
+  };
+
+  const normalizedVisibleStartIndex =
+    visibleStartIndex >= messages.length ? 0 : visibleStartIndex;
+  const visibleMessages = messages.slice(normalizedVisibleStartIndex);
   const isEmpty = messages.length === 0;
   const hasPendingManualProposal =
     !settings?.autoApproveChanges && pendingCodeProposal !== null;
@@ -854,7 +1010,12 @@ export function BlazeChatArea({
 
   return (
     <div className="flex h-full flex-1 flex-col bg-background">
-      <div className="scrollbar-thin flex-1 overflow-y-auto">
+      <div
+        ref={scrollContainerRef}
+        data-testid="workspace-chat-scroll"
+        className="scrollbar-thin flex-1 overflow-y-auto"
+        onScroll={handleMessagesScroll}
+      >
         {isEmpty ? (
           <div className="flex h-full flex-col items-center justify-center px-6">
             <motion.div
@@ -904,93 +1065,117 @@ export function BlazeChatArea({
         ) : (
           <div className="mx-auto max-w-2xl px-6 py-6">
             <AnimatePresence>
-              {messages.map((message, messageIndex) => (
-                <motion.div
-                  key={message.id}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className={`mb-4 flex ${
-                    message.role === "user" ? "justify-end" : "justify-start"
-                  }`}
-                >
-                  <div
-                    className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                      message.role === "user"
-                        ? "bg-user-bubble text-primary-foreground"
-                        : message.isAssistantActionOnly
-                          ? "border border-dashed border-primary/40 bg-primary/5 text-muted-foreground"
-                          : "bg-agent-bubble text-foreground"
+              {visibleMessages.map((message, messageIndex) => {
+                const absoluteMessageIndex =
+                  normalizedVisibleStartIndex + messageIndex;
+                const formattedTimestamp = formatMessageTimestamp(
+                  message.createdAt,
+                );
+                return (
+                  <motion.div
+                    key={message.id}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`mb-4 flex ${
+                      message.role === "user" ? "justify-end" : "justify-start"
                     }`}
                   >
-                    {message.content &&
-                      (message.role === "agent" ? (
-                        <WorkspaceMarkdown content={message.content} />
-                      ) : (
-                        <div className="whitespace-pre-wrap">
-                          {message.content}
-                        </div>
-                      ))}
-                    {message.statusBlocks?.map((statusBlock, index) => {
-                      const statusKey = `${message.id}:status:${index}`;
-                      const isExpanded = expandedStatusKeys.has(statusKey);
-                      return (
-                        <div
-                          key={statusKey}
-                          className={`${
-                            message.content ? "mt-3" : ""
-                          } rounded-lg border border-border bg-(--background-lightest)`}
-                        >
-                          <button
-                            className="w-full flex items-center justify-between px-3 py-2 text-left cursor-pointer"
-                            onClick={() => toggleStatusKey(statusKey)}
+                    <div
+                      className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                        message.role === "user"
+                          ? "bg-user-bubble text-primary-foreground"
+                          : message.isAssistantActionOnly
+                            ? "border border-dashed border-primary/40 bg-primary/5 text-muted-foreground"
+                            : "bg-agent-bubble text-foreground"
+                      }`}
+                    >
+                      {message.content &&
+                        (message.role === "agent" ? (
+                          <WorkspaceMarkdown content={message.content} />
+                        ) : (
+                          <div className="whitespace-pre-wrap">
+                            {message.content}
+                          </div>
+                        ))}
+                      {message.statusBlocks?.map((statusBlock, index) => {
+                        const statusKey = `${message.id}:status:${index}`;
+                        const isExpanded = expandedStatusKeys.has(statusKey);
+                        return (
+                          <div
+                            key={statusKey}
+                            className={`${
+                              message.content ? "mt-3" : ""
+                            } rounded-lg border border-border bg-(--background-lightest)`}
                           >
-                            <span className="font-medium text-xs">
-                              {statusBlock.title}
-                            </span>
-                            {isExpanded ? (
-                              <ChevronUp
-                                size={16}
-                                className="text-muted-foreground"
-                              />
-                            ) : (
-                              <ChevronDown
-                                size={16}
-                                className="text-muted-foreground"
-                              />
+                            <button
+                              className="w-full flex items-center justify-between px-3 py-2 text-left cursor-pointer"
+                              onClick={() => toggleStatusKey(statusKey)}
+                            >
+                              <span className="font-medium text-xs">
+                                {statusBlock.title}
+                              </span>
+                              {isExpanded ? (
+                                <ChevronUp
+                                  size={16}
+                                  className="text-muted-foreground"
+                                />
+                              ) : (
+                                <ChevronDown
+                                  size={16}
+                                  className="text-muted-foreground"
+                                />
+                              )}
+                            </button>
+                            {isExpanded && (
+                              <pre className="px-3 pb-3 text-xs whitespace-pre-wrap break-words text-muted-foreground font-mono overflow-auto max-h-60">
+                                {statusBlock.body}
+                              </pre>
                             )}
+                          </div>
+                        );
+                      })}
+                      {message.role === "agent" && message.sourceCommitHash && (
+                        <div className="mt-3 border-t border-border/60 pt-2">
+                          <button
+                            type="button"
+                            data-testid={`rollback-button-${message.id}`}
+                            onClick={() => {
+                              void handleRollbackMessage(
+                                message.id,
+                                absoluteMessageIndex,
+                              );
+                            }}
+                            disabled={Boolean(revertingMessageId) || isTyping}
+                            className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            <RotateCcw size={12} />
+                            {revertingMessageId === message.id
+                              ? t("chat.rollback.button.reverting")
+                              : t("chat.rollback.button")}
                           </button>
-                          {isExpanded && (
-                            <pre className="px-3 pb-3 text-xs whitespace-pre-wrap break-words text-muted-foreground font-mono overflow-auto max-h-60">
-                              {statusBlock.body}
-                            </pre>
-                          )}
                         </div>
-                      );
-                    })}
-                    {message.role === "agent" && message.sourceCommitHash && (
-                      <div className="mt-3 border-t border-border/60 pt-2">
-                        <button
-                          type="button"
-                          data-testid={`rollback-button-${message.id}`}
-                          onClick={() => {
-                            void handleRollbackMessage(
-                              message.id,
-                              messageIndex,
-                            );
-                          }}
-                          disabled={Boolean(revertingMessageId) || isTyping}
-                          className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                      )}
+                      {formattedTimestamp && (
+                        <div
+                          className={`mt-2 text-[11px] ${
+                            message.role === "user"
+                              ? "text-right text-primary-foreground/80"
+                              : "text-muted-foreground"
+                          }`}
                         >
-                          <RotateCcw size={12} />
-                          {revertingMessageId === message.id
-                            ? t("chat.rollback.button.reverting")
-                            : t("chat.rollback.button")}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              ))}
+                          {message.role === "user"
+                            ? t("chat.messageMeta.sentAt", {
+                                timestamp: formattedTimestamp,
+                              })
+                            : t("chat.messageMeta.receivedAt", {
+                                timestamp: formattedTimestamp,
+                              })}
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                );
+              })}
             </AnimatePresence>
 
             {isTyping && (
@@ -1063,13 +1248,28 @@ export function BlazeChatArea({
               className="w-full resize-none bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
             />
           </div>
-          <button
-            onClick={sendMessage}
-            disabled={!input.trim() || isTyping || hasPendingManualProposal}
-            className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-all hover:brightness-105 active:scale-95 disabled:opacity-40 disabled:hover:brightness-100"
-          >
-            <Send size={18} />
-          </button>
+          {isTyping ? (
+            <button
+              type="button"
+              data-testid="chat-cancel-button"
+              onClick={handleCancelCurrentAction}
+              className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border border-border bg-surface text-muted-foreground transition-all hover:border-destructive/50 hover:text-destructive active:scale-95"
+              title={t("chat.input.cancel")}
+              aria-label={t("chat.input.cancel")}
+            >
+              <StopCircle size={18} />
+            </button>
+          ) : (
+            <button
+              onClick={sendMessage}
+              disabled={!input.trim() || isTyping || hasPendingManualProposal}
+              className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-all hover:brightness-105 active:scale-95 disabled:opacity-40 disabled:hover:brightness-100"
+              title={t("chat.input.send")}
+              aria-label={t("chat.input.send")}
+            >
+              <Send size={18} />
+            </button>
+          )}
         </div>
         {error && (
           <p className="mx-auto mt-2 max-w-2xl text-center text-xs text-destructive">

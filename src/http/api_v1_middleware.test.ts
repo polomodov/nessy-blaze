@@ -269,6 +269,44 @@ describe("createApiV1Middleware", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it("routes scoped app revert endpoint", async () => {
+    const invoke = vi.fn().mockResolvedValue({ successMessage: "Restored" });
+    const middleware = createApiV1Middleware(invoke, {
+      resolveRequestContext: resolveRequestContextMock as any,
+    });
+    const req = createMockRequest({
+      method: "POST",
+      url: "/api/v1/orgs/org-1/workspaces/ws-1/apps/77/versions/revert",
+      body: JSON.stringify({
+        previousVersionId: "abc123",
+        currentChatMessageId: { chatId: 42, messageId: 5 },
+      }),
+    });
+    const { response, getBody } = createMockResponse();
+    const next = vi.fn();
+
+    await middleware(req, response, next);
+
+    expect(invoke).toHaveBeenCalledWith(
+      "revert-version",
+      [
+        {
+          appId: 77,
+          previousVersionId: "abc123",
+          currentChatMessageId: { chatId: 42, messageId: 5 },
+        },
+      ],
+      {
+        requestContext,
+      },
+    );
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(getBody())).toEqual({
+      data: { successMessage: "Restored" },
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it("passes through unknown routes", async () => {
     const invoke = vi.fn();
     const middleware = createApiV1Middleware(invoke, {

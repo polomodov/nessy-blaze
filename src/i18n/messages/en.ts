@@ -135,6 +135,10 @@ export const en = {
   "chat.typing.thinking": "Agent is thinking and applying changes...",
   "chat.typing.drafting": "Agent is drafting a response...",
   "chat.input.placeholder": "Describe what should be built...",
+  "chat.input.send": "Send message",
+  "chat.input.cancel": "Cancel generation",
+  "chat.messageMeta.sentAt": "Sent: {timestamp}",
+  "chat.messageMeta.receivedAt": "Received: {timestamp}",
   "chat.footer.hint": "The agent drafts pages based on your design system.",
   "chat.autofix.started":
     "Auto-fix started. Gathering diagnostics and preparing changes.",

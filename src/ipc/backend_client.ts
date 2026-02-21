@@ -539,6 +539,24 @@ function resolveApiRoute(
         body: params,
       };
     }
+    case "revert-version": {
+      const params = getFirstArg<{
+        appId?: number;
+        previousVersionId?: string;
+        currentChatMessageId?: {
+          chatId?: number;
+          messageId?: number;
+        };
+      }>(args);
+      if (!params || typeof params.appId !== "number") {
+        return null;
+      }
+      return {
+        method: "POST",
+        path: `${scopedBasePath}/apps/${params.appId}/versions/revert`,
+        body: params,
+      };
+    }
     case "read-app-file": {
       const params = getFirstArg<{ appId?: number; filePath?: string }>(args);
       if (!params || typeof params.appId !== "number") {

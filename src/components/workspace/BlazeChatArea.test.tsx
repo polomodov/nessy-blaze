@@ -23,6 +23,7 @@ import {
 const {
   createAppMock,
   streamMessageMock,
+  cancelChatStreamMock,
   getChatsMock,
   getChatMock,
   createChatMock,
@@ -32,6 +33,7 @@ const {
 } = vi.hoisted(() => ({
   createAppMock: vi.fn(),
   streamMessageMock: vi.fn(),
+  cancelChatStreamMock: vi.fn(),
   getChatsMock: vi.fn(),
   getChatMock: vi.fn(),
   createChatMock: vi.fn(),
@@ -53,6 +55,7 @@ vi.mock("@/ipc/ipc_client", () => ({
     getInstance: vi.fn(() => ({
       createApp: createAppMock,
       streamMessage: streamMessageMock,
+      cancelChatStream: cancelChatStreamMock,
       getChats: getChatsMock,
       getChat: getChatMock,
       createChat: createChatMock,
@@ -282,6 +285,152 @@ describe("BlazeChatArea", () => {
     expect(screen.getByText("Обновлена кнопка")).toBeTruthy();
   });
 
+  it("shows last 4 messages initially and loads older history on upward scroll", async () => {
+    getChatsMock.mockResolvedValue([
+      {
+        id: 61,
+        appId: 12,
+        title: "Long chat",
+        createdAt: new Date("2026-02-19T00:00:00.000Z"),
+      },
+    ]);
+    getChatMock.mockResolvedValue({
+      id: 61,
+      appId: 12,
+      title: "Long chat",
+      messages: [
+        { id: 1, role: "user", content: "Message 1" },
+        { id: 2, role: "assistant", content: "Message 2" },
+        { id: 3, role: "user", content: "Message 3" },
+        { id: 4, role: "assistant", content: "Message 4" },
+        { id: 5, role: "user", content: "Message 5" },
+        { id: 6, role: "assistant", content: "Message 6" },
+      ],
+    });
+
+    render(<BlazeChatArea activeAppId={12} />);
+
+    await waitFor(() => {
+      expect(getChatsMock).toHaveBeenCalledWith(12);
+      expect(getChatMock).toHaveBeenCalledWith(61);
+    });
+
+    expect(screen.queryByText("Message 1")).toBeNull();
+    expect(screen.queryByText("Message 2")).toBeNull();
+    expect(screen.getByText("Message 3")).toBeTruthy();
+    expect(screen.getByText("Message 6")).toBeTruthy();
+
+    const scrollContainer = screen.getByTestId("workspace-chat-scroll");
+    Object.defineProperty(scrollContainer, "scrollHeight", {
+      configurable: true,
+      value: 1200,
+      writable: true,
+    });
+    Object.defineProperty(scrollContainer, "scrollTop", {
+      configurable: true,
+      value: 0,
+      writable: true,
+    });
+
+    fireEvent.scroll(scrollContainer);
+
+    await waitFor(() => {
+      expect(screen.getByText("Message 1")).toBeTruthy();
+      expect(screen.getByText("Message 2")).toBeTruthy();
+    });
+  });
+
+  it("auto-loads older messages when initial history slice has no overflow", async () => {
+    getChatsMock.mockResolvedValue([
+      {
+        id: 62,
+        appId: 14,
+        title: "No overflow chat",
+        createdAt: new Date("2026-02-19T00:00:00.000Z"),
+      },
+    ]);
+    getChatMock.mockResolvedValue({
+      id: 62,
+      appId: 14,
+      title: "No overflow chat",
+      messages: [
+        { id: 1, role: "user", content: "Message 1" },
+        { id: 2, role: "assistant", content: "Message 2" },
+        { id: 3, role: "user", content: "Message 3" },
+        { id: 4, role: "assistant", content: "Message 4" },
+        { id: 5, role: "user", content: "Message 5" },
+        { id: 6, role: "assistant", content: "Message 6" },
+      ],
+    });
+
+    render(<BlazeChatArea activeAppId={14} />);
+
+    await waitFor(() => {
+      expect(getChatsMock).toHaveBeenCalledWith(14);
+      expect(getChatMock).toHaveBeenCalledWith(62);
+    });
+
+    const scrollContainer = screen.getByTestId("workspace-chat-scroll");
+    Object.defineProperty(scrollContainer, "clientHeight", {
+      configurable: true,
+      value: 1000,
+    });
+    Object.defineProperty(scrollContainer, "scrollHeight", {
+      configurable: true,
+      value: 300,
+    });
+
+    act(() => {
+      window.dispatchEvent(new Event("resize"));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Message 1")).toBeTruthy();
+      expect(screen.getByText("Message 2")).toBeTruthy();
+      expect(screen.getByText("Message 6")).toBeTruthy();
+    });
+  });
+
+  it("shows sent and received timestamps for messages", async () => {
+    getChatsMock.mockResolvedValue([
+      {
+        id: 71,
+        appId: 13,
+        title: "Timestamps chat",
+        createdAt: new Date("2026-02-19T00:00:00.000Z"),
+      },
+    ]);
+    getChatMock.mockResolvedValue({
+      id: 71,
+      appId: 13,
+      title: "Timestamps chat",
+      messages: [
+        {
+          id: 1,
+          role: "user",
+          content: "First message",
+          createdAt: "2026-02-19T10:00:00.000Z",
+        },
+        {
+          id: 2,
+          role: "assistant",
+          content: "Assistant response",
+          createdAt: "2026-02-19T10:01:00.000Z",
+        },
+      ],
+    });
+
+    render(<BlazeChatArea activeAppId={13} />);
+
+    await waitFor(() => {
+      expect(getChatsMock).toHaveBeenCalledWith(13);
+      expect(getChatMock).toHaveBeenCalledWith(71);
+    });
+
+    expect(screen.getByText(/^Отправлено:/)).toBeTruthy();
+    expect(screen.getByText(/^Получено:/)).toBeTruthy();
+  });
+
   it("shows optimistic auto-fix start message in chat", async () => {
     render(<BlazeChatArea />);
 
@@ -359,6 +508,29 @@ describe("BlazeChatArea", () => {
         chatId: 300,
       }),
     );
+  });
+
+  it("cancels the active stream from chat input", async () => {
+    render(<BlazeChatArea activeAppId={88} />);
+
+    await waitFor(() => {
+      expect(getChatsMock).toHaveBeenCalledWith(88);
+    });
+
+    const input = screen.getByPlaceholderText("Опишите, что нужно собрать...");
+    fireEvent.change(input, { target: { value: "Add account settings page" } });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => {
+      expect(streamMessageMock).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId("chat-cancel-button")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTestId("chat-cancel-button"));
+
+    expect(cancelChatStreamMock).toHaveBeenCalledTimes(1);
+    expect(cancelChatStreamMock).toHaveBeenCalledWith(300);
+    expect(screen.queryByText("Агент формирует ответ...")).toBeNull();
   });
 
   it("keeps waiting indicator for a pending stream after switching projects away and back", async () => {

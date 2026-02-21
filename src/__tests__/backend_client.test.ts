@@ -121,6 +121,49 @@ describe("backend_client transport", () => {
     );
   });
 
+  it("routes revert-version to dedicated HTTP endpoint", async () => {
+    window.__BLAZE_REMOTE_CONFIG__ = {
+      backendClient: {
+        baseUrl: "https://api.example.com",
+      },
+    };
+
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: { successMessage: "Restored version" },
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createBackendClientTransport();
+    const result = await client.invoke("revert-version", {
+      appId: 7,
+      previousVersionId: "abc123",
+      currentChatMessageId: { chatId: 88, messageId: 9 },
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.example.com/api/v1/orgs/me/workspaces/me/apps/7/versions/revert",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          appId: 7,
+          previousVersionId: "abc123",
+          currentChatMessageId: { chatId: 88, messageId: 9 },
+        }),
+      }),
+    );
+    expect(result).toEqual({ successMessage: "Restored version" });
+  });
+
   it("clears auth context and redirects to /auth when JWT is expired", async () => {
     window.__BLAZE_REMOTE_CONFIG__ = {
       backendClient: {

@@ -140,6 +140,10 @@ export const ru = {
   "chat.typing.thinking": "Агент думает и применяет изменения...",
   "chat.typing.drafting": "Агент формирует ответ...",
   "chat.input.placeholder": "Опишите, что нужно собрать...",
+  "chat.input.send": "Отправить сообщение",
+  "chat.input.cancel": "Остановить генерацию",
+  "chat.messageMeta.sentAt": "Отправлено: {timestamp}",
+  "chat.messageMeta.receivedAt": "Получено: {timestamp}",
   "chat.footer.hint": "Агент создает страницы по вашей дизайн-системе.",
   "chat.autofix.started":
     "Автофикс запущен. Собираем диагностику и готовим изменения.",

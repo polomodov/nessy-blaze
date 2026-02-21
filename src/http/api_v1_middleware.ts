@@ -323,6 +323,27 @@ const SCOPED_ROUTES: RouteDefinition[] = [
     },
   },
   {
+    method: "POST",
+    pattern:
+      /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/apps\/(\d+)\/versions\/revert$/,
+    build: (_url, match, body) => {
+      const appId = parseNumber(match[3]);
+      if (appId == null) {
+        return null;
+      }
+      const payload =
+        body && typeof body === "object"
+          ? (body as Record<string, unknown>)
+          : {};
+      return {
+        channel: "revert-version",
+        args: [{ appId, ...payload }],
+        tenantPath: { orgId: match[1], workspaceId: match[2] },
+        requiresAuth: true,
+      };
+    },
+  },
+  {
     method: "GET",
     pattern:
       /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/apps\/(\d+)\/chats$/,
@@ -610,6 +631,26 @@ const LEGACY_ROUTES: RouteDefinition[] = [
       return {
         channel: "add-to-favorite",
         args: [{ appId }],
+        tenantPath: { orgId: "me", workspaceId: "me" },
+        requiresAuth: true,
+      };
+    },
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/v1\/apps\/(\d+)\/versions\/revert$/,
+    build: (_url, match, body) => {
+      const appId = parseNumber(match[1]);
+      if (appId == null) {
+        return null;
+      }
+      const payload =
+        body && typeof body === "object"
+          ? (body as Record<string, unknown>)
+          : {};
+      return {
+        channel: "revert-version",
+        args: [{ appId, ...payload }],
         tenantPath: { orgId: "me", workspaceId: "me" },
         requiresAuth: true,
       };
