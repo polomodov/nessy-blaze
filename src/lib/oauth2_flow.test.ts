@@ -4,6 +4,7 @@ import {
   createPkceCodeChallenge,
   hasOAuth2CallbackParams,
   parseJwtClaimsUnsafe,
+  resolveOAuthRedirectUri,
 } from "./oauth2_flow";
 
 describe("oauth2_flow", () => {
@@ -48,6 +49,26 @@ describe("oauth2_flow", () => {
     expect(hasOAuth2CallbackParams("?code=abc&state=1")).toBe(true);
     expect(hasOAuth2CallbackParams("?error=access_denied")).toBe(true);
     expect(hasOAuth2CallbackParams("?foo=bar")).toBe(false);
+  });
+
+  it("resolves configured OAuth redirect URI and detects origin switch", () => {
+    const sameOrigin = resolveOAuthRedirectUri({
+      configuredRedirectUri: "http://localhost:5173/auth",
+      currentOrigin: "http://localhost:5173",
+    });
+    expect(sameOrigin).toEqual({
+      redirectUri: "http://localhost:5173/auth",
+      requiresOriginSwitch: false,
+    });
+
+    const crossOrigin = resolveOAuthRedirectUri({
+      configuredRedirectUri: "http://127.0.0.1:5173/auth",
+      currentOrigin: "http://localhost:5173",
+    });
+    expect(crossOrigin).toEqual({
+      redirectUri: "http://127.0.0.1:5173/auth",
+      requiresOriginSwitch: true,
+    });
   });
 
   it("parses JWT claims without verification", () => {

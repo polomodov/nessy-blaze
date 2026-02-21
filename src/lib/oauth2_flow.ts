@@ -22,6 +22,11 @@ export interface OAuth2TokenExchangeResult {
   scope: string | null;
 }
 
+export interface OAuth2ResolvedRedirectUri {
+  redirectUri: string;
+  requiresOriginSwitch: boolean;
+}
+
 function toBase64Url(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) {
@@ -85,6 +90,34 @@ export function buildOAuth2AuthorizationUrl(params: {
   }
 
   return authorizationUrl.toString();
+}
+
+export function resolveOAuthRedirectUri(params: {
+  configuredRedirectUri?: string | null;
+  currentOrigin: string;
+}): OAuth2ResolvedRedirectUri {
+  const currentRedirectUri = `${params.currentOrigin}/auth`;
+  const configured = params.configuredRedirectUri?.trim();
+  if (!configured) {
+    return {
+      redirectUri: currentRedirectUri,
+      requiresOriginSwitch: false,
+    };
+  }
+
+  try {
+    const configuredUrl = new URL(configured);
+    const currentOriginUrl = new URL(params.currentOrigin);
+    return {
+      redirectUri: configuredUrl.toString(),
+      requiresOriginSwitch: configuredUrl.origin !== currentOriginUrl.origin,
+    };
+  } catch {
+    return {
+      redirectUri: currentRedirectUri,
+      requiresOriginSwitch: false,
+    };
+  }
 }
 
 export function hasOAuth2CallbackParams(search: string): boolean {

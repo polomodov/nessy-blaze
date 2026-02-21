@@ -184,7 +184,7 @@ describe("AuthPage", () => {
             authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
             clientId: "client-123",
             scope: "openid profile email",
-            redirectUri: "http://localhost:5173/auth",
+            redirectUri: `${window.location.origin}/auth`,
             extraAuthParams: { prompt: "consent" },
           },
         }),
@@ -218,6 +218,79 @@ describe("AuthPage", () => {
     expect(parsed.searchParams.get("prompt")).toBe("consent");
   });
 
+  it("redirects to configured OAuth origin when current origin differs", async () => {
+    const assignMock = vi.fn();
+    vi.spyOn(window.location, "assign").mockImplementation(assignMock);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: {
+            enabled: true,
+            providerName: "Google",
+            authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+            clientId: "client-123",
+            scope: "openid profile email",
+            redirectUri: "http://127.0.0.1:5173/auth",
+            extraAuthParams: {},
+          },
+        }),
+      }),
+    );
+
+    renderAuthPage();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Продолжить с Google" }),
+    );
+
+    await waitFor(() => {
+      expect(assignMock).toHaveBeenCalledTimes(1);
+    });
+
+    const switchedUrl = new URL(String(assignMock.mock.calls[0][0]));
+    expect(switchedUrl.origin).toBe("http://127.0.0.1:5173");
+    expect(switchedUrl.pathname).toBe("/auth");
+    expect(switchedUrl.searchParams.get("oauth_start")).toBe("1");
+    expect(window.sessionStorage.getItem("blaze.auth.oauth2.state")).toBeNull();
+    expect(
+      window.sessionStorage.getItem("blaze.auth.oauth2.code_verifier"),
+    ).toBeNull();
+  });
+
+  it("auto-starts OAuth2 flow when oauth_start marker is present", async () => {
+    const assignMock = vi.fn();
+    vi.spyOn(window.location, "assign").mockImplementation(assignMock);
+    window.history.pushState({}, "", "/auth?oauth_start=1");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: {
+            enabled: true,
+            providerName: "Google",
+            authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+            clientId: "client-123",
+            scope: "openid profile email",
+            redirectUri: `${window.location.origin}/auth`,
+            extraAuthParams: {},
+          },
+        }),
+      }),
+    );
+
+    renderAuthPage();
+
+    await waitFor(() => {
+      expect(assignMock).toHaveBeenCalledTimes(1);
+    });
+
+    const redirectUrl = new URL(String(assignMock.mock.calls[0][0]));
+    expect(redirectUrl.origin).toBe("https://accounts.google.com");
+  });
+
   it("handles OAuth2 callback and stores returned token", async () => {
     const expectedState = "state-123";
     const expectedVerifier = "verifier-123";
@@ -245,7 +318,7 @@ describe("AuthPage", () => {
               authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
               clientId: "client-123",
               scope: "openid profile email",
-              redirectUri: "http://localhost:5173/auth",
+              redirectUri: `${window.location.origin}/auth`,
               extraAuthParams: {},
             },
           }),

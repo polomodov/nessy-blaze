@@ -40,6 +40,7 @@ import {
   createPkceCodeVerifier,
   hasOAuth2CallbackParams,
   parseJwtClaimsUnsafe,
+  resolveOAuthRedirectUri,
 } from "@/lib/oauth2_flow";
 import {
   AUTH_REDIRECT_REASON_SESSION_EXPIRED,
@@ -54,6 +55,7 @@ type AuthMode = "login" | "register" | "forgot";
 
 const OAUTH2_CONFIG_ENDPOINT = "/api/v1/auth/oauth/config";
 const OAUTH2_EXCHANGE_ENDPOINT = "/api/v1/auth/oauth/exchange";
+const OAUTH2_AUTO_START_PARAM = "oauth_start";
 
 interface StoredAuthValues {
   token: string;
@@ -116,38 +118,6 @@ function clearOAuthSessionValues() {
 
 function readOAuthSessionValue(key: string): string {
   return window.sessionStorage.getItem(key)?.trim() ?? "";
-}
-
-function isLoopbackHost(hostname: string): boolean {
-  return hostname === "localhost" || hostname === "127.0.0.1";
-}
-
-function resolveOAuthRedirectUri(
-  configuredRedirectUri?: string | null,
-): string {
-  const currentRedirectUri = `${window.location.origin}/auth`;
-  const configured = configuredRedirectUri?.trim();
-  if (!configured) {
-    return currentRedirectUri;
-  }
-
-  try {
-    const configuredUrl = new URL(configured);
-    const currentUrl = new URL(currentRedirectUri);
-
-    if (
-      isLoopbackHost(configuredUrl.hostname) &&
-      isLoopbackHost(currentUrl.hostname) &&
-      configuredUrl.origin !== currentUrl.origin
-    ) {
-      // Avoid callback/session storage origin mismatch between localhost and 127.0.0.1.
-      return currentRedirectUri;
-    }
-  } catch {
-    return currentRedirectUri;
-  }
-
-  return configured;
 }
 
 async function readApiEnvelope<T>(
@@ -236,6 +206,7 @@ export default function AuthPage() {
   const [devSub, setDevSub] = useState(storedValues.sub);
   const [isOAuthBusy, setIsOAuthBusy] = useState(false);
   const oauthCallbackHandledRef = useRef(false);
+  const oauthAutoStartHandledRef = useRef(false);
 
   const persistCredentials = (
     overrides: Partial<StoredAuthValues> = {},
@@ -365,7 +336,11 @@ export default function AuthPage() {
       }
 
       const redirectUri =
-        savedRedirectUri || resolveOAuthRedirectUri(oauthConfig.redirectUri);
+        savedRedirectUri ||
+        resolveOAuthRedirectUri({
+          configuredRedirectUri: oauthConfig.redirectUri,
+          currentOrigin: window.location.origin,
+        }).redirectUri;
       const exchangeResult = await exchangeOAuth2Code({
         code,
         codeVerifier,
@@ -485,7 +460,18 @@ export default function AuthPage() {
       const codeVerifier = createPkceCodeVerifier();
       const codeChallenge = await createPkceCodeChallenge(codeVerifier);
       const state = createOAuth2State();
-      const redirectUri = resolveOAuthRedirectUri(oauthConfig.redirectUri);
+      const redirectResolution = resolveOAuthRedirectUri({
+        configuredRedirectUri: oauthConfig.redirectUri,
+        currentOrigin: window.location.origin,
+      });
+      const redirectUri = redirectResolution.redirectUri;
+
+      if (redirectResolution.requiresOriginSwitch) {
+        const switchUrl = new URL(redirectUri);
+        switchUrl.searchParams.set(OAUTH2_AUTO_START_PARAM, "1");
+        window.location.assign(switchUrl.toString());
+        return;
+      }
 
       saveOAuthSessionValue(OAUTH2_STATE_STORAGE_KEY, state);
       saveOAuthSessionValue(OAUTH2_CODE_VERIFIER_STORAGE_KEY, codeVerifier);
@@ -508,6 +494,22 @@ export default function AuthPage() {
       setIsOAuthBusy(false);
     }
   };
+
+  useEffect(() => {
+    if (oauthAutoStartHandledRef.current) {
+      return;
+    }
+
+    const searchParams = new URLSearchParams(window.location.search);
+    const shouldAutoStart = searchParams.get(OAUTH2_AUTO_START_PARAM) === "1";
+    if (!shouldAutoStart || hasOAuth2CallbackParams(window.location.search)) {
+      return;
+    }
+
+    oauthAutoStartHandledRef.current = true;
+    window.history.replaceState({}, "", "/auth");
+    void handleGoogleLogin();
+  }, [handleGoogleLogin]);
 
   const handleClearCredentials = () => {
     clearStoredAuthContext();
