@@ -41,6 +41,8 @@ import {
   parseJwtClaimsUnsafe,
 } from "@/lib/oauth2_flow";
 import {
+  AUTH_REDIRECT_REASON_SESSION_EXPIRED,
+  AUTH_REDIRECT_REASON_STORAGE_KEY,
   AUTH_TOKEN_STORAGE_KEY,
   DEV_USER_EMAIL_STORAGE_KEY,
   DEV_USER_NAME_STORAGE_KEY,
@@ -374,6 +376,18 @@ export default function AuthPage() {
   useEffect(() => {
     void handleOAuthCallback();
   }, [handleOAuthCallback]);
+
+  useEffect(() => {
+    const redirectReason = window.sessionStorage.getItem(
+      AUTH_REDIRECT_REASON_STORAGE_KEY,
+    );
+    if (redirectReason !== AUTH_REDIRECT_REASON_SESSION_EXPIRED) {
+      return;
+    }
+
+    window.sessionStorage.removeItem(AUTH_REDIRECT_REASON_STORAGE_KEY);
+    toast.error(t("auth.toast.sessionExpired"));
+  }, [t]);
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();

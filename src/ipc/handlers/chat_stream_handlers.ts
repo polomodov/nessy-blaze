@@ -99,6 +99,7 @@ import {
   appendResponseLanguageInstruction,
   resolveUiLanguage,
 } from "../utils/response_language_prompt";
+import { extractActionableBlazeTags } from "../utils/actionable_blaze_tags";
 
 type AsyncIterableStream<T> = AsyncIterable<T> & ReadableStream<T>;
 
@@ -214,15 +215,7 @@ export function buildDiagnosticStatusTag({
 export function extractActionTagsForManualApproval(
   rawResponse: string,
 ): string {
-  const actionableTags = rawResponse.match(
-    /<(blaze-(?:chat-summary|write|search-replace|rename|delete|add-dependency|execute-sql|command))\b[^>]*>[\s\S]*?<\/\1>/gi,
-  );
-
-  if (!actionableTags) {
-    return "";
-  }
-
-  return actionableTags.join("\n\n").trim();
+  return extractActionableBlazeTags(rawResponse);
 }
 
 function buildFallbackSummary({

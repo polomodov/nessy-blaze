@@ -11,6 +11,12 @@ export const AUTH_TOKEN_STORAGE_KEY = "blaze.auth.token";
 export const DEV_USER_SUB_STORAGE_KEY = "blaze.dev.user_sub";
 export const DEV_USER_EMAIL_STORAGE_KEY = "blaze.dev.user_email";
 export const DEV_USER_NAME_STORAGE_KEY = "blaze.dev.user_name";
+export const AUTH_REDIRECT_REASON_STORAGE_KEY = "blaze.auth.redirect.reason";
+export const AUTH_REDIRECT_REASON_SESSION_EXPIRED = "session-expired";
+
+const OAUTH2_STATE_STORAGE_KEY = "blaze.auth.oauth2.state";
+const OAUTH2_CODE_VERIFIER_STORAGE_KEY = "blaze.auth.oauth2.code_verifier";
+const AUTH_SESSION_EXPIRED_ERROR_CODE = "AUTH_SESSION_EXPIRED";
 
 export interface BackendClient {
   invoke<T = any>(channel: string, ...args: unknown[]): Promise<T>;
@@ -198,6 +204,121 @@ function isLikelyNetworkFetchError(error: unknown): boolean {
 
   const message = error instanceof Error ? error.message : String(error);
   return /failed to fetch|fetch failed|networkerror/i.test(message);
+}
+
+function isAuthSessionExpiredError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  return (error as { code?: string }).code === AUTH_SESSION_EXPIRED_ERROR_CODE;
+}
+
+function extractBackendErrorMessage(errorText: string): string {
+  if (!errorText.trim()) {
+    return "";
+  }
+
+  try {
+    const parsed = JSON.parse(errorText) as {
+      error?: unknown;
+      message?: unknown;
+    };
+    if (typeof parsed.error === "string" && parsed.error.trim()) {
+      return parsed.error.trim();
+    }
+    if (typeof parsed.message === "string" && parsed.message.trim()) {
+      return parsed.message.trim();
+    }
+  } catch {
+    // Fall through to raw text.
+  }
+
+  return errorText.trim();
+}
+
+function removeStorageValue(
+  storage: Storage | Partial<Storage> | undefined,
+  key: string,
+) {
+  if (!storage) {
+    return;
+  }
+
+  if (typeof storage.removeItem === "function") {
+    storage.removeItem(key);
+    return;
+  }
+
+  delete (storage as Record<string, unknown>)[key];
+}
+
+function clearExpiredAuthStorage() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  removeStorageValue(window.localStorage, AUTH_TOKEN_STORAGE_KEY);
+  removeStorageValue(window.localStorage, DEV_USER_SUB_STORAGE_KEY);
+  removeStorageValue(window.localStorage, DEV_USER_EMAIL_STORAGE_KEY);
+  removeStorageValue(window.localStorage, DEV_USER_NAME_STORAGE_KEY);
+  removeStorageValue(window.sessionStorage, OAUTH2_STATE_STORAGE_KEY);
+  removeStorageValue(window.sessionStorage, OAUTH2_CODE_VERIFIER_STORAGE_KEY);
+}
+
+function handleExpiredAuthSession() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  clearExpiredAuthStorage();
+  const hasSessionExpiredReason =
+    window.sessionStorage.getItem(AUTH_REDIRECT_REASON_STORAGE_KEY) ===
+    AUTH_REDIRECT_REASON_SESSION_EXPIRED;
+
+  if (!hasSessionExpiredReason) {
+    try {
+      window.sessionStorage.setItem(
+        AUTH_REDIRECT_REASON_STORAGE_KEY,
+        AUTH_REDIRECT_REASON_SESSION_EXPIRED,
+      );
+    } catch {
+      // Ignore storage errors and continue redirecting to sign-in.
+    }
+  }
+
+  if (!hasSessionExpiredReason && window.location.pathname !== "/auth") {
+    window.location.assign("/auth");
+  }
+}
+
+function createBackendError(args: {
+  kind: "api" | "invoke";
+  channel: string;
+  status: number;
+  errorText: string;
+}): Error {
+  const normalizedErrorText = args.errorText.trim();
+  const backendErrorMessage = extractBackendErrorMessage(normalizedErrorText);
+  const isJwtExpired =
+    args.status === 401 && /jwt\s+is\s+expired/i.test(backendErrorMessage);
+
+  if (isJwtExpired) {
+    handleExpiredAuthSession();
+    const authError = new Error(
+      "Authentication session expired. Please sign in again.",
+    );
+    (authError as { code?: string }).code = AUTH_SESSION_EXPIRED_ERROR_CODE;
+    return authError;
+  }
+
+  const errorPrefix =
+    args.kind === "api" ? "Backend API failed" : "Backend invoke failed";
+  return new Error(
+    `${errorPrefix} for "${args.channel}" with status ${args.status}${
+      normalizedErrorText ? `: ${normalizedErrorText}` : ""
+    }`,
+  );
 }
 
 function getFirstArg<T>(args: unknown[]): T | undefined {
@@ -514,7 +635,7 @@ export class HttpBackendClient implements BackendClient {
         args,
       });
     } catch (error) {
-      if (!this.allowIpcFallback) {
+      if (isAuthSessionExpiredError(error) || !this.allowIpcFallback) {
         throw error;
       }
 
@@ -650,11 +771,12 @@ async function invokeApiRoute<T>({
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => "");
-    throw new Error(
-      `Backend API failed for "${channel}" with status ${response.status}${
-        errorText ? `: ${errorText}` : ""
-      }`,
-    );
+    throw createBackendError({
+      kind: "api",
+      channel,
+      status: response.status,
+      errorText,
+    });
   }
 
   if (response.status === 204) {
@@ -699,11 +821,12 @@ async function invokeOverHttp<T>({
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => "");
-    throw new Error(
-      `Backend invoke failed for "${channel}" with status ${response.status}${
-        errorText ? `: ${errorText}` : ""
-      }`,
-    );
+    throw createBackendError({
+      kind: "invoke",
+      channel,
+      status: response.status,
+      errorText,
+    });
   }
 
   if (response.status === 204) {

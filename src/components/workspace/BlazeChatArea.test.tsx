@@ -13,6 +13,12 @@ import {
 } from "@/atoms/previewAtoms";
 import type { ComponentSelection } from "@/ipc/ipc_types";
 import { BlazeChatArea } from "./BlazeChatArea";
+import {
+  WORKSPACE_AUTOFIX_COMPLETED_EVENT,
+  WORKSPACE_AUTOFIX_STARTED_EVENT,
+  WORKSPACE_PREVIEW_REFRESH_EVENT,
+  type WorkspacePreviewRefreshDetail,
+} from "./autofix_events";
 
 const {
   createAppMock,
@@ -94,6 +100,7 @@ describe("BlazeChatArea", () => {
     getChatsMock.mockResolvedValue([]);
     getProposalMock.mockResolvedValue(null);
     approveProposalMock.mockResolvedValue({
+      updatedFiles: false,
       extraFiles: undefined,
       extraFilesError: undefined,
     });
@@ -235,6 +242,98 @@ describe("BlazeChatArea", () => {
     expect(
       screen.getByText("Ассистент ответил внутренними действиями."),
     ).toBeTruthy();
+  });
+
+  it("renders assistant markdown with rich formatting", async () => {
+    getChatsMock.mockResolvedValue([
+      {
+        id: 41,
+        appId: 11,
+        title: "Markdown chat",
+        createdAt: new Date("2026-02-19T00:00:00.000Z"),
+      },
+    ]);
+    getChatMock.mockResolvedValue({
+      id: 41,
+      appId: 11,
+      title: "Markdown chat",
+      messages: [
+        { id: 1, role: "user", content: "Что сделали?" },
+        {
+          id: 2,
+          role: "assistant",
+          content:
+            "### Что изменилось\n- Добавлен новый блок\n- Обновлена кнопка",
+        },
+      ],
+    });
+
+    render(<BlazeChatArea activeAppId={11} />);
+
+    await waitFor(() => {
+      expect(getChatsMock).toHaveBeenCalledWith(11);
+      expect(getChatMock).toHaveBeenCalledWith(41);
+    });
+
+    expect(
+      screen.getByRole("heading", { name: "Что изменилось" }),
+    ).toBeTruthy();
+    expect(screen.getByText("Добавлен новый блок")).toBeTruthy();
+    expect(screen.getByText("Обновлена кнопка")).toBeTruthy();
+  });
+
+  it("shows optimistic auto-fix start message in chat", async () => {
+    render(<BlazeChatArea />);
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent(WORKSPACE_AUTOFIX_STARTED_EVENT, {
+          detail: {
+            chatId: 77,
+            message:
+              "Автофикс запущен. Собираем диагностику и готовим изменения.",
+          },
+        }),
+      );
+    });
+
+    expect(
+      screen.getByText(
+        "Автофикс запущен. Собираем диагностику и готовим изменения.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("refreshes chat and pending manual approval when auto-fix completes", async () => {
+    getChatMock.mockResolvedValueOnce({
+      id: 77,
+      appId: 42,
+      title: "Chat",
+      messages: [
+        { id: 1, role: "user", content: "Автофикс запущен" },
+        { id: 2, role: "assistant", content: "### Что изменилось" },
+      ],
+    });
+    getProposalMock.mockResolvedValueOnce(buildPendingProposal(77, 22));
+
+    render(<BlazeChatArea activeAppId={42} />);
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent(WORKSPACE_AUTOFIX_COMPLETED_EVENT, {
+          detail: { chatId: 77 },
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(getChatMock).toHaveBeenCalledWith(77);
+      expect(getProposalMock).toHaveBeenCalledWith(77);
+      expect(
+        screen.getByRole("heading", { name: "Что изменилось" }),
+      ).toBeTruthy();
+      expect(screen.getByTestId("manual-approve-button")).toBeTruthy();
+    });
   });
 
   it("creates chat in selected app without creating new app", async () => {
@@ -628,6 +727,17 @@ Files to write: 1</blaze-status>`,
     });
     getProposalMock.mockResolvedValueOnce(null);
 
+    const previewRefreshListener = vi.fn();
+    window.addEventListener(
+      WORKSPACE_PREVIEW_REFRESH_EVENT,
+      previewRefreshListener as EventListener,
+    );
+    approveProposalMock.mockResolvedValueOnce({
+      updatedFiles: true,
+      extraFiles: undefined,
+      extraFilesError: undefined,
+    });
+
     fireEvent.click(screen.getByTestId("manual-approve-button"));
 
     await waitFor(() => {
@@ -637,6 +747,20 @@ Files to write: 1</blaze-status>`,
       });
       expect(screen.queryByTestId("manual-approve-button")).toBeNull();
     });
+
+    await waitFor(() => {
+      expect(previewRefreshListener).toHaveBeenCalledTimes(1);
+    });
+    const refreshEvent = previewRefreshListener.mock
+      .calls[0][0] as CustomEvent<WorkspacePreviewRefreshDetail>;
+    expect(refreshEvent.detail).toEqual({
+      appId: 42,
+      reason: "manual-approve",
+    });
+    window.removeEventListener(
+      WORKSPACE_PREVIEW_REFRESH_EVENT,
+      previewRefreshListener as EventListener,
+    );
   });
 
   it("does not show manual approve button in auto-apply mode", async () => {

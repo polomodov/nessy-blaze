@@ -3,6 +3,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider, UI_LANGUAGE_STORAGE_KEY } from "@/contexts/I18nContext";
 import {
+  AUTH_REDIRECT_REASON_SESSION_EXPIRED,
+  AUTH_REDIRECT_REASON_STORAGE_KEY,
   AUTH_TOKEN_STORAGE_KEY,
   DEV_USER_EMAIL_STORAGE_KEY,
   DEV_USER_NAME_STORAGE_KEY,
@@ -150,6 +152,22 @@ describe("AuthPage", () => {
     expect(window.localStorage.getItem(DEV_USER_NAME_STORAGE_KEY)).toBeNull();
     expect(toastSuccessMock).toHaveBeenCalledWith("Данные входа сохранены.");
     expect(navigateMock).toHaveBeenCalledWith({ to: "/" });
+  });
+
+  it("shows session expired toast when redirected after JWT expiry", () => {
+    window.sessionStorage.setItem(
+      AUTH_REDIRECT_REASON_STORAGE_KEY,
+      AUTH_REDIRECT_REASON_SESSION_EXPIRED,
+    );
+
+    renderAuthPage();
+
+    expect(toastErrorMock).toHaveBeenCalledWith(
+      "Сессия истекла. Пожалуйста, войдите снова.",
+    );
+    expect(
+      window.sessionStorage.getItem(AUTH_REDIRECT_REASON_STORAGE_KEY),
+    ).toBeNull();
   });
 
   it("starts OAuth2 flow when clicking Google sign in", async () => {

@@ -288,8 +288,13 @@ export interface DoesReleaseNoteExistParams {
 }
 
 export interface ApproveProposalResult {
+  updatedFiles?: boolean;
   extraFiles?: string[];
   extraFilesError?: string;
+  selfHealAttempted?: boolean;
+  selfHealRecovered?: boolean;
+  selfHealAttempts?: number;
+  selfHealErrors?: string[];
 }
 
 export interface ImportAppParams {

@@ -71,6 +71,7 @@ export const en = {
     "OAuth2 token response does not contain a usable token.",
   "auth.toast.oauthSignedIn": "Signed in successfully.",
   "auth.toast.credentialsCleared": "Saved credentials cleared.",
+  "auth.toast.sessionExpired": "Your session expired. Please sign in again.",
 
   "sidebar.date.unknown": "Unknown date",
   "sidebar.date.today": "Today",
@@ -135,6 +136,8 @@ export const en = {
   "chat.typing.drafting": "Agent is drafting a response...",
   "chat.input.placeholder": "Describe what should be built...",
   "chat.footer.hint": "The agent drafts pages based on your design system.",
+  "chat.autofix.started":
+    "Auto-fix started. Gathering diagnostics and preparing changes.",
 
   "preview.error.startFailed": "Failed to start preview app.",
   "preview.device.desktop": "desktop",
@@ -153,6 +156,13 @@ export const en = {
   "preview.empty.subtitle":
     "Send a message in chat to create an app and run live preview.",
   "preview.error.title": "Failed to start preview",
+  "preview.error.autofixSuggestion":
+    "This looks like a broken project state. You can ask AI to attempt an auto-fix with diagnostics.",
+  "preview.error.autofixButton": "Attempt auto-fix with AI",
+  "preview.error.autofixButtonLoading": "Auto-fix request in progress...",
+  "preview.error.autofixDismiss": "Dismiss",
+  "preview.error.autofixNoChat":
+    "Select or create a chat for this project to run auto-fix.",
   "preview.loading": "Starting app on preview port...",
   "preview.iframe.title": "Generated app preview",
   "preview.route.home": "Home (/)",

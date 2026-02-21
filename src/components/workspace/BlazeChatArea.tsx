@@ -23,6 +23,15 @@ import { IpcClient } from "@/ipc/ipc_client";
 import type { Message as BackendMessage } from "@/ipc/ipc_types";
 import type { ProposalResult } from "@/lib/schemas";
 import type { TranslationParams } from "@/i18n/types";
+import {
+  WORKSPACE_AUTOFIX_COMPLETED_EVENT,
+  WORKSPACE_AUTOFIX_STARTED_EVENT,
+  type WorkspaceAutofixCompletedDetail,
+  type WorkspaceAutofixStartedDetail,
+  WORKSPACE_PREVIEW_REFRESH_EVENT,
+  type WorkspacePreviewRefreshDetail,
+} from "./autofix_events";
+import { WorkspaceMarkdown } from "./WorkspaceMarkdown";
 
 type StatusBlock = {
   title: string;
@@ -544,6 +553,81 @@ export function BlazeChatArea({
     };
   }, [activeAppId, hasHiddenActivity, mapMessages, t]);
 
+  useEffect(() => {
+    const handleAutoFixStarted = (event: Event) => {
+      const customEvent = event as CustomEvent<WorkspaceAutofixStartedDetail>;
+      const detail = customEvent.detail;
+      const message = detail?.message?.trim();
+      if (!message) {
+        return;
+      }
+
+      setMessages((previous) => [
+        ...previous,
+        {
+          id: `autofix-${Date.now()}`,
+          role: "user",
+          content: message,
+        },
+      ]);
+    };
+
+    window.addEventListener(
+      WORKSPACE_AUTOFIX_STARTED_EVENT,
+      handleAutoFixStarted,
+    );
+    return () => {
+      window.removeEventListener(
+        WORKSPACE_AUTOFIX_STARTED_EVENT,
+        handleAutoFixStarted,
+      );
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleAutoFixCompleted = (event: Event) => {
+      const customEvent = event as CustomEvent<WorkspaceAutofixCompletedDetail>;
+      const detail = customEvent.detail;
+      const completedChatId = detail?.chatId;
+      if (typeof completedChatId !== "number") {
+        return;
+      }
+
+      void (async () => {
+        try {
+          const refreshedChat =
+            await IpcClient.getInstance().getChat(completedChatId);
+          if (
+            typeof activeAppId === "number" &&
+            refreshedChat.appId !== activeAppId
+          ) {
+            return;
+          }
+
+          visibleChatIdRef.current = completedChatId;
+          setChatId(completedChatId);
+          setMessages(mapMessages(refreshedChat.messages));
+          setIsHiddenAgentActivity(hasHiddenActivity(refreshedChat.messages));
+          setIsTyping(false);
+          await syncPendingCodeProposal(completedChatId);
+        } catch (error) {
+          setError(resolveErrorMessage(error, t("chat.error.sendFailed")));
+        }
+      })();
+    };
+
+    window.addEventListener(
+      WORKSPACE_AUTOFIX_COMPLETED_EVENT,
+      handleAutoFixCompleted,
+    );
+    return () => {
+      window.removeEventListener(
+        WORKSPACE_AUTOFIX_COMPLETED_EVENT,
+        handleAutoFixCompleted,
+      );
+    };
+  }, [activeAppId, hasHiddenActivity, mapMessages, syncPendingCodeProposal, t]);
+
   const sendMessage = async () => {
     if (!input.trim()) return;
     if (isTyping) return;
@@ -652,7 +736,7 @@ export function BlazeChatArea({
     setIsApproving(true);
     setError(null);
     try {
-      await IpcClient.getInstance().approveProposal({
+      const approveResult = await IpcClient.getInstance().approveProposal({
         chatId: pendingCodeProposal.chatId,
         messageId: pendingCodeProposal.messageId,
       });
@@ -665,6 +749,21 @@ export function BlazeChatArea({
         setIsHiddenAgentActivity(hasHiddenActivity(refreshedChat.messages));
       }
       await syncPendingCodeProposal(pendingCodeProposal.chatId);
+
+      const resolvedAppId =
+        typeof refreshedChat.appId === "number" ? refreshedChat.appId : appId;
+      if (approveResult.updatedFiles && typeof resolvedAppId === "number") {
+        const detail: WorkspacePreviewRefreshDetail = {
+          appId: resolvedAppId,
+          reason: "manual-approve",
+        };
+        window.dispatchEvent(
+          new CustomEvent<WorkspacePreviewRefreshDetail>(
+            WORKSPACE_PREVIEW_REFRESH_EVENT,
+            { detail },
+          ),
+        );
+      }
     } catch (approveError) {
       setError(
         resolveErrorMessage(approveError, t("chat.error.approveFailed")),
@@ -823,7 +922,14 @@ export function BlazeChatArea({
                           : "bg-agent-bubble text-foreground"
                     }`}
                   >
-                    {message.content && <div>{message.content}</div>}
+                    {message.content &&
+                      (message.role === "agent" ? (
+                        <WorkspaceMarkdown content={message.content} />
+                      ) : (
+                        <div className="whitespace-pre-wrap">
+                          {message.content}
+                        </div>
+                      ))}
                     {message.statusBlocks?.map((statusBlock, index) => {
                       const statusKey = `${message.id}:status:${index}`;
                       const isExpanded = expandedStatusKeys.has(statusKey);

@@ -67,6 +67,7 @@ import {
   getBlazeWriteTags,
 } from "../ipc/utils/blaze_tag_parser";
 import { isServerFunction } from "../supabase_admin/supabase_utils";
+import { applyManualChangesWithSelfHealing } from "../ipc/utils/manual_apply_self_heal";
 
 interface InvokeMeta {
   requestContext?: RequestContext;
@@ -2255,24 +2256,41 @@ const handlers: Record<string, InvokeHandler> = {
       }
 
       const chatSummary = getBlazeChatSummaryTag(messageToApprove.content);
-      const processResult = await processFullResponseActions(
-        messageToApprove.content,
-        chatId,
-        {
-          chatSummary: chatSummary ?? undefined,
-          messageId,
-        },
-      );
+      const selfHealingResult = await applyManualChangesWithSelfHealing({
+        rawResponse: messageToApprove.content,
+        applyResponse: async (responsePayload) =>
+          processFullResponseActions(responsePayload, chatId, {
+            chatSummary: chatSummary ?? undefined,
+            messageId,
+          }),
+      });
 
+      const processResult = selfHealingResult.processResult;
       if (processResult.error) {
+        const selfHealErrors = selfHealingResult.attempts
+          .map((attempt) => attempt.error)
+          .filter((value): value is string => Boolean(value));
+        const selfHealSuffix =
+          selfHealErrors.length > 0
+            ? ` (self-healing attempts: ${selfHealErrors.join(" | ")})`
+            : "";
         throw new Error(
-          `Error processing actions for message ${messageId}: ${processResult.error}`,
+          `Error processing actions for message ${messageId}: ${processResult.error}${selfHealSuffix}`,
         );
       }
 
+      const selfHealErrors = selfHealingResult.attempts
+        .map((attempt) => attempt.error)
+        .filter((value): value is string => Boolean(value));
+
       return {
+        updatedFiles: processResult.updatedFiles,
         extraFiles: processResult.extraFiles,
         extraFilesError: processResult.extraFilesError,
+        selfHealAttempted: selfHealingResult.attempts.length > 1,
+        selfHealRecovered: selfHealingResult.recoveredBySelfHealing,
+        selfHealAttempts: selfHealingResult.attempts.length,
+        selfHealErrors: selfHealErrors.length > 0 ? selfHealErrors : undefined,
       };
     });
   },

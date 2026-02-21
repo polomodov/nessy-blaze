@@ -44,8 +44,17 @@ export function useErrorAutofix({
   }, [selectedAppId, selectedChatId]);
 
   const triggerAIFix = useCallback(
-    ({ mode, incident }: { mode: AutoFixMode; incident: AutoFixIncident }) => {
-      if (!selectedChatId) {
+    ({
+      mode,
+      incident,
+      chatId,
+    }: {
+      mode: AutoFixMode;
+      incident: AutoFixIncident;
+      chatId?: number;
+    }) => {
+      const targetChatId = chatId ?? selectedChatId;
+      if (!targetChatId) {
         console.debug("[autofix] skip: no selectedChatId");
         return false;
       }
@@ -118,7 +127,7 @@ export function useErrorAutofix({
       );
       streamMessage({
         prompt,
-        chatId: selectedChatId,
+        chatId: targetChatId,
       });
 
       return true;

@@ -74,6 +74,7 @@ export const ru = {
   "auth.toast.oauthTokenMissing": "OAuth2 ответ не содержит пригодного токена.",
   "auth.toast.oauthSignedIn": "Вход выполнен успешно.",
   "auth.toast.credentialsCleared": "Сохраненные данные очищены.",
+  "auth.toast.sessionExpired": "Сессия истекла. Пожалуйста, войдите снова.",
 
   "sidebar.date.unknown": "Дата неизвестна",
   "sidebar.date.today": "Сегодня",
@@ -140,6 +141,8 @@ export const ru = {
   "chat.typing.drafting": "Агент формирует ответ...",
   "chat.input.placeholder": "Опишите, что нужно собрать...",
   "chat.footer.hint": "Агент создает страницы по вашей дизайн-системе.",
+  "chat.autofix.started":
+    "Автофикс запущен. Собираем диагностику и готовим изменения.",
 
   "preview.error.startFailed": "Не удалось запустить предпросмотр приложения.",
   "preview.device.desktop": "десктоп",
@@ -158,6 +161,13 @@ export const ru = {
   "preview.empty.subtitle":
     "Отправьте сообщение в чат, чтобы создать приложение и запустить live preview.",
   "preview.error.title": "Не удалось запустить предпросмотр",
+  "preview.error.autofixSuggestion":
+    "Похоже, проект находится в битом состоянии. Можно попросить AI сделать попытку автофикса на основе диагностик.",
+  "preview.error.autofixButton": "Попробовать автофикс через AI",
+  "preview.error.autofixButtonLoading": "Запрос автофикса выполняется...",
+  "preview.error.autofixDismiss": "Скрыть",
+  "preview.error.autofixNoChat":
+    "Выберите или создайте чат для этого проекта, чтобы запустить автофикс.",
   "preview.loading": "Запуск приложения на порту предпросмотра...",
   "preview.iframe.title": "Предпросмотр сгенерированного приложения",
   "preview.route.home": "Главная (/)",

@@ -34,6 +34,7 @@ import { createLoggedHandler } from "./safe_handle";
 import { ApproveProposalResult } from "../ipc_types";
 import { validateChatContext } from "../utils/context_paths_utils";
 import { readSettings } from "@/main/settings";
+import { applyManualChangesWithSelfHealing } from "../utils/manual_apply_self_heal";
 
 const logger = log.scope("proposal_handlers");
 const handle = createLoggedHandler(logger);
@@ -366,24 +367,48 @@ const approveProposalHandler = async (
 
   // 2. Process the actions defined in the message content
   const chatSummary = getBlazeChatSummaryTag(messageToApprove.content);
-  const processResult = await processFullResponseActions(
-    messageToApprove.content,
-    chatId,
-    {
-      chatSummary: chatSummary ?? undefined,
-      messageId,
-    }, // Pass summary if found
-  );
+  const selfHealingResult = await applyManualChangesWithSelfHealing({
+    rawResponse: messageToApprove.content,
+    applyResponse: async (responsePayload) =>
+      processFullResponseActions(responsePayload, chatId, {
+        chatSummary: chatSummary ?? undefined,
+        messageId,
+      }),
+  });
 
+  const processResult = selfHealingResult.processResult;
   if (processResult.error) {
+    const selfHealErrors = selfHealingResult.attempts
+      .map((attempt) => attempt.error)
+      .filter((value): value is string => Boolean(value));
+    const selfHealSuffix =
+      selfHealErrors.length > 0
+        ? ` (self-healing attempts: ${selfHealErrors.join(" | ")})`
+        : "";
     throw new Error(
-      `Error processing actions for message ${messageId}: ${processResult.error}`,
+      `Error processing actions for message ${messageId}: ${processResult.error}${selfHealSuffix}`,
     );
   }
 
+  if (selfHealingResult.recoveredBySelfHealing) {
+    logger.warn(
+      `Manual apply self-healed for chatId: ${chatId}, messageId: ${messageId}`,
+      JSON.stringify(selfHealingResult.attempts),
+    );
+  }
+
+  const selfHealErrors = selfHealingResult.attempts
+    .map((attempt) => attempt.error)
+    .filter((value): value is string => Boolean(value));
+
   return {
+    updatedFiles: processResult.updatedFiles,
     extraFiles: processResult.extraFiles,
     extraFilesError: processResult.extraFilesError,
+    selfHealAttempted: selfHealingResult.attempts.length > 1,
+    selfHealRecovered: selfHealingResult.recoveredBySelfHealing,
+    selfHealAttempts: selfHealingResult.attempts.length,
+    selfHealErrors: selfHealErrors.length > 0 ? selfHealErrors : undefined,
   };
 };
 

@@ -8,12 +8,15 @@ import {
   MousePointerClick,
   Smartphone,
   Tablet,
+  Sparkles,
 } from "lucide-react";
-import { useAtom, useSetAtom } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
   previewIframeRefAtom,
   selectedComponentsPreviewAtom,
 } from "@/atoms/previewAtoms";
+import { appConsoleEntriesAtom, userSettingsAtom } from "@/atoms/appAtoms";
+import { selectedChatIdAtom } from "@/atoms/chatAtoms";
 import { useI18n } from "@/contexts/I18nContext";
 import { IpcClient } from "@/ipc/ipc_client";
 import type { AppOutput, ComponentSelection } from "@/ipc/ipc_types";
@@ -23,6 +26,19 @@ import {
   extractPreviewPathsFromAppSource,
   getPreviewPathLabel,
 } from "./preview_routes";
+import { useStreamChat } from "@/hooks/useStreamChat";
+import type { AutoFixIncident } from "@/components/preview_panel/error_autofix_prompt";
+import { useErrorAutofix } from "@/components/preview_panel/use_error_autofix";
+import { computeFingerprint } from "@/components/preview_panel/error_autofix_policy";
+import { showError } from "@/lib/toast";
+import {
+  WORKSPACE_AUTOFIX_STARTED_EVENT,
+  WORKSPACE_AUTOFIX_COMPLETED_EVENT,
+  type WorkspaceAutofixCompletedDetail,
+  type WorkspaceAutofixStartedDetail,
+  WORKSPACE_PREVIEW_REFRESH_EVENT,
+  type WorkspacePreviewRefreshDetail,
+} from "./autofix_events";
 
 type Device = "desktop" | "tablet" | "mobile";
 
@@ -115,20 +131,158 @@ interface BlazePreviewPanelProps {
 
 export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
   const { t } = useI18n();
+  const selectedChatId = useAtomValue(selectedChatIdAtom);
+  const [resolvedChatId, setResolvedChatId] = useState<number | null>(
+    selectedChatId ?? null,
+  );
+  const consoleEntries = useAtomValue(appConsoleEntriesAtom);
+  const settings = useAtomValue(userSettingsAtom);
+  const { streamMessage, isStreaming } = useStreamChat({ hasChatId: false });
   const [device, setDevice] = useState<Device>("desktop");
   const [appUrl, setAppUrl] = useState<string | null>(null);
   const [previewPaths, setPreviewPaths] = useState<string[]>(["/"]);
   const [selectedPath, setSelectedPath] = useState("/");
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [startupErrorIncident, setStartupErrorIncident] =
+    useState<AutoFixIncident | null>(null);
+  const [runtimeErrorIncident, setRuntimeErrorIncident] =
+    useState<AutoFixIncident | null>(null);
+  const [isPreparingAutoFixChat, setIsPreparingAutoFixChat] = useState(false);
+  const [autoFixInFlightChatId, setAutoFixInFlightChatId] = useState<
+    number | null
+  >(null);
+  const [previewRefreshToken, setPreviewRefreshToken] = useState(0);
   const [isPickingComponent, setIsPickingComponent] = useState(false);
   const [selectableCount, setSelectableCount] = useState<number | null>(null);
   const [selectedComponents, setSelectedComponents] = useAtom(
     selectedComponentsPreviewAtom,
   );
   const setPreviewIframeRef = useSetAtom(previewIframeRefAtom);
+  const setConsoleEntries = useSetAtom(appConsoleEntriesAtom);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const runningAppIdRef = useRef<number | null>(null);
+  const { triggerAIFix } = useErrorAutofix({
+    selectedAppId: activeAppId,
+    selectedChatId: resolvedChatId,
+    settings,
+    isStreaming,
+    consoleEntries,
+    streamMessage,
+  });
+
+  const ensureChatIdForAutoFix = useCallback(async (): Promise<
+    number | null
+  > => {
+    if (resolvedChatId) {
+      return resolvedChatId;
+    }
+
+    if (activeAppId === null) {
+      return null;
+    }
+
+    setIsPreparingAutoFixChat(true);
+    try {
+      const chats = await IpcClient.getInstance().getChats(activeAppId);
+      const latestChat = [...chats].sort(
+        (left, right) => right.createdAt.getTime() - left.createdAt.getTime(),
+      )[0];
+      if (latestChat?.id) {
+        setResolvedChatId(latestChat.id);
+        return latestChat.id;
+      }
+
+      const createdChatId =
+        await IpcClient.getInstance().createChat(activeAppId);
+      setResolvedChatId(createdChatId);
+      return createdChatId;
+    } catch (error) {
+      showError(error);
+      return null;
+    } finally {
+      setIsPreparingAutoFixChat(false);
+    }
+  }, [activeAppId, resolvedChatId]);
+
+  useEffect(() => {
+    if (selectedChatId) {
+      setResolvedChatId(selectedChatId);
+      return;
+    }
+
+    if (activeAppId === null) {
+      setResolvedChatId(null);
+      return;
+    }
+
+    let cancelled = false;
+    void IpcClient.getInstance()
+      .getChats(activeAppId)
+      .then((chats) => {
+        if (cancelled) {
+          return;
+        }
+        if (chats.length === 0) {
+          setResolvedChatId(null);
+          return;
+        }
+        const latestChat = [...chats].sort(
+          (left, right) => right.createdAt.getTime() - left.createdAt.getTime(),
+        )[0];
+        setResolvedChatId(latestChat?.id ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setResolvedChatId(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeAppId, selectedChatId]);
+
+  useEffect(() => {
+    const unsubscribe = IpcClient.getInstance().onChatStreamEnd((chatId) => {
+      if (autoFixInFlightChatId === null || chatId !== autoFixInFlightChatId) {
+        return;
+      }
+      setAutoFixInFlightChatId(null);
+      const detail: WorkspaceAutofixCompletedDetail = { chatId };
+      window.dispatchEvent(
+        new CustomEvent<WorkspaceAutofixCompletedDetail>(
+          WORKSPACE_AUTOFIX_COMPLETED_EVENT,
+          { detail },
+        ),
+      );
+    });
+
+    return unsubscribe;
+  }, [autoFixInFlightChatId]);
+
+  useEffect(() => {
+    const handlePreviewRefreshRequest = (event: Event) => {
+      const customEvent = event as CustomEvent<WorkspacePreviewRefreshDetail>;
+      const detail = customEvent.detail;
+      if (!detail || detail.appId !== activeAppId) {
+        return;
+      }
+
+      setPreviewRefreshToken((previous) => previous + 1);
+    };
+
+    window.addEventListener(
+      WORKSPACE_PREVIEW_REFRESH_EVENT,
+      handlePreviewRefreshRequest,
+    );
+    return () => {
+      window.removeEventListener(
+        WORKSPACE_PREVIEW_REFRESH_EVENT,
+        handlePreviewRefreshRequest,
+      );
+    };
+  }, [activeAppId]);
 
   const loadPreviewPaths = useCallback(async (appId: number) => {
     const appSource = await IpcClient.getInstance().readAppFile(
@@ -149,6 +303,7 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
     setSelectedComponents([]);
     setIsPickingComponent(false);
     setSelectableCount(null);
+    setRuntimeErrorIncident(null);
   }, [activeAppId, setSelectedComponents]);
 
   useEffect(() => {
@@ -162,6 +317,90 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
         typeof event.data?.count === "number"
       ) {
         setSelectableCount(Math.max(0, event.data.count));
+        return;
+      }
+
+      const { type, payload } = event.data as {
+        type?:
+          | "window-error"
+          | "unhandled-rejection"
+          | "iframe-sourcemapped-error"
+          | "build-error-report";
+        payload?: {
+          message?: string;
+          stack?: string;
+          reason?: string;
+          file?: string;
+          frame?: string;
+        };
+      };
+
+      if (
+        type === "window-error" ||
+        type === "unhandled-rejection" ||
+        type === "iframe-sourcemapped-error"
+      ) {
+        const timestamp = Date.now();
+        const stack =
+          type === "iframe-sourcemapped-error"
+            ? payload?.stack?.split("\n").slice(0, 1).join("\n")
+            : payload?.stack;
+        const errorMessage = `Error ${
+          payload?.message || payload?.reason
+        }\nStack trace: ${stack}`;
+        setRuntimeErrorIncident({
+          source: "preview-runtime",
+          primaryError: errorMessage,
+          timestamp,
+          route: selectedPath,
+          file: payload?.file,
+          fingerprint: computeFingerprint(
+            "preview-runtime",
+            errorMessage,
+            payload?.file,
+          ),
+        });
+        if (activeAppId !== null) {
+          const logEntry = {
+            level: "error" as const,
+            type: "client" as const,
+            message: `Iframe error: ${errorMessage}`,
+            appId: activeAppId,
+            timestamp,
+          };
+          IpcClient.getInstance().addLog(logEntry);
+          setConsoleEntries((prev) => [...prev, logEntry]);
+        }
+        return;
+      }
+
+      if (type === "build-error-report") {
+        const timestamp = Date.now();
+        const errorMessage = `${payload?.message} from file ${payload?.file}.\n\nSource code:\n${payload?.frame}`;
+        setRuntimeErrorIncident({
+          source: "preview-build",
+          primaryError: errorMessage,
+          timestamp,
+          route: selectedPath,
+          file: payload?.file,
+          frame: payload?.frame,
+          fingerprint: computeFingerprint(
+            "preview-build",
+            errorMessage,
+            payload?.file,
+          ),
+        });
+        if (activeAppId !== null) {
+          const logEntry = {
+            level: "error" as const,
+            type: "client" as const,
+            message: `Build error report: ${JSON.stringify(payload)}`,
+            appId: activeAppId,
+            timestamp,
+          };
+          IpcClient.getInstance().addLog(logEntry);
+          setConsoleEntries((prev) => [...prev, logEntry]);
+        }
         return;
       }
 
@@ -203,7 +442,7 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
     return () => {
       window.removeEventListener("message", handleMessage);
     };
-  }, [setSelectedComponents]);
+  }, [activeAppId, selectedPath, setConsoleEntries, setSelectedComponents]);
 
   const handleIframeRef = useCallback(
     (node: HTMLIFrameElement | null) => {
@@ -285,6 +524,8 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
 
     const syncAppPreview = async () => {
       const previousAppId = runningAppIdRef.current;
+      const shouldRestartCurrentApp =
+        previewRefreshToken > 0 && previousAppId === activeAppId;
       if (previousAppId !== null && previousAppId !== activeAppId) {
         try {
           await IpcClient.getInstance().stopApp(previousAppId);
@@ -300,6 +541,8 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
         runningAppIdRef.current = null;
         setAppUrl(null);
         setError(null);
+        setStartupErrorIncident(null);
+        setRuntimeErrorIncident(null);
         setIsStarting(false);
         setSelectedComponents([]);
         setIsPickingComponent(false);
@@ -310,16 +553,33 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
       runningAppIdRef.current = activeAppId;
       setAppUrl(null);
       setError(null);
+      setStartupErrorIncident(null);
+      setRuntimeErrorIncident(null);
       setIsStarting(true);
       setSelectableCount(null);
 
       try {
-        await IpcClient.getInstance().runApp(activeAppId, handleOutput);
+        if (shouldRestartCurrentApp) {
+          await IpcClient.getInstance().restartApp(activeAppId, handleOutput);
+        } else {
+          await IpcClient.getInstance().runApp(activeAppId, handleOutput);
+        }
       } catch (runError) {
         if (cancelled) {
           return;
         }
-        setError(resolveErrorMessage(runError, t("preview.error.startFailed")));
+        const resolvedError = resolveErrorMessage(
+          runError,
+          t("preview.error.startFailed"),
+        );
+        setError(resolvedError);
+        setStartupErrorIncident({
+          source: "server-stderr",
+          primaryError: resolvedError,
+          timestamp: Date.now(),
+          route: "/",
+          fingerprint: computeFingerprint("server-stderr", resolvedError),
+        });
         setIsStarting(false);
       }
     };
@@ -329,7 +589,7 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
     return () => {
       cancelled = true;
     };
-  }, [activeAppId, t]);
+  }, [activeAppId, previewRefreshToken, t]);
 
   useEffect(() => {
     return () => {
@@ -343,6 +603,74 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
       }
     };
   }, []);
+
+  const onManualAutoFixAttempt = async () => {
+    if (!error) {
+      return;
+    }
+    const targetChatId = await ensureChatIdForAutoFix();
+    if (!targetChatId) {
+      return;
+    }
+
+    const incident: AutoFixIncident = startupErrorIncident ?? {
+      source: "server-stderr",
+      primaryError: error,
+      timestamp: Date.now(),
+      route: selectedPath,
+      fingerprint: computeFingerprint("server-stderr", error),
+    };
+
+    const triggered = triggerAIFix({
+      mode: "manual",
+      incident,
+      chatId: targetChatId,
+    });
+    if (triggered) {
+      setStartupErrorIncident(null);
+      setAutoFixInFlightChatId(targetChatId);
+      const detail: WorkspaceAutofixStartedDetail = {
+        chatId: targetChatId,
+        message: t("chat.autofix.started"),
+      };
+      window.dispatchEvent(
+        new CustomEvent<WorkspaceAutofixStartedDetail>(
+          WORKSPACE_AUTOFIX_STARTED_EVENT,
+          { detail },
+        ),
+      );
+    }
+  };
+
+  const onRuntimeAutoFixAttempt = async () => {
+    if (!runtimeErrorIncident) {
+      return;
+    }
+    const targetChatId = await ensureChatIdForAutoFix();
+    if (!targetChatId) {
+      return;
+    }
+
+    const triggered = triggerAIFix({
+      mode: "manual",
+      incident: runtimeErrorIncident,
+      chatId: targetChatId,
+    });
+    if (triggered) {
+      setRuntimeErrorIncident(null);
+      setAutoFixInFlightChatId(targetChatId);
+      const detail: WorkspaceAutofixStartedDetail = {
+        chatId: targetChatId,
+        message: t("chat.autofix.started"),
+      };
+      window.dispatchEvent(
+        new CustomEvent<WorkspaceAutofixStartedDetail>(
+          WORKSPACE_AUTOFIX_STARTED_EVENT,
+          { detail },
+        ),
+      );
+    }
+  };
 
   return (
     <div className="flex h-full w-full flex-col bg-muted/50">
@@ -500,6 +828,31 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
               <p className="mt-2 max-w-md text-xs text-muted-foreground">
                 {error}
               </p>
+              <div className="mt-4 w-full max-w-md rounded-lg border border-border bg-background p-3 text-left">
+                <p className="text-xs text-muted-foreground">
+                  {t("preview.error.autofixSuggestion")}
+                </p>
+                <button
+                  type="button"
+                  data-testid="preview-autofix-button"
+                  onClick={() => {
+                    void onManualAutoFixAttempt();
+                  }}
+                  disabled={
+                    isStreaming ||
+                    isPreparingAutoFixChat ||
+                    autoFixInFlightChatId !== null
+                  }
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-all hover:opacity-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Sparkles size={14} />
+                  {isStreaming ||
+                  isPreparingAutoFixChat ||
+                  autoFixInFlightChatId !== null
+                    ? t("preview.error.autofixButtonLoading")
+                    : t("preview.error.autofixButton")}
+                </button>
+              </div>
             </div>
           ) : isStarting || !resolvedPreviewUrl ? (
             <div className="flex h-full min-h-[520px] flex-col items-center justify-center gap-3 text-center">
@@ -512,20 +865,59 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
               </p>
             </div>
           ) : (
-            <iframe
-              title={t("preview.iframe.title")}
-              src={resolvedPreviewUrl}
-              className="h-full min-h-[520px] w-full border-0"
-              ref={handleIframeRef}
-              onLoad={() => {
-                if (isPickingComponent && iframeRef.current?.contentWindow) {
-                  iframeRef.current.contentWindow.postMessage(
-                    { type: "activate-blaze-component-selector" },
-                    "*",
-                  );
-                }
-              }}
-            />
+            <div className="relative h-full min-h-[520px] w-full">
+              {runtimeErrorIncident && (
+                <div className="absolute left-3 top-3 z-20 max-w-[420px] rounded-lg border border-border bg-background/95 p-3 shadow">
+                  <p className="text-xs text-muted-foreground">
+                    {t("preview.error.autofixSuggestion")}
+                  </p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <button
+                      type="button"
+                      data-testid="preview-runtime-autofix-button"
+                      onClick={() => {
+                        void onRuntimeAutoFixAttempt();
+                      }}
+                      disabled={
+                        isStreaming ||
+                        isPreparingAutoFixChat ||
+                        autoFixInFlightChatId !== null
+                      }
+                      className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-all hover:opacity-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Sparkles size={14} />
+                      {isStreaming ||
+                      isPreparingAutoFixChat ||
+                      autoFixInFlightChatId !== null
+                        ? t("preview.error.autofixButtonLoading")
+                        : t("preview.error.autofixButton")}
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="preview-runtime-autofix-dismiss"
+                      onClick={() => setRuntimeErrorIncident(null)}
+                      className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground"
+                    >
+                      {t("preview.error.autofixDismiss")}
+                    </button>
+                  </div>
+                </div>
+              )}
+              <iframe
+                title={t("preview.iframe.title")}
+                src={resolvedPreviewUrl}
+                className="h-full min-h-[520px] w-full border-0"
+                ref={handleIframeRef}
+                onLoad={() => {
+                  if (isPickingComponent && iframeRef.current?.contentWindow) {
+                    iframeRef.current.contentWindow.postMessage(
+                      { type: "activate-blaze-component-selector" },
+                      "*",
+                    );
+                  }
+                }}
+              />
+            </div>
           )}
         </div>
       </div>

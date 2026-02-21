@@ -1,9 +1,15 @@
 import {
+  AUTH_REDIRECT_REASON_SESSION_EXPIRED,
+  AUTH_REDIRECT_REASON_STORAGE_KEY,
+  AUTH_TOKEN_STORAGE_KEY,
   BACKEND_BASE_URL_STORAGE_KEY,
   BACKEND_IPC_FALLBACK_STORAGE_KEY,
   BACKEND_MODE_STORAGE_KEY,
   BrowserBackendClient,
   createBackendClientTransport,
+  DEV_USER_EMAIL_STORAGE_KEY,
+  DEV_USER_NAME_STORAGE_KEY,
+  DEV_USER_SUB_STORAGE_KEY,
   HttpBackendClient,
   IpcBackendClient,
   type BackendClient,
@@ -40,11 +46,20 @@ describe("backend_client transport", () => {
       storage.removeItem(BACKEND_MODE_STORAGE_KEY);
       storage.removeItem(BACKEND_BASE_URL_STORAGE_KEY);
       storage.removeItem(BACKEND_IPC_FALLBACK_STORAGE_KEY);
+      storage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+      storage.removeItem(DEV_USER_SUB_STORAGE_KEY);
+      storage.removeItem(DEV_USER_EMAIL_STORAGE_KEY);
+      storage.removeItem(DEV_USER_NAME_STORAGE_KEY);
     } else {
       delete storage[BACKEND_MODE_STORAGE_KEY];
       delete storage[BACKEND_BASE_URL_STORAGE_KEY];
       delete storage[BACKEND_IPC_FALLBACK_STORAGE_KEY];
+      delete storage[AUTH_TOKEN_STORAGE_KEY];
+      delete storage[DEV_USER_SUB_STORAGE_KEY];
+      delete storage[DEV_USER_EMAIL_STORAGE_KEY];
+      delete storage[DEV_USER_NAME_STORAGE_KEY];
     }
+    window.sessionStorage.removeItem(AUTH_REDIRECT_REASON_STORAGE_KEY);
   });
 
   it("uses IPC transport by default", async () => {
@@ -190,6 +205,40 @@ describe("backend_client transport", () => {
       updatedAt: "2026-02-19T10:00:00.000Z",
     });
     expect(fallback.invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("clears auth context and redirects to /auth when JWT is expired", async () => {
+    window.__BLAZE_REMOTE_CONFIG__ = {
+      backendClient: {
+        mode: "http",
+        baseUrl: "https://api.example.com",
+      },
+    };
+
+    const assignMock = vi
+      .spyOn(window.location, "assign")
+      .mockImplementation((_value: string | URL) => undefined);
+    const fallback = new MockIpcRenderer();
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: "JWT is expired" }), {
+        status: 401,
+        headers: {
+          "content-type": "application/json",
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createBackendClientTransport(fallback);
+    await expect(client.invoke("get-chats")).rejects.toThrow(
+      "Authentication session expired. Please sign in again.",
+    );
+
+    expect(assignMock).toHaveBeenCalledWith("/auth");
+    expect(fallback.invokeMock).not.toHaveBeenCalled();
+    expect(
+      window.sessionStorage.getItem(AUTH_REDIRECT_REASON_STORAGE_KEY),
+    ).toBe(AUTH_REDIRECT_REASON_SESSION_EXPIRED);
   });
 
   it("falls back to IPC when HTTP request fails", async () => {

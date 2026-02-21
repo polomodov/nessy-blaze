@@ -119,6 +119,38 @@ describe("useErrorAutofix", () => {
     expect(streamMessage).toHaveBeenCalledTimes(1);
   });
 
+  it("allows manual trigger with explicit chatId override", () => {
+    const streamMessage = vi.fn();
+    const { result } = renderHook(() =>
+      useErrorAutofix({
+        selectedAppId: 1,
+        selectedChatId: null,
+        settings: {
+          enableAutoFixProblems: true,
+          selectedChatMode: "build",
+        } as any,
+        isStreaming: false,
+        consoleEntries: [createLog()],
+        streamMessage,
+      }),
+    );
+
+    act(() => {
+      result.current.triggerAIFix({
+        mode: "manual",
+        chatId: 77,
+        incident: createIncident(),
+      });
+    });
+
+    expect(streamMessage).toHaveBeenCalledTimes(1);
+    expect(streamMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chatId: 77,
+      }),
+    );
+  });
+
   it("skips auto-fix while chat stream is active", () => {
     const streamMessage = vi.fn();
     const { result } = renderHook(() =>
