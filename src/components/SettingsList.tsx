@@ -15,12 +15,6 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   { id: "workflow-settings", label: "Workflow" },
   { id: "ai-settings", label: "AI" },
   { id: "provider-settings", label: "Model Providers" },
-  { id: "integrations", label: "Integrations" },
-  {
-    id: "agent-permissions",
-    label: "Agent Permissions",
-  },
-  { id: "tools-mcp", label: "Tools (MCP)" },
   { id: "experiments", label: "Experiments" },
   { id: "danger-zone", label: "Danger Zone" },
 ];
