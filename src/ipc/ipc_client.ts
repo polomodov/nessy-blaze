@@ -27,10 +27,7 @@ import type {
   LanguageModel,
   CreateCustomLanguageModelProviderParams,
   CreateCustomLanguageModelParams,
-  DoesReleaseNoteExistParams,
   ApproveProposalResult,
-  ImportAppResult,
-  ImportAppParams,
   RenameBranchParams,
   GitBranchAppIdParams,
   CreateGitBranchParams,
@@ -78,9 +75,6 @@ import type {
   SupabaseOrganizationInfo,
   SupabaseProject,
   DeleteSupabaseOrganizationParams,
-  SelectNodeFolderResult,
-  ChangeAppLocationParams,
-  ChangeAppLocationResult,
   ApplyVisualEditingChangesParams,
   AnalyseComponentParams,
   AgentTool,
@@ -108,7 +102,6 @@ import type {
   ProposalResult,
 } from "@/lib/schemas";
 import { showError } from "@/lib/toast";
-import { DeepLinkData } from "./deep_link_data";
 import {
   createBackendClientTransport,
   getConfiguredTenantScope,
@@ -528,10 +521,6 @@ export class IpcClient {
       IpcClient.instance = new IpcClient();
     }
     return IpcClient.instance;
-  }
-
-  public async restartBlaze(): Promise<void> {
-    await this.ipcRenderer.invoke("restart-blaze");
   }
 
   public async reloadEnvPath(): Promise<void> {
@@ -1771,41 +1760,6 @@ export class IpcClient {
     return response?.models || [];
   }
 
-  // Listen for deep link events
-  public onDeepLinkReceived(
-    callback: (data: DeepLinkData) => void,
-  ): () => void {
-    const listener = (data: any) => {
-      callback(data as DeepLinkData);
-    };
-    this.ipcRenderer.on("deep-link-received", listener);
-    return () => {
-      this.ipcRenderer.removeListener("deep-link-received", listener);
-    };
-  }
-
-  // Listen for force close detected events
-  public onForceCloseDetected(
-    callback: (data: {
-      performanceData?: {
-        timestamp: number;
-        memoryUsageMB: number;
-        cpuUsagePercent?: number;
-        systemMemoryUsageMB?: number;
-        systemMemoryTotalMB?: number;
-        systemCpuPercent?: number;
-      };
-    }) => void,
-  ): () => void {
-    const listener = (data: any) => {
-      callback(data);
-    };
-    this.ipcRenderer.on("force-close-detected", listener);
-    return () => {
-      this.ipcRenderer.removeListener("force-close-detected", listener);
-    };
-  }
-
   // Count tokens for a chat and input
   public async countTokens(
     params: TokenCountParams,
@@ -1817,45 +1771,6 @@ export class IpcClient {
       showError(error);
       throw error;
     }
-  }
-
-  // Window control methods
-  public async minimizeWindow(): Promise<void> {
-    try {
-      await this.ipcRenderer.invoke("window:minimize");
-    } catch (error) {
-      showError(error);
-      throw error;
-    }
-  }
-
-  public async maximizeWindow(): Promise<void> {
-    try {
-      await this.ipcRenderer.invoke("window:maximize");
-    } catch (error) {
-      showError(error);
-      throw error;
-    }
-  }
-
-  public async closeWindow(): Promise<void> {
-    try {
-      await this.ipcRenderer.invoke("window:close");
-    } catch (error) {
-      showError(error);
-      throw error;
-    }
-  }
-
-  // Get system platform (win32, darwin, linux)
-  public async getSystemPlatform(): Promise<string> {
-    return this.ipcRenderer.invoke("get-system-platform");
-  }
-
-  public async doesReleaseNoteExist(
-    params: DoesReleaseNoteExistParams,
-  ): Promise<{ exists: boolean; url?: string }> {
-    return this.ipcRenderer.invoke("does-release-note-exist", params);
   }
 
   public async getLanguageModelProviders(): Promise<LanguageModelProvider[]> {
@@ -1918,49 +1833,10 @@ export class IpcClient {
     });
   }
 
-  public async selectAppFolder(): Promise<{
-    path: string | null;
-    name: string | null;
-  }> {
-    return this.ipcRenderer.invoke("select-app-folder");
-  }
-
-  public async selectAppLocation(
-    defaultPath?: string,
-  ): Promise<{ path: string | null; canceled: boolean }> {
-    return this.ipcRenderer.invoke("select-app-location", { defaultPath });
-  }
-
-  public async changeAppLocation(
-    params: ChangeAppLocationParams,
-  ): Promise<ChangeAppLocationResult> {
-    return this.ipcRenderer.invoke("change-app-location", params);
-  }
-
-  // Add these methods to IpcClient class
-
-  public async selectNodeFolder(): Promise<SelectNodeFolderResult> {
-    return this.ipcRenderer.invoke("select-node-folder");
-  }
-
-  public async getNodePath(): Promise<string | null> {
-    return this.ipcRenderer.invoke("get-node-path");
-  }
-
-  public async checkAiRules(params: {
-    path: string;
-  }): Promise<{ exists: boolean }> {
-    return this.ipcRenderer.invoke("check-ai-rules", params);
-  }
-
   public async getLatestSecurityReview(
     appId: number,
   ): Promise<SecurityReviewResult> {
     return this.ipcRenderer.invoke("get-latest-security-review", appId);
-  }
-
-  public async importApp(params: ImportAppParams): Promise<ImportAppResult> {
-    return this.ipcRenderer.invoke("import-app", params);
   }
 
   async checkAppName(params: {
@@ -2090,10 +1966,6 @@ export class IpcClient {
         showError(err);
         options.onError(String(err));
       });
-  }
-
-  public async takeScreenshot(): Promise<void> {
-    await this.ipcRenderer.invoke("take-screenshot");
   }
 
   public cancelHelpChat(sessionId: string): void {
