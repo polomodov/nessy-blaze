@@ -32,3 +32,17 @@ export function hasStoredAuthContext(
 
   return AUTH_STORAGE_KEYS.some((key) => hasNonEmptyValue(targetStorage, key));
 }
+
+export function clearStoredAuthContext(
+  storage?: Pick<Storage, "removeItem"> | null,
+) {
+  const targetStorage =
+    storage ?? (typeof window !== "undefined" ? window.localStorage : null);
+  if (!targetStorage || typeof targetStorage.removeItem !== "function") {
+    return;
+  }
+
+  for (const key of AUTH_STORAGE_KEYS) {
+    targetStorage.removeItem(key);
+  }
+}

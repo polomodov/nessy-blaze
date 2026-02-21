@@ -74,6 +74,30 @@ interface InvokeMeta {
 
 type InvokeHandler = (args: unknown[], meta?: InvokeMeta) => Promise<unknown>;
 
+interface OAuth2TokenResponse {
+  access_token?: string;
+  id_token?: string;
+  refresh_token?: string;
+  token_type?: string;
+  expires_in?: number | string;
+  scope?: string;
+  error?: string;
+  error_description?: string;
+}
+
+interface OAuth2ResolvedConfig {
+  enabled: boolean;
+  providerName: string;
+  authorizationUrl: string | null;
+  tokenUrl: string | null;
+  clientId: string | null;
+  clientSecret: string | null;
+  scope: string;
+  redirectUri: string | null;
+  extraAuthParams: Record<string, string>;
+  extraTokenParams: Record<string, string>;
+}
+
 const DEFAULT_USER_SETTINGS: UserSettings = UserSettingsSchema.parse({
   selectedModel: {
     name: "auto",
@@ -97,6 +121,119 @@ const DEFAULT_USER_SETTINGS: UserSettings = UserSettingsSchema.parse({
   isRunning: false,
   enableNativeGit: true,
 });
+
+function readRuntimeEnv(name: string): string | undefined {
+  return process.env[name] ?? getEnvVar(name);
+}
+
+function readBooleanEnv(name: string, defaultValue: boolean): boolean {
+  const raw = readRuntimeEnv(name);
+  if (!raw) {
+    return defaultValue;
+  }
+
+  const normalized = raw.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+  return defaultValue;
+}
+
+function parseOAuthExtraParams(
+  value: string | undefined,
+): Record<string, string> {
+  if (!value) {
+    return {};
+  }
+
+  const source = value.trim();
+  if (!source) {
+    return {};
+  }
+
+  const searchParams = new URLSearchParams(
+    source.startsWith("?") ? source.slice(1) : source,
+  );
+  const result: Record<string, string> = {};
+
+  for (const [key, rawValue] of searchParams.entries()) {
+    const trimmedKey = key.trim();
+    if (!trimmedKey) {
+      continue;
+    }
+    result[trimmedKey] = rawValue;
+  }
+
+  return result;
+}
+
+function toNullableTrimmed(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function parseNullableInt(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
+function resolveOAuth2Config(): OAuth2ResolvedConfig {
+  const clientId = toNullableTrimmed(readRuntimeEnv("AUTH_OAUTH2_CLIENT_ID"));
+  const clientSecret = toNullableTrimmed(
+    readRuntimeEnv("AUTH_OAUTH2_CLIENT_SECRET"),
+  );
+  const authorizationUrl =
+    toNullableTrimmed(readRuntimeEnv("AUTH_OAUTH2_AUTHORIZATION_URL")) ??
+    "https://accounts.google.com/o/oauth2/v2/auth";
+  const tokenUrl =
+    toNullableTrimmed(readRuntimeEnv("AUTH_OAUTH2_TOKEN_URL")) ??
+    "https://oauth2.googleapis.com/token";
+  const redirectUri = toNullableTrimmed(
+    readRuntimeEnv("AUTH_OAUTH2_REDIRECT_URI"),
+  );
+  const providerName =
+    toNullableTrimmed(readRuntimeEnv("AUTH_OAUTH2_PROVIDER_NAME")) ?? "Google";
+  const scope =
+    toNullableTrimmed(readRuntimeEnv("AUTH_OAUTH2_SCOPE")) ??
+    "openid profile email";
+  const extraAuthParams = parseOAuthExtraParams(
+    readRuntimeEnv("AUTH_OAUTH2_AUTH_EXTRA_PARAMS"),
+  );
+  const extraTokenParams = parseOAuthExtraParams(
+    readRuntimeEnv("AUTH_OAUTH2_TOKEN_EXTRA_PARAMS"),
+  );
+
+  const enabledFromEnv = readBooleanEnv("AUTH_OAUTH2_ENABLED", true);
+  const enabled =
+    enabledFromEnv &&
+    Boolean(clientId) &&
+    Boolean(authorizationUrl) &&
+    Boolean(tokenUrl);
+
+  return {
+    enabled,
+    providerName,
+    authorizationUrl,
+    tokenUrl,
+    clientId,
+    clientSecret,
+    scope,
+    redirectUri,
+    extraAuthParams,
+    extraTokenParams,
+  };
+}
 
 function toIsoDate(
   value: Date | number | string | null | undefined,
@@ -928,6 +1065,99 @@ const handlers: Record<string, InvokeHandler> = {
       throw new Error("Invalid settings payload");
     }
     return writeUserSettings(nextSettings);
+  },
+
+  async "get-oauth2-config"() {
+    const config = resolveOAuth2Config();
+    return {
+      enabled: config.enabled,
+      providerName: config.providerName,
+      authorizationUrl: config.authorizationUrl,
+      clientId: config.clientId,
+      scope: config.scope,
+      redirectUri: config.redirectUri,
+      extraAuthParams: config.extraAuthParams,
+    };
+  },
+
+  async "exchange-oauth2-code"(args) {
+    const [payload] = args as [
+      | { code?: string; codeVerifier?: string; redirectUri?: string }
+      | undefined,
+    ];
+    const code = payload?.code?.trim();
+    const codeVerifier = payload?.codeVerifier?.trim();
+    if (!code) {
+      throw new Error("Missing OAuth2 authorization code");
+    }
+    if (!codeVerifier) {
+      throw new Error("Missing OAuth2 code verifier");
+    }
+
+    const config = resolveOAuth2Config();
+    if (
+      !config.enabled ||
+      !config.clientId ||
+      !config.tokenUrl ||
+      !config.authorizationUrl
+    ) {
+      throw new Error("OAuth2 is not configured");
+    }
+
+    const redirectUri =
+      payload?.redirectUri?.trim() ||
+      config.redirectUri ||
+      "http://localhost:5173/auth";
+
+    const tokenRequestParams = new URLSearchParams({
+      grant_type: "authorization_code",
+      code,
+      client_id: config.clientId,
+      code_verifier: codeVerifier,
+      redirect_uri: redirectUri,
+    });
+    if (config.clientSecret) {
+      tokenRequestParams.set("client_secret", config.clientSecret);
+    }
+    for (const [key, value] of Object.entries(config.extraTokenParams)) {
+      tokenRequestParams.set(key, value);
+    }
+
+    const tokenResponse = await fetch(config.tokenUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body: tokenRequestParams.toString(),
+    });
+
+    const rawResponseText = await tokenResponse.text();
+    let parsedResponse: OAuth2TokenResponse = {};
+    if (rawResponseText.trim()) {
+      try {
+        parsedResponse = JSON.parse(rawResponseText) as OAuth2TokenResponse;
+      } catch {
+        throw new Error("OAuth2 token endpoint returned invalid JSON");
+      }
+    }
+
+    if (!tokenResponse.ok) {
+      const description =
+        parsedResponse.error_description?.trim() ||
+        parsedResponse.error?.trim() ||
+        `OAuth2 token exchange failed with status ${tokenResponse.status}`;
+      throw new Error(description);
+    }
+
+    return {
+      accessToken: parsedResponse.access_token?.trim() || null,
+      idToken: parsedResponse.id_token?.trim() || null,
+      refreshToken: parsedResponse.refresh_token?.trim() || null,
+      tokenType: parsedResponse.token_type?.trim() || null,
+      expiresIn: parseNullableInt(parsedResponse.expires_in),
+      scope: parsedResponse.scope?.trim() || null,
+    };
   },
 
   async "list-orgs"(_args, meta) {
@@ -2418,6 +2648,8 @@ const handlers: Record<string, InvokeHandler> = {
 const NON_DATABASE_CHANNELS = new Set([
   "get-user-settings",
   "set-user-settings",
+  "get-oauth2-config",
+  "exchange-oauth2-code",
   "get-app-version",
 ]);
 

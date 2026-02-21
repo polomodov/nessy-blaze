@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invokeIpcChannelOverHttp } from "./ipc_http_gateway";
 
 const hasDatabaseUrl = Boolean(
@@ -8,6 +8,18 @@ const hasDatabaseUrl = Boolean(
 );
 
 describe("invokeIpcChannelOverHttp", () => {
+  const envSnapshot = { ...process.env };
+
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+    process.env = { ...envSnapshot };
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    process.env = { ...envSnapshot };
+  });
+
   it("returns app version from package.json", async () => {
     const packageJsonPath = path.resolve(process.cwd(), "package.json");
     const packageJson = JSON.parse(
@@ -55,6 +67,117 @@ describe("invokeIpcChannelOverHttp", () => {
     await invokeIpcChannelOverHttp("set-user-settings", [
       { uiLanguage: initialLanguage },
     ]);
+  });
+
+  it("returns disabled OAuth2 config when not configured", async () => {
+    delete process.env.AUTH_OAUTH2_CLIENT_ID;
+    delete process.env.AUTH_OAUTH2_AUTHORIZATION_URL;
+    delete process.env.AUTH_OAUTH2_TOKEN_URL;
+
+    const result = (await invokeIpcChannelOverHttp(
+      "get-oauth2-config",
+      [],
+    )) as {
+      enabled: boolean;
+      providerName: string;
+    };
+
+    expect(result.enabled).toBe(false);
+    expect(result.providerName).toBe("Google");
+  });
+
+  it("returns OAuth2 config and exchanges authorization code", async () => {
+    process.env.AUTH_OAUTH2_ENABLED = "true";
+    process.env.AUTH_OAUTH2_CLIENT_ID = "client-123";
+    process.env.AUTH_OAUTH2_CLIENT_SECRET = "secret-123";
+    process.env.AUTH_OAUTH2_AUTHORIZATION_URL =
+      "https://oauth.example.com/auth";
+    process.env.AUTH_OAUTH2_TOKEN_URL = "https://oauth.example.com/token";
+    process.env.AUTH_OAUTH2_SCOPE = "openid profile email";
+    process.env.AUTH_OAUTH2_REDIRECT_URI = "http://localhost:5173/auth";
+    process.env.AUTH_OAUTH2_AUTH_EXTRA_PARAMS = "prompt=consent";
+    process.env.AUTH_OAUTH2_TOKEN_EXTRA_PARAMS = "audience=api";
+
+    const config = (await invokeIpcChannelOverHttp(
+      "get-oauth2-config",
+      [],
+    )) as {
+      enabled: boolean;
+      providerName: string;
+      authorizationUrl: string | null;
+      clientId: string | null;
+      scope: string;
+      redirectUri: string | null;
+      extraAuthParams: Record<string, string>;
+    };
+    expect(config).toEqual({
+      enabled: true,
+      providerName: "Google",
+      authorizationUrl: "https://oauth.example.com/auth",
+      clientId: "client-123",
+      scope: "openid profile email",
+      redirectUri: "http://localhost:5173/auth",
+      extraAuthParams: {
+        prompt: "consent",
+      },
+    });
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () =>
+        JSON.stringify({
+          access_token: "access-token",
+          id_token: "id-token",
+          refresh_token: "refresh-token",
+          token_type: "Bearer",
+          expires_in: 3600,
+          scope: "openid profile email",
+        }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const exchangeResult = (await invokeIpcChannelOverHttp(
+      "exchange-oauth2-code",
+      [
+        {
+          code: "code-123",
+          codeVerifier: "verifier-123",
+          redirectUri: "http://localhost:5173/auth",
+        },
+      ],
+    )) as {
+      accessToken: string | null;
+      idToken: string | null;
+      refreshToken: string | null;
+      tokenType: string | null;
+      expiresIn: number | null;
+      scope: string | null;
+    };
+    expect(exchangeResult).toEqual({
+      accessToken: "access-token",
+      idToken: "id-token",
+      refreshToken: "refresh-token",
+      tokenType: "Bearer",
+      expiresIn: 3600,
+      scope: "openid profile email",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith("https://oauth.example.com/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body: expect.any(String),
+    });
+    const body = String(fetchMock.mock.calls[0]?.[1]?.body ?? "");
+    expect(body).toContain("grant_type=authorization_code");
+    expect(body).toContain("code=code-123");
+    expect(body).toContain("code_verifier=verifier-123");
+    expect(body).toContain("client_id=client-123");
+    expect(body).toContain("client_secret=secret-123");
+    expect(body).toContain("audience=api");
   });
 
   (hasDatabaseUrl ? it : it.skip)(

@@ -62,6 +62,7 @@ describe("auth route guards", () => {
       value: localStorageMock,
       configurable: true,
     });
+    window.history.pushState({}, "", "/");
   });
 
   afterEach(() => {
@@ -89,6 +90,13 @@ describe("auth route guards", () => {
     window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, "test-token");
     const thrown = runBeforeLoad(authRoute) as { options?: { to?: string } };
     expect(thrown?.options?.to).toBe("/");
+  });
+
+  it("allows auth route callback when credentials exist", () => {
+    window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, "test-token");
+    window.history.pushState({}, "", "/auth?code=oauth-code&state=oauth-state");
+    const thrown = runBeforeLoad(authRoute);
+    expect(thrown).toBeNull();
   });
 
   it("allows auth route when credentials are missing", () => {

@@ -11,8 +11,10 @@ import {
   Plus,
   Search,
   Sun,
+  LogOut,
 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { formatDistanceToNow } from "date-fns";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { ChangeApplyModeSelector } from "@/components/ChangeApplyModeSelector";
@@ -21,6 +23,11 @@ import { IpcClient } from "@/ipc/ipc_client";
 import { getConfiguredTenantScope } from "@/ipc/backend_client";
 import { getDateFnsLocale, getIntlLocaleCode } from "@/i18n/date_locale";
 import { TenantScopePicker } from "@/components/TenantScopePicker";
+import { clearStoredAuthContext } from "@/lib/auth_storage";
+import {
+  OAUTH2_CODE_VERIFIER_STORAGE_KEY,
+  OAUTH2_STATE_STORAGE_KEY,
+} from "@/lib/oauth2_flow";
 
 type WorkspaceProject = {
   id: number;
@@ -111,6 +118,8 @@ export function BlazeSidebar({
   onNewProject,
 }: BlazeSidebarProps) {
   const { language, t } = useI18n();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState(() => getConfiguredTenantScope());
   const dateFnsLocale = useMemo(() => getDateFnsLocale(language), [language]);
@@ -158,6 +167,14 @@ export function BlazeSidebar({
   const handleScopeChange = async () => {
     const nextScope = getConfiguredTenantScope();
     setScope(nextScope);
+  };
+
+  const handleSignOut = () => {
+    clearStoredAuthContext();
+    window.sessionStorage.removeItem(OAUTH2_STATE_STORAGE_KEY);
+    window.sessionStorage.removeItem(OAUTH2_CODE_VERIFIER_STORAGE_KEY);
+    queryClient.clear();
+    void navigate({ to: "/auth", replace: true });
   };
 
   let previousDate = "";
@@ -266,6 +283,15 @@ export function BlazeSidebar({
           </button>
 
           <LanguageSwitcher variant="compact" className="mb-1" />
+
+          <button
+            onClick={handleSignOut}
+            className="mb-1 flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground"
+            title={t("sidebar.title.signOut")}
+            aria-label={t("sidebar.aria.signOut")}
+          >
+            <LogOut size={16} />
+          </button>
 
           <button
             onClick={onToggleCollapse}
@@ -399,6 +425,13 @@ export function BlazeSidebar({
                 {scope.orgId}/{scope.workspaceId}
               </div>
             </div>
+            <button
+              onClick={handleSignOut}
+              className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border/80 px-2.5 py-2 text-xs text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground"
+            >
+              <LogOut size={12} />
+              {t("sidebar.button.signOut")}
+            </button>
           </div>
         </>
       )}

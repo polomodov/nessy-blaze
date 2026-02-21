@@ -2,6 +2,10 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  AUTH_TOKEN_STORAGE_KEY,
+  DEV_USER_EMAIL_STORAGE_KEY,
+} from "@/ipc/backend_client";
 import { BlazeSidebar } from "./BlazeSidebar";
 
 const { listAppsMock } = vi.hoisted(() => ({
@@ -16,6 +20,20 @@ const { settingsRef, updateSettingsMock } = vi.hoisted(() => ({
   },
   updateSettingsMock: vi.fn(),
 }));
+
+const { navigateMock } = vi.hoisted(() => ({
+  navigateMock: vi.fn(),
+}));
+
+vi.mock("@tanstack/react-router", async () => {
+  const actual = await vi.importActual<typeof import("@tanstack/react-router")>(
+    "@tanstack/react-router",
+  );
+  return {
+    ...actual,
+    useNavigate: () => navigateMock,
+  };
+});
 
 vi.mock("@/ipc/ipc_client", () => ({
   IpcClient: {
@@ -33,6 +51,32 @@ vi.mock("@/hooks/useSettings", () => ({
     updateSettings: updateSettingsMock,
   }),
 }));
+
+function createStorageMock(
+  initialValues: Record<string, string> = {},
+): Storage {
+  const store = new Map<string, string>(Object.entries(initialValues));
+  return {
+    get length() {
+      return store.size;
+    },
+    clear() {
+      store.clear();
+    },
+    getItem(key: string) {
+      return store.get(key) ?? null;
+    },
+    key(index: number) {
+      return Array.from(store.keys())[index] ?? null;
+    },
+    removeItem(key: string) {
+      store.delete(key);
+    },
+    setItem(key: string, value: string) {
+      store.set(key, value);
+    },
+  } as Storage;
+}
 
 function renderSidebar(
   props: Partial<ComponentProps<typeof BlazeSidebar>> = {},
@@ -67,6 +111,10 @@ function renderSidebar(
 
 describe("BlazeSidebar", () => {
   beforeEach(() => {
+    Object.defineProperty(window, "localStorage", {
+      value: createStorageMock(),
+      configurable: true,
+    });
     vi.clearAllMocks();
     settingsRef.current = { autoApproveChanges: true };
     updateSettingsMock.mockResolvedValue({ autoApproveChanges: true });
@@ -162,5 +210,17 @@ describe("BlazeSidebar", () => {
     expect(updateSettingsMock).toHaveBeenCalledWith({
       autoApproveChanges: false,
     });
+  });
+
+  it("signs out from sidebar", () => {
+    window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, "token-1");
+    window.localStorage.setItem(DEV_USER_EMAIL_STORAGE_KEY, "dev@example.com");
+    renderSidebar();
+
+    fireEvent.click(screen.getByRole("button", { name: "Выйти" }));
+
+    expect(window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)).toBeNull();
+    expect(window.localStorage.getItem(DEV_USER_EMAIL_STORAGE_KEY)).toBeNull();
+    expect(navigateMock).toHaveBeenCalledWith({ to: "/auth", replace: true });
   });
 });

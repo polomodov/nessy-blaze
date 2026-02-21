@@ -24,6 +24,7 @@ export const en = {
   "auth.description.register": "Create a new account and continue to the app",
   "auth.description.forgot": "Enter your email to receive a reset link",
   "auth.button.google": "Continue with Google",
+  "auth.button.googleLoading": "Redirecting...",
   "auth.separator.or": "or",
   "auth.label.name": "Name",
   "auth.label.email": "Email",
@@ -45,13 +46,30 @@ export const en = {
   "auth.button.createOne": "Create one",
   "auth.button.backToSignIn": "Back to sign in",
   "auth.note.localStorage":
-    "Auth page currently stores credentials locally for client-server mode.",
+    "OAuth2 stores a Bearer token in local storage for authenticated API requests.",
   "auth.toast.passwordResetNotWired": "Password reset flow is not wired yet.",
   "auth.toast.emailRequired": "Email is required.",
   "auth.toast.passwordRequired": "Password is required.",
   "auth.toast.nameRequired": "Name is required.",
   "auth.toast.credentialsSaved": "Credentials saved.",
   "auth.toast.googleSignedIn": "Signed in with Google.",
+  "auth.toast.oauthConfigLoadFailed": "Failed to load OAuth2 configuration.",
+  "auth.toast.oauthNotConfigured":
+    "OAuth2 login is not configured on this environment.",
+  "auth.toast.oauthStartFailed": "Failed to start OAuth2 login.",
+  "auth.toast.oauthProviderError":
+    "OAuth2 provider returned an error: {message}",
+  "auth.toast.oauthCodeMissing":
+    "OAuth2 callback is missing the authorization code.",
+  "auth.toast.oauthStateMismatch":
+    "OAuth2 state validation failed. Please try signing in again.",
+  "auth.toast.oauthVerifierMissing":
+    "OAuth2 PKCE verifier is missing. Please retry sign-in.",
+  "auth.toast.oauthExchangeFailed":
+    "Failed to exchange OAuth2 authorization code.",
+  "auth.toast.oauthTokenMissing":
+    "OAuth2 token response does not contain a usable token.",
+  "auth.toast.oauthSignedIn": "Signed in successfully.",
   "auth.toast.credentialsCleared": "Saved credentials cleared.",
 
   "sidebar.date.unknown": "Unknown date",
@@ -70,7 +88,10 @@ export const en = {
   "sidebar.title.switchToDark": "Switch to dark theme",
   "sidebar.aria.expand": "Expand panel",
   "sidebar.title.expand": "Expand panel",
+  "sidebar.aria.signOut": "Sign out",
+  "sidebar.title.signOut": "Sign out",
   "sidebar.button.newProject": "New project",
+  "sidebar.button.signOut": "Sign out",
   "sidebar.search.placeholder": "Search projects...",
   "sidebar.loadingProjects": "Loading projects...",
   "sidebar.failedProjects": "Failed to load projects history",

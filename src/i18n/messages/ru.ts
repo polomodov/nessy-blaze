@@ -28,6 +28,7 @@ export const ru = {
   "auth.description.register": "Создайте новый аккаунт и продолжите работу",
   "auth.description.forgot": "Введите email, чтобы получить ссылку для сброса",
   "auth.button.google": "Продолжить с Google",
+  "auth.button.googleLoading": "Перенаправляем...",
   "auth.separator.or": "или",
   "auth.label.name": "Имя",
   "auth.label.email": "Email",
@@ -49,7 +50,7 @@ export const ru = {
   "auth.button.createOne": "Создать",
   "auth.button.backToSignIn": "Вернуться ко входу",
   "auth.note.localStorage":
-    "Страница авторизации пока хранит данные локально для client-server режима.",
+    "OAuth2 сохраняет Bearer токен в localStorage для авторизованных API-запросов.",
   "auth.toast.passwordResetNotWired":
     "Сценарий сброса пароля пока не подключен.",
   "auth.toast.emailRequired": "Email обязателен.",
@@ -57,6 +58,21 @@ export const ru = {
   "auth.toast.nameRequired": "Имя обязательно.",
   "auth.toast.credentialsSaved": "Данные входа сохранены.",
   "auth.toast.googleSignedIn": "Вход через Google выполнен.",
+  "auth.toast.oauthConfigLoadFailed":
+    "Не удалось загрузить конфигурацию OAuth2.",
+  "auth.toast.oauthNotConfigured": "OAuth2 вход не настроен в этом окружении.",
+  "auth.toast.oauthStartFailed": "Не удалось запустить OAuth2 вход.",
+  "auth.toast.oauthProviderError": "OAuth2 провайдер вернул ошибку: {message}",
+  "auth.toast.oauthCodeMissing":
+    "В callback OAuth2 отсутствует authorization code.",
+  "auth.toast.oauthStateMismatch":
+    "Проверка OAuth2 state не прошла. Повторите вход.",
+  "auth.toast.oauthVerifierMissing":
+    "Отсутствует OAuth2 PKCE verifier. Повторите вход.",
+  "auth.toast.oauthExchangeFailed":
+    "Не удалось обменять OAuth2 authorization code на токен.",
+  "auth.toast.oauthTokenMissing": "OAuth2 ответ не содержит пригодного токена.",
+  "auth.toast.oauthSignedIn": "Вход выполнен успешно.",
   "auth.toast.credentialsCleared": "Сохраненные данные очищены.",
 
   "sidebar.date.unknown": "Дата неизвестна",
@@ -75,7 +91,10 @@ export const ru = {
   "sidebar.title.switchToDark": "Переключить на темную тему",
   "sidebar.aria.expand": "Развернуть панель",
   "sidebar.title.expand": "Развернуть панель",
+  "sidebar.aria.signOut": "Выйти",
+  "sidebar.title.signOut": "Выйти",
   "sidebar.button.newProject": "Новый проект",
+  "sidebar.button.signOut": "Выйти",
   "sidebar.search.placeholder": "Поиск проектов...",
   "sidebar.loadingProjects": "Загрузка проектов...",
   "sidebar.failedProjects": "Не удалось загрузить историю проектов",

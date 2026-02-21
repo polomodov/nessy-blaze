@@ -139,6 +139,30 @@ describe("createApiV1Middleware", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it("routes OAuth2 config endpoint without auth context", async () => {
+    resolveRequestContextMock.mockClear();
+    const invoke = vi.fn().mockResolvedValue({ enabled: true });
+    const middleware = createApiV1Middleware(invoke, {
+      resolveRequestContext: resolveRequestContextMock as any,
+    });
+    const req = createMockRequest({
+      method: "GET",
+      url: "/api/v1/auth/oauth/config",
+    });
+    const { response, getBody } = createMockResponse();
+    const next = vi.fn();
+
+    await middleware(req, response, next);
+
+    expect(invoke).toHaveBeenCalledWith("get-oauth2-config", [], {
+      requestContext: undefined,
+    });
+    expect(resolveRequestContextMock).not.toHaveBeenCalled();
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(getBody())).toEqual({ data: { enabled: true } });
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it("routes scoped path /api/v1/orgs/:orgId/workspaces/:workspaceId/apps", async () => {
     const invoke = vi.fn().mockResolvedValue({ apps: [] });
     const middleware = createApiV1Middleware(invoke, {

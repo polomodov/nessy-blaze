@@ -424,6 +424,24 @@ const SCOPED_ROUTES: RouteDefinition[] = [
   },
   {
     method: "GET",
+    pattern: /^\/api\/v1\/auth\/oauth\/config$/,
+    build: () => ({
+      channel: "get-oauth2-config",
+      args: [],
+      requiresAuth: false,
+    }),
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/v1\/auth\/oauth\/exchange$/,
+    build: (_url, _match, body) => ({
+      channel: "exchange-oauth2-code",
+      args: [body],
+      requiresAuth: false,
+    }),
+  },
+  {
+    method: "GET",
     pattern: /^\/api\/v1\/app\/version$/,
     build: () => ({
       channel: "get-app-version",

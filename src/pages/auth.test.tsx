@@ -104,11 +104,18 @@ function createLocalStorageMock(
 describe("AuthPage", () => {
   beforeEach(() => {
     const localStorageMock = createLocalStorageMock();
+    const sessionStorageMock = createLocalStorageMock();
     vi.stubGlobal("localStorage", localStorageMock);
+    vi.stubGlobal("sessionStorage", sessionStorageMock);
     Object.defineProperty(window, "localStorage", {
       value: localStorageMock,
       configurable: true,
     });
+    Object.defineProperty(window, "sessionStorage", {
+      value: sessionStorageMock,
+      configurable: true,
+    });
+    window.history.pushState({}, "", "/auth");
     vi.clearAllMocks();
     settingsRef.current = { uiLanguage: "ru" };
     updateSettingsMock.mockResolvedValue({ uiLanguage: "ru" });
@@ -145,27 +152,118 @@ describe("AuthPage", () => {
     expect(navigateMock).toHaveBeenCalledWith({ to: "/" });
   });
 
-  it("allows Google sign-in without pre-filled email", () => {
+  it("starts OAuth2 flow when clicking Google sign in", async () => {
+    const assignMock = vi.fn();
+    vi.spyOn(window.location, "assign").mockImplementation(assignMock);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: {
+            enabled: true,
+            providerName: "Google",
+            authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+            clientId: "client-123",
+            scope: "openid profile email",
+            redirectUri: "http://localhost:5173/auth",
+            extraAuthParams: { prompt: "consent" },
+          },
+        }),
+      }),
+    );
+
     renderAuthPage();
 
     fireEvent.click(
       screen.getByRole("button", { name: "Продолжить с Google" }),
     );
 
-    expect(window.localStorage.getItem(DEV_USER_EMAIL_STORAGE_KEY)).toBe(
-      "google-user@local.blaze",
+    await waitFor(() => {
+      expect(assignMock).toHaveBeenCalledTimes(1);
+    });
+
+    const oauthState = window.sessionStorage.getItem("blaze.auth.oauth2.state");
+    const oauthVerifier = window.sessionStorage.getItem(
+      "blaze.auth.oauth2.code_verifier",
     );
-    expect(window.localStorage.getItem(DEV_USER_NAME_STORAGE_KEY)).toBe(
-      "Google User",
+    expect(oauthState).toBeTruthy();
+    expect(oauthVerifier).toBeTruthy();
+
+    const redirectUrl = String(assignMock.mock.calls[0][0]);
+    const parsed = new URL(redirectUrl);
+    expect(parsed.origin).toBe("https://accounts.google.com");
+    expect(parsed.searchParams.get("response_type")).toBe("code");
+    expect(parsed.searchParams.get("client_id")).toBe("client-123");
+    expect(parsed.searchParams.get("code_challenge_method")).toBe("S256");
+    expect(parsed.searchParams.get("state")).toBeTruthy();
+    expect(parsed.searchParams.get("prompt")).toBe("consent");
+  });
+
+  it("handles OAuth2 callback and stores returned token", async () => {
+    const expectedState = "state-123";
+    const expectedVerifier = "verifier-123";
+    window.sessionStorage.setItem("blaze.auth.oauth2.state", expectedState);
+    window.sessionStorage.setItem(
+      "blaze.auth.oauth2.code_verifier",
+      expectedVerifier,
     );
-    expect(window.localStorage.getItem(DEV_USER_SUB_STORAGE_KEY)).toBe(
-      "google-user",
+    window.history.pushState(
+      {},
+      "",
+      `/auth?code=oauth-code&state=${expectedState}`,
     );
-    expect(toastErrorMock).not.toHaveBeenCalled();
-    expect(toastSuccessMock).toHaveBeenCalledWith(
-      "Вход через Google выполнен.",
+
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            data: {
+              enabled: true,
+              providerName: "Google",
+              authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+              clientId: "client-123",
+              scope: "openid profile email",
+              redirectUri: "http://localhost:5173/auth",
+              extraAuthParams: {},
+            },
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            data: {
+              accessToken:
+                "eyJhbGciOiJub25lIn0.eyJzdWIiOiJvYXV0aC11c2VyIiwiZW1haWwiOiJvYXV0aEBleGFtcGxlLmNvbSIsIm5hbWUiOiJPQXV0aCBVc2VyIn0.sig",
+              idToken: null,
+              refreshToken: null,
+              tokenType: "Bearer",
+              expiresIn: 3600,
+              scope: "openid profile email",
+            },
+          }),
+        }),
     );
-    expect(navigateMock).toHaveBeenCalledWith({ to: "/" });
+
+    renderAuthPage();
+
+    await waitFor(() => {
+      expect(window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)).toBeTruthy();
+      expect(window.localStorage.getItem(DEV_USER_SUB_STORAGE_KEY)).toBe(
+        "oauth-user",
+      );
+      expect(window.localStorage.getItem(DEV_USER_EMAIL_STORAGE_KEY)).toBe(
+        "oauth@example.com",
+      );
+      expect(window.localStorage.getItem(DEV_USER_NAME_STORAGE_KEY)).toBe(
+        "OAuth User",
+      );
+      expect(toastSuccessMock).toHaveBeenCalledWith("Вход выполнен успешно.");
+      expect(navigateMock).toHaveBeenCalledWith({ to: "/" });
+    });
   });
 
   it("clears saved credentials", () => {

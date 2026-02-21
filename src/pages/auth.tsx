@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
@@ -25,6 +25,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { useI18n } from "@/contexts/I18nContext";
+import { clearStoredAuthContext } from "@/lib/auth_storage";
+import type {
+  OAuth2PublicConfig,
+  OAuth2TokenExchangeResult,
+} from "@/lib/oauth2_flow";
+import {
+  OAUTH2_CODE_VERIFIER_STORAGE_KEY,
+  OAUTH2_STATE_STORAGE_KEY,
+  buildOAuth2AuthorizationUrl,
+  createOAuth2State,
+  createPkceCodeChallenge,
+  createPkceCodeVerifier,
+  hasOAuth2CallbackParams,
+  parseJwtClaimsUnsafe,
+} from "@/lib/oauth2_flow";
 import {
   AUTH_TOKEN_STORAGE_KEY,
   DEV_USER_EMAIL_STORAGE_KEY,
@@ -34,11 +49,19 @@ import {
 
 type AuthMode = "login" | "register" | "forgot";
 
+const OAUTH2_CONFIG_ENDPOINT = "/api/v1/auth/oauth/config";
+const OAUTH2_EXCHANGE_ENDPOINT = "/api/v1/auth/oauth/exchange";
+
 interface StoredAuthValues {
   token: string;
   email: string;
   name: string;
   sub: string;
+}
+
+interface ApiResponseEnvelope<T> {
+  data?: T;
+  error?: string;
 }
 
 function readStoredValue(key: string): string {
@@ -74,15 +97,51 @@ function saveAuthValues(values: StoredAuthValues) {
   saveStoredValue(DEV_USER_NAME_STORAGE_KEY, values.name);
 }
 
-function clearAuthValues() {
-  window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
-  window.localStorage.removeItem(DEV_USER_SUB_STORAGE_KEY);
-  window.localStorage.removeItem(DEV_USER_EMAIL_STORAGE_KEY);
-  window.localStorage.removeItem(DEV_USER_NAME_STORAGE_KEY);
+function saveOAuthSessionValue(key: string, value: string) {
+  if (value) {
+    window.sessionStorage.setItem(key, value);
+    return;
+  }
+  window.sessionStorage.removeItem(key);
 }
 
-const DEFAULT_GOOGLE_EMAIL = "google-user@local.blaze";
-const DEFAULT_GOOGLE_NAME = "Google User";
+function clearOAuthSessionValues() {
+  window.sessionStorage.removeItem(OAUTH2_STATE_STORAGE_KEY);
+  window.sessionStorage.removeItem(OAUTH2_CODE_VERIFIER_STORAGE_KEY);
+}
+
+function readOAuthSessionValue(key: string): string {
+  return window.sessionStorage.getItem(key)?.trim() ?? "";
+}
+
+function readOAuthCallbackSearchParams(): URLSearchParams | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  if (!hasOAuth2CallbackParams(window.location.search)) {
+    return null;
+  }
+  return new URLSearchParams(window.location.search);
+}
+
+function clearAuthSearchParamsInUrl() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.history.replaceState({}, "", "/auth");
+}
+
+function resolveOAuthToken(exchange: OAuth2TokenExchangeResult): string | null {
+  const idToken = exchange.idToken?.trim() ?? "";
+  if (idToken) {
+    return idToken;
+  }
+  const accessToken = exchange.accessToken?.trim() ?? "";
+  if (accessToken) {
+    return accessToken;
+  }
+  return null;
+}
 
 const GoogleIcon = () => (
   <svg viewBox="0 0 24 24" width="20" height="20" className="shrink-0">
@@ -126,6 +185,8 @@ export default function AuthPage() {
   const [name, setName] = useState(storedValues.name);
   const [token, setToken] = useState(storedValues.token);
   const [devSub, setDevSub] = useState(storedValues.sub);
+  const [isOAuthBusy, setIsOAuthBusy] = useState(false);
+  const oauthCallbackHandledRef = useRef(false);
 
   const persistCredentials = (
     overrides: Partial<StoredAuthValues> = {},
@@ -151,6 +212,168 @@ export default function AuthPage() {
       sub: nextSub,
     };
   };
+
+  const fetchOAuth2Config =
+    useCallback(async (): Promise<OAuth2PublicConfig> => {
+      const response = await fetch(OAUTH2_CONFIG_ENDPOINT, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+      const payload =
+        (await response.json()) as ApiResponseEnvelope<OAuth2PublicConfig>;
+      if (!response.ok || !payload?.data) {
+        throw new Error(
+          payload?.error || t("auth.toast.oauthConfigLoadFailed"),
+        );
+      }
+      return payload.data;
+    }, [t]);
+
+  const exchangeOAuth2Code = useCallback(
+    async (params: {
+      code: string;
+      codeVerifier: string;
+      redirectUri: string;
+    }): Promise<OAuth2TokenExchangeResult> => {
+      const response = await fetch(OAUTH2_EXCHANGE_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(params),
+      });
+      const payload =
+        (await response.json()) as ApiResponseEnvelope<OAuth2TokenExchangeResult>;
+      if (!response.ok || !payload?.data) {
+        throw new Error(payload?.error || t("auth.toast.oauthExchangeFailed"));
+      }
+      return payload.data;
+    },
+    [t],
+  );
+
+  const handleOAuthCallback = useCallback(async () => {
+    if (oauthCallbackHandledRef.current) {
+      return;
+    }
+
+    const callbackParams = readOAuthCallbackSearchParams();
+    if (!callbackParams) {
+      return;
+    }
+    oauthCallbackHandledRef.current = true;
+    setIsOAuthBusy(true);
+    setPassword("");
+
+    const oauthError = callbackParams.get("error")?.trim();
+    if (oauthError) {
+      const description =
+        callbackParams.get("error_description")?.trim() || oauthError;
+      toast.error(t("auth.toast.oauthProviderError", { message: description }));
+      clearOAuthSessionValues();
+      clearAuthSearchParamsInUrl();
+      setIsOAuthBusy(false);
+      return;
+    }
+
+    const code = callbackParams.get("code")?.trim();
+    const callbackState = callbackParams.get("state")?.trim() ?? "";
+    const expectedState = readOAuthSessionValue(OAUTH2_STATE_STORAGE_KEY);
+    const codeVerifier = readOAuthSessionValue(
+      OAUTH2_CODE_VERIFIER_STORAGE_KEY,
+    );
+
+    if (!code) {
+      toast.error(t("auth.toast.oauthCodeMissing"));
+      clearOAuthSessionValues();
+      clearAuthSearchParamsInUrl();
+      setIsOAuthBusy(false);
+      return;
+    }
+    if (!callbackState || !expectedState || callbackState !== expectedState) {
+      toast.error(t("auth.toast.oauthStateMismatch"));
+      clearOAuthSessionValues();
+      clearAuthSearchParamsInUrl();
+      setIsOAuthBusy(false);
+      return;
+    }
+    if (!codeVerifier) {
+      toast.error(t("auth.toast.oauthVerifierMissing"));
+      clearOAuthSessionValues();
+      clearAuthSearchParamsInUrl();
+      setIsOAuthBusy(false);
+      return;
+    }
+
+    try {
+      const oauthConfig = await fetchOAuth2Config();
+      if (!oauthConfig.enabled) {
+        throw new Error(t("auth.toast.oauthNotConfigured"));
+      }
+
+      const redirectUri =
+        oauthConfig.redirectUri?.trim() || `${window.location.origin}/auth`;
+      const exchangeResult = await exchangeOAuth2Code({
+        code,
+        codeVerifier,
+        redirectUri,
+      });
+      const selectedToken = resolveOAuthToken(exchangeResult);
+      if (!selectedToken) {
+        throw new Error(t("auth.toast.oauthTokenMissing"));
+      }
+
+      const claims = parseJwtClaimsUnsafe(selectedToken);
+      const nextEmail =
+        typeof claims?.email === "string" ? claims.email : email.trim();
+      const nextName =
+        typeof claims?.name === "string" ? claims.name : name.trim();
+      const nextSub =
+        typeof claims?.sub === "string"
+          ? claims.sub
+          : deriveDevSub(nextEmail, nextName);
+
+      const savedValues = persistCredentials({
+        token: selectedToken,
+        email: nextEmail,
+        name: nextName,
+        sub: nextSub,
+      });
+      setToken(savedValues.token);
+      setEmail(savedValues.email);
+      setName(savedValues.name);
+      setDevSub(savedValues.sub);
+
+      clearOAuthSessionValues();
+      clearAuthSearchParamsInUrl();
+      toast.success(t("auth.toast.oauthSignedIn"));
+      navigate({ to: "/" });
+    } catch (error) {
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : t("auth.toast.oauthExchangeFailed"),
+      );
+      clearOAuthSessionValues();
+      clearAuthSearchParamsInUrl();
+    } finally {
+      setIsOAuthBusy(false);
+    }
+  }, [
+    email,
+    exchangeOAuth2Code,
+    fetchOAuth2Config,
+    name,
+    navigate,
+    persistCredentials,
+    t,
+  ]);
+
+  useEffect(() => {
+    void handleOAuthCallback();
+  }, [handleOAuthCallback]);
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -179,26 +402,53 @@ export default function AuthPage() {
     navigate({ to: "/" });
   };
 
-  const handleGoogleLogin = () => {
-    const nextEmail = email.trim() || DEFAULT_GOOGLE_EMAIL;
-    const nextName = name.trim() || DEFAULT_GOOGLE_NAME;
-    const nextSub = devSub.trim() || deriveDevSub(nextEmail, nextName);
-    const storedValuesAfterGoogle = persistCredentials({
-      email: nextEmail,
-      name: nextName,
-      sub: nextSub,
-    });
+  const handleGoogleLogin = async () => {
+    if (isOAuthBusy) {
+      return;
+    }
 
-    setEmail(storedValuesAfterGoogle.email);
-    setName(storedValuesAfterGoogle.name);
-    setDevSub(storedValuesAfterGoogle.sub);
+    setIsOAuthBusy(true);
+    try {
+      const oauthConfig = await fetchOAuth2Config();
+      if (
+        !oauthConfig.enabled ||
+        !oauthConfig.authorizationUrl ||
+        !oauthConfig.clientId
+      ) {
+        toast.error(t("auth.toast.oauthNotConfigured"));
+        return;
+      }
 
-    toast.success(t("auth.toast.googleSignedIn"));
-    navigate({ to: "/" });
+      const codeVerifier = createPkceCodeVerifier();
+      const codeChallenge = await createPkceCodeChallenge(codeVerifier);
+      const state = createOAuth2State();
+      const redirectUri =
+        oauthConfig.redirectUri?.trim() || `${window.location.origin}/auth`;
+
+      saveOAuthSessionValue(OAUTH2_STATE_STORAGE_KEY, state);
+      saveOAuthSessionValue(OAUTH2_CODE_VERIFIER_STORAGE_KEY, codeVerifier);
+
+      const authorizationUrl = buildOAuth2AuthorizationUrl({
+        config: oauthConfig,
+        redirectUri,
+        state,
+        codeChallenge,
+      });
+      window.location.assign(authorizationUrl);
+    } catch (error) {
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : t("auth.toast.oauthStartFailed"),
+      );
+    } finally {
+      setIsOAuthBusy(false);
+    }
   };
 
   const handleClearCredentials = () => {
-    clearAuthValues();
+    clearStoredAuthContext();
+    clearOAuthSessionValues();
     setToken("");
     setDevSub("");
     setEmail("");
@@ -261,10 +511,15 @@ export default function AuthPage() {
               type="button"
               variant="outline"
               className="h-11 w-full gap-3 text-sm font-medium"
-              onClick={handleGoogleLogin}
+              onClick={() => {
+                void handleGoogleLogin();
+              }}
+              disabled={isOAuthBusy}
             >
               <GoogleIcon />
-              {t("auth.button.google")}
+              {isOAuthBusy
+                ? t("auth.button.googleLoading")
+                : t("auth.button.google")}
             </Button>
 
             {mode !== "forgot" && (
