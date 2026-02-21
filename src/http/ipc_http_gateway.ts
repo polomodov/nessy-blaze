@@ -14,6 +14,7 @@ import {
   messages,
   organizationMemberships,
   organizations,
+  versions,
   workspaceModelSettings,
   workspaceMemberships,
   workspaces,
@@ -1995,6 +1996,176 @@ const handlers: Record<string, InvokeHandler> = {
       initialCommitHash: chatRow.initialCommitHash ?? null,
       createdAt: toIsoDate(chatRow.createdAt),
       messages: messageRows.map(mapMessageRow),
+    };
+  },
+
+  async "list-versions"(args, meta) {
+    const [payload] = args as [{ appId?: number } | undefined];
+    const appId = payload?.appId;
+    if (typeof appId !== "number") {
+      throw new Error("Invalid app ID");
+    }
+
+    const scopedContext = getRequestContext(meta);
+    let appPath: string;
+    if (scopedContext) {
+      const app = await getAppByIdForScope(scopedContext, appId);
+      appPath = getBlazeAppPath(app.path);
+    } else {
+      if (isMultitenantEnforced()) {
+        throw new HttpError(
+          400,
+          "TENANT_SCOPE_REQUIRED",
+          "list-versions requires tenant scope in enforce mode",
+        );
+      }
+
+      const app = await db.query.apps.findFirst({
+        where: eq(apps.id, appId),
+        columns: {
+          path: true,
+        },
+      });
+      if (!app?.path) {
+        return [];
+      }
+      appPath = getBlazeAppPath(app.path);
+    }
+
+    if (!fs.existsSync(path.join(appPath, ".git"))) {
+      return [];
+    }
+
+    const commits = await git.log({
+      fs,
+      dir: appPath,
+      depth: 100_000,
+    });
+    const snapshots = await db.query.versions.findMany({
+      where: eq(versions.appId, appId),
+      columns: {
+        commitHash: true,
+        neonDbTimestamp: true,
+      },
+    });
+    const snapshotMap = new Map(
+      snapshots.map((snapshot) => [
+        snapshot.commitHash,
+        snapshot.neonDbTimestamp,
+      ]),
+    );
+
+    return commits.map((commit) => ({
+      oid: commit.oid,
+      message: commit.commit.message,
+      timestamp: commit.commit.author.timestamp,
+      dbTimestamp: snapshotMap.get(commit.oid) ?? null,
+    }));
+  },
+
+  async "checkout-version"(args, meta) {
+    const [payload] = args as [
+      | {
+          appId?: number;
+          versionId?: string;
+        }
+      | undefined,
+    ];
+    const appId = payload?.appId;
+    const versionId = payload?.versionId;
+
+    if (typeof appId !== "number") {
+      throw new Error("Invalid app ID");
+    }
+    if (typeof versionId !== "string" || versionId.length === 0) {
+      throw new Error("Invalid version ID");
+    }
+
+    return withLock(appId, async () => {
+      const scopedContext = getRequestContext(meta);
+      let appPath: string;
+      if (scopedContext) {
+        requireRoleForMutation(scopedContext);
+        const app = await getAppByIdForScope(scopedContext, appId);
+        appPath = getBlazeAppPath(app.path);
+      } else {
+        if (isMultitenantEnforced()) {
+          throw new HttpError(
+            400,
+            "TENANT_SCOPE_REQUIRED",
+            "checkout-version requires tenant scope in enforce mode",
+          );
+        }
+
+        const app = await db.query.apps.findFirst({
+          where: eq(apps.id, appId),
+          columns: {
+            path: true,
+          },
+        });
+        if (!app?.path) {
+          throw new Error("App not found");
+        }
+        appPath = getBlazeAppPath(app.path);
+      }
+
+      if (!fs.existsSync(path.join(appPath, ".git"))) {
+        throw new Error("Not a git repository");
+      }
+
+      await git.checkout({
+        fs,
+        dir: appPath,
+        ref: versionId,
+      });
+    });
+  },
+
+  async "get-current-branch"(args, meta) {
+    const [payload] = args as [{ appId?: number } | undefined];
+    const appId = payload?.appId;
+    if (typeof appId !== "number") {
+      throw new Error("Invalid app ID");
+    }
+
+    const scopedContext = getRequestContext(meta);
+    let appPath: string;
+    if (scopedContext) {
+      const app = await getAppByIdForScope(scopedContext, appId);
+      appPath = getBlazeAppPath(app.path);
+    } else {
+      if (isMultitenantEnforced()) {
+        throw new HttpError(
+          400,
+          "TENANT_SCOPE_REQUIRED",
+          "get-current-branch requires tenant scope in enforce mode",
+        );
+      }
+
+      const app = await db.query.apps.findFirst({
+        where: eq(apps.id, appId),
+        columns: {
+          path: true,
+        },
+      });
+      if (!app?.path) {
+        throw new Error("App not found");
+      }
+      appPath = getBlazeAppPath(app.path);
+    }
+
+    if (!fs.existsSync(path.join(appPath, ".git"))) {
+      throw new Error("Not a git repository");
+    }
+
+    const branch = await git.currentBranch({
+      fs,
+      dir: appPath,
+      fullname: false,
+    });
+
+    return {
+      branch: branch ?? "<no-branch>",
     };
   },
 

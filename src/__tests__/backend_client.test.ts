@@ -121,6 +121,73 @@ describe("backend_client transport", () => {
     );
   });
 
+  it("routes versions and branch channels to dedicated HTTP endpoints", async () => {
+    window.__BLAZE_REMOTE_CONFIG__ = {
+      backendClient: {
+        baseUrl: "https://api.example.com",
+      },
+    };
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: [{ oid: "abc", message: "Init", timestamp: 1 }],
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 204,
+          headers: {
+            "content-type": "application/json",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: { branch: "main" } }), {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createBackendClientTransport();
+
+    await client.invoke("list-versions", { appId: 7 });
+    await client.invoke("checkout-version", { appId: 7, versionId: "main" });
+    const branch = await client.invoke("get-current-branch", { appId: 7 });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "https://api.example.com/api/v1/orgs/me/workspaces/me/apps/7/versions",
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "https://api.example.com/api/v1/orgs/me/workspaces/me/apps/7/versions/checkout",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ appId: 7, versionId: "main" }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "https://api.example.com/api/v1/orgs/me/workspaces/me/apps/7/branch",
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(branch).toEqual({ branch: "main" });
+  });
+
   it("routes revert-version to dedicated HTTP endpoint", async () => {
     window.__BLAZE_REMOTE_CONFIG__ = {
       backendClient: {

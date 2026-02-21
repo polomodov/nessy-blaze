@@ -269,6 +269,82 @@ describe("createApiV1Middleware", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it("routes scoped app versions list endpoint", async () => {
+    const invoke = vi
+      .fn()
+      .mockResolvedValue([
+        { oid: "abc", message: "Init", timestamp: 1, dbTimestamp: null },
+      ]);
+    const middleware = createApiV1Middleware(invoke, {
+      resolveRequestContext: resolveRequestContextMock as any,
+    });
+    const req = createMockRequest({
+      method: "GET",
+      url: "/api/v1/orgs/org-1/workspaces/ws-1/apps/77/versions",
+    });
+    const { response, getBody } = createMockResponse();
+    const next = vi.fn();
+
+    await middleware(req, response, next);
+
+    expect(invoke).toHaveBeenCalledWith("list-versions", [{ appId: 77 }], {
+      requestContext,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(getBody())).toEqual({
+      data: [{ oid: "abc", message: "Init", timestamp: 1, dbTimestamp: null }],
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("routes scoped app checkout endpoint", async () => {
+    const invoke = vi.fn().mockResolvedValue(undefined);
+    const middleware = createApiV1Middleware(invoke, {
+      resolveRequestContext: resolveRequestContextMock as any,
+    });
+    const req = createMockRequest({
+      method: "POST",
+      url: "/api/v1/orgs/org-1/workspaces/ws-1/apps/77/versions/checkout",
+      body: JSON.stringify({ versionId: "main" }),
+    });
+    const { response } = createMockResponse();
+    const next = vi.fn();
+
+    await middleware(req, response, next);
+
+    expect(invoke).toHaveBeenCalledWith(
+      "checkout-version",
+      [{ appId: 77, versionId: "main" }],
+      {
+        requestContext,
+      },
+    );
+    expect(response.statusCode).toBe(204);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("routes scoped current branch endpoint", async () => {
+    const invoke = vi.fn().mockResolvedValue({ branch: "main" });
+    const middleware = createApiV1Middleware(invoke, {
+      resolveRequestContext: resolveRequestContextMock as any,
+    });
+    const req = createMockRequest({
+      method: "GET",
+      url: "/api/v1/orgs/org-1/workspaces/ws-1/apps/77/branch",
+    });
+    const { response, getBody } = createMockResponse();
+    const next = vi.fn();
+
+    await middleware(req, response, next);
+
+    expect(invoke).toHaveBeenCalledWith("get-current-branch", [{ appId: 77 }], {
+      requestContext,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(getBody())).toEqual({ data: { branch: "main" } });
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it("routes scoped app revert endpoint", async () => {
     const invoke = vi.fn().mockResolvedValue({ successMessage: "Restored" });
     const middleware = createApiV1Middleware(invoke, {

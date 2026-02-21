@@ -323,6 +323,61 @@ const SCOPED_ROUTES: RouteDefinition[] = [
     },
   },
   {
+    method: "GET",
+    pattern:
+      /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/apps\/(\d+)\/versions$/,
+    build: (_url, match) => {
+      const appId = parseNumber(match[3]);
+      if (appId == null) {
+        return null;
+      }
+      return {
+        channel: "list-versions",
+        args: [{ appId }],
+        tenantPath: { orgId: match[1], workspaceId: match[2] },
+        requiresAuth: true,
+      };
+    },
+  },
+  {
+    method: "POST",
+    pattern:
+      /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/apps\/(\d+)\/versions\/checkout$/,
+    build: (_url, match, body) => {
+      const appId = parseNumber(match[3]);
+      if (appId == null) {
+        return null;
+      }
+      const payload =
+        body && typeof body === "object"
+          ? (body as Record<string, unknown>)
+          : {};
+      return {
+        channel: "checkout-version",
+        args: [{ appId, ...payload }],
+        tenantPath: { orgId: match[1], workspaceId: match[2] },
+        requiresAuth: true,
+      };
+    },
+  },
+  {
+    method: "GET",
+    pattern:
+      /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/apps\/(\d+)\/branch$/,
+    build: (_url, match) => {
+      const appId = parseNumber(match[3]);
+      if (appId == null) {
+        return null;
+      }
+      return {
+        channel: "get-current-branch",
+        args: [{ appId }],
+        tenantPath: { orgId: match[1], workspaceId: match[2] },
+        requiresAuth: true,
+      };
+    },
+  },
+  {
     method: "POST",
     pattern:
       /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/apps\/(\d+)\/versions\/revert$/,
@@ -630,6 +685,58 @@ const LEGACY_ROUTES: RouteDefinition[] = [
       }
       return {
         channel: "add-to-favorite",
+        args: [{ appId }],
+        tenantPath: { orgId: "me", workspaceId: "me" },
+        requiresAuth: true,
+      };
+    },
+  },
+  {
+    method: "GET",
+    pattern: /^\/api\/v1\/apps\/(\d+)\/versions$/,
+    build: (_url, match) => {
+      const appId = parseNumber(match[1]);
+      if (appId == null) {
+        return null;
+      }
+      return {
+        channel: "list-versions",
+        args: [{ appId }],
+        tenantPath: { orgId: "me", workspaceId: "me" },
+        requiresAuth: true,
+      };
+    },
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/v1\/apps\/(\d+)\/versions\/checkout$/,
+    build: (_url, match, body) => {
+      const appId = parseNumber(match[1]);
+      if (appId == null) {
+        return null;
+      }
+      const payload =
+        body && typeof body === "object"
+          ? (body as Record<string, unknown>)
+          : {};
+      return {
+        channel: "checkout-version",
+        args: [{ appId, ...payload }],
+        tenantPath: { orgId: "me", workspaceId: "me" },
+        requiresAuth: true,
+      };
+    },
+  },
+  {
+    method: "GET",
+    pattern: /^\/api\/v1\/apps\/(\d+)\/branch$/,
+    build: (_url, match) => {
+      const appId = parseNumber(match[1]);
+      if (appId == null) {
+        return null;
+      }
+      return {
+        channel: "get-current-branch",
         args: [{ appId }],
         tenantPath: { orgId: "me", workspaceId: "me" },
         requiresAuth: true,

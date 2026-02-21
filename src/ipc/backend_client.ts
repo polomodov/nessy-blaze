@@ -539,6 +539,40 @@ function resolveApiRoute(
         body: params,
       };
     }
+    case "list-versions": {
+      const params = getFirstArg<{ appId?: number }>(args);
+      if (!params || typeof params.appId !== "number") {
+        return null;
+      }
+      return {
+        method: "GET",
+        path: `${scopedBasePath}/apps/${params.appId}/versions`,
+      };
+    }
+    case "checkout-version": {
+      const params = getFirstArg<{ appId?: number; versionId?: string }>(args);
+      if (!params || typeof params.appId !== "number") {
+        return null;
+      }
+      if (typeof params.versionId !== "string" || !params.versionId) {
+        return null;
+      }
+      return {
+        method: "POST",
+        path: `${scopedBasePath}/apps/${params.appId}/versions/checkout`,
+        body: params,
+      };
+    }
+    case "get-current-branch": {
+      const params = getFirstArg<{ appId?: number }>(args);
+      if (!params || typeof params.appId !== "number") {
+        return null;
+      }
+      return {
+        method: "GET",
+        path: `${scopedBasePath}/apps/${params.appId}/branch`,
+      };
+    }
     case "revert-version": {
       const params = getFirstArg<{
         appId?: number;
