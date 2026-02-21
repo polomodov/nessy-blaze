@@ -3,7 +3,6 @@
  * Each tool includes a zod schema, description, and execute function
  */
 
-import type { IpcMainInvokeEvent } from "electron";
 import crypto from "node:crypto";
 import { readSettings, writeSettings } from "@/main/settings";
 import { writeFileTool } from "./tools/write_file";
@@ -37,6 +36,8 @@ import {
 import { AgentToolConsent } from "@/lib/schemas";
 import { getSupabaseClientCode } from "@/supabase_admin/supabase_context";
 import { waitForAgentToolConsent } from "./agent_tool_consent";
+import { safeSend } from "@/ipc/utils/safe_sender";
+import type { ServerEventSink } from "@/ipc/utils/server_event_sink";
 export {
   clearPendingConsentsForChat,
   resolveAgentToolConsent,
@@ -120,7 +121,7 @@ export function getAllAgentToolConsents(): Record<
 }
 
 export async function requireAgentToolConsent(
-  event: IpcMainInvokeEvent,
+  eventSink: ServerEventSink,
   params: {
     chatId: number;
     toolName: AgentToolName;
@@ -136,7 +137,7 @@ export async function requireAgentToolConsent(
 
   // Ask renderer for a decision via event bridge
   const requestId = `agent:${params.toolName}:${crypto.randomUUID()}`;
-  (event.sender as any).send("agent-tool:consent-request", {
+  safeSend(eventSink, "agent-tool:consent-request", {
     requestId,
     ...params,
   });

@@ -7,7 +7,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { ChatMode } from "@/lib/schemas";
-import { isBlazeProEnabled, getEffectiveDefaultChatMode } from "@/lib/schemas";
+
+function normalizeDefaultMode(mode: ChatMode | undefined): "build" | "ask" {
+  return mode === "ask" ? "ask" : "build";
+}
 
 export function DefaultChatModeSelector() {
   const { settings, updateSettings } = useSettings();
@@ -16,25 +19,10 @@ export function DefaultChatModeSelector() {
     return null;
   }
 
-  const isProEnabled = isBlazeProEnabled(settings);
-  const effectiveDefault = getEffectiveDefaultChatMode(settings);
+  const effectiveDefault = normalizeDefaultMode(settings.defaultChatMode);
 
-  const handleDefaultChatModeChange = (value: ChatMode) => {
-    updateSettings({ defaultChatMode: value });
-  };
-
-  const getModeDisplayName = (mode: ChatMode) => {
-    switch (mode) {
-      case "build":
-        return "Build";
-      case "agent":
-        return "Build (MCP)";
-      case "local-agent":
-        return "Agent";
-      case "ask":
-      default:
-        throw new Error(`Unknown chat mode: ${mode}`);
-    }
+  const handleDefaultChatModeChange = (value: string) => {
+    updateSettings({ defaultChatMode: value === "ask" ? "ask" : "build" });
   };
 
   return (
@@ -51,19 +39,11 @@ export function DefaultChatModeSelector() {
           onValueChange={handleDefaultChatModeChange}
         >
           <SelectTrigger className="w-40" id="default-chat-mode">
-            <SelectValue>{getModeDisplayName(effectiveDefault)}</SelectValue>
+            <SelectValue>
+              {effectiveDefault === "ask" ? "Ask" : "Build"}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
-            {isProEnabled && (
-              <SelectItem value="local-agent">
-                <div className="flex flex-col items-start">
-                  <span className="font-medium">Agent</span>
-                  <span className="text-xs text-muted-foreground">
-                    Better at bigger tasks
-                  </span>
-                </div>
-              </SelectItem>
-            )}
             <SelectItem value="build">
               <div className="flex flex-col items-start">
                 <span className="font-medium">Build</span>
@@ -72,11 +52,11 @@ export function DefaultChatModeSelector() {
                 </span>
               </div>
             </SelectItem>
-            <SelectItem value="agent">
+            <SelectItem value="ask">
               <div className="flex flex-col items-start">
-                <span className="font-medium">Build with MCP</span>
+                <span className="font-medium">Ask</span>
                 <span className="text-xs text-muted-foreground">
-                  Build with tools (MCP)
+                  Ask questions about the app
                 </span>
               </div>
             </SelectItem>

@@ -1,8 +1,11 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { IpcMainInvokeEvent } from "electron";
 import { initializeDatabase } from "../db";
 import type { ChatResponseEnd, ChatStreamParams } from "../ipc/ipc_types";
 import { resolveConsent } from "../ipc/utils/mcp_consent";
+import {
+  NOOP_SERVER_EVENT_SINK,
+  type ServerEventSink,
+} from "../ipc/utils/server_event_sink";
 import { resolveAgentToolConsent } from "../pro/main/ipc/handlers/local_agent/agent_tool_consent";
 import { isMultitenantEnforced } from "./feature_flags";
 import { isHttpError } from "./http_errors";
@@ -20,7 +23,7 @@ const SCOPED_CANCEL_STREAM_ROUTE =
 const LEGACY_STREAM_ROUTE = /^\/api\/v1\/chats\/(\d+)\/stream$/;
 const LEGACY_CANCEL_STREAM_ROUTE = /^\/api\/v1\/chats\/(\d+)\/stream\/cancel$/;
 
-const activeHttpEvents = new Map<number, IpcMainInvokeEvent>();
+const activeHttpEvents = new Map<number, ServerEventSink>();
 
 type ChatStreamHandlerModule =
   typeof import("../ipc/handlers/chat_stream_handlers");
@@ -78,82 +81,73 @@ function writeSseEvent(
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
-function createNoopEvent(): IpcMainInvokeEvent {
-  return {
-    sender: {
-      send: () => {},
-      isDestroyed: () => false,
-      isCrashed: () => false,
-    } as any,
-  } as IpcMainInvokeEvent;
+function createNoopEvent(): ServerEventSink {
+  return NOOP_SERVER_EVENT_SINK;
 }
 
 function createHttpEvent(
   res: ServerResponse,
   onEnd: (payload: ChatResponseEnd) => void,
-): IpcMainInvokeEvent {
+): ServerEventSink {
   return {
-    sender: {
-      send: (channel: string, ...args: unknown[]) => {
-        const payload = args[0];
-        if (
-          channel === "chat:response:chunk" ||
-          channel === "chat:response:error" ||
-          channel === "chat:response:end"
-        ) {
-          writeSseEvent(
-            res,
-            channel as
-              | "chat:response:chunk"
-              | "chat:response:error"
-              | "chat:response:end",
-            payload,
-          );
+    send: (channel: string, ...args: unknown[]) => {
+      const payload = args[0];
+      if (
+        channel === "chat:response:chunk" ||
+        channel === "chat:response:error" ||
+        channel === "chat:response:end"
+      ) {
+        writeSseEvent(
+          res,
+          channel as
+            | "chat:response:chunk"
+            | "chat:response:error"
+            | "chat:response:end",
+          payload,
+        );
 
-          if (channel === "chat:response:end") {
-            onEnd(
-              (payload as ChatResponseEnd) ?? {
-                chatId: 0,
-                updatedFiles: false,
-              },
-            );
-          }
-          return;
-        }
-
-        if (
-          channel === "mcp:tool-consent-request" &&
-          payload &&
-          typeof payload === "object" &&
-          "requestId" in (payload as Record<string, unknown>)
-        ) {
-          const requestId = String(
-            (payload as Record<string, unknown>).requestId ?? "",
+        if (channel === "chat:response:end") {
+          onEnd(
+            (payload as ChatResponseEnd) ?? {
+              chatId: 0,
+              updatedFiles: false,
+            },
           );
-          if (requestId) {
-            resolveConsent(requestId, "decline");
-          }
-          return;
         }
+        return;
+      }
 
-        if (
-          channel === "agent-tool:consent-request" &&
-          payload &&
-          typeof payload === "object" &&
-          "requestId" in (payload as Record<string, unknown>)
-        ) {
-          const requestId = String(
-            (payload as Record<string, unknown>).requestId ?? "",
-          );
-          if (requestId) {
-            resolveAgentToolConsent(requestId, "decline");
-          }
+      if (
+        channel === "mcp:tool-consent-request" &&
+        payload &&
+        typeof payload === "object" &&
+        "requestId" in (payload as Record<string, unknown>)
+      ) {
+        const requestId = String(
+          (payload as Record<string, unknown>).requestId ?? "",
+        );
+        if (requestId) {
+          resolveConsent(requestId, "decline");
         }
-      },
-      isDestroyed: () => false,
-      isCrashed: () => false,
-    } as any,
-  } as IpcMainInvokeEvent;
+        return;
+      }
+
+      if (
+        channel === "agent-tool:consent-request" &&
+        payload &&
+        typeof payload === "object" &&
+        "requestId" in (payload as Record<string, unknown>)
+      ) {
+        const requestId = String(
+          (payload as Record<string, unknown>).requestId ?? "",
+        );
+        if (requestId) {
+          resolveAgentToolConsent(requestId, "decline");
+        }
+      }
+    },
+    isClosed: () => res.writableEnded || res.destroyed,
+  };
 }
 
 function parseRoute(
@@ -409,11 +403,11 @@ export function createChatStreamMiddleware(
       activeHttpEvents.set(routeState.chatId, event);
 
       let handleChatCancelRequest:
-        | ((event: IpcMainInvokeEvent, chatId: number) => Promise<unknown>)
+        | ((eventSink: ServerEventSink, chatId: number) => Promise<unknown>)
         | null = null;
       let handleChatStreamRequest:
         | ((
-            event: IpcMainInvokeEvent,
+            eventSink: ServerEventSink,
             req: ChatStreamParams,
           ) => Promise<unknown>)
         | null = null;

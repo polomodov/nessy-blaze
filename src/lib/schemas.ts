@@ -342,24 +342,14 @@ export function hasBlazeProKey(settings: UserSettings): boolean {
 }
 
 /**
- * Gets the effective default chat mode based on settings and pro status.
- * - If defaultChatMode is set and valid for the user's Pro status, use it
- * - If defaultChatMode is "local-agent" but user doesn't have Pro, fall back to "build"
- * - If defaultChatMode is NOT set but user has Blaze Pro enabled, treat as "local-agent"
- * - If not pro, treat as "build"
+ * Gets the effective default chat mode for the HTTP-only client-server runtime.
+ * Only "build" and "ask" are surfaced in UI; legacy values are normalized.
  */
 export function getEffectiveDefaultChatMode(settings: UserSettings): ChatMode {
-  if (settings.defaultChatMode) {
-    // "local-agent" requires Pro - fall back to "build" if user lost Pro access
-    if (
-      settings.defaultChatMode === "local-agent" &&
-      !isBlazeProEnabled(settings)
-    ) {
-      return "build";
-    }
-    return settings.defaultChatMode;
+  if (settings.defaultChatMode === "ask") {
+    return "ask";
   }
-  return isBlazeProEnabled(settings) ? "local-agent" : "build";
+  return "build";
 }
 
 export function isSupabaseConnected(settings: UserSettings | null): boolean {

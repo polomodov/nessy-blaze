@@ -5,7 +5,6 @@ import { cn } from "@/lib/utils";
 import { useI18n } from "@/contexts/I18nContext";
 import { IpcClient } from "@/ipc/ipc_client";
 import {
-  getConfiguredBackendMode,
   getConfiguredTenantScope,
   TENANT_ORG_ID_STORAGE_KEY,
   TENANT_WORKSPACE_ID_STORAGE_KEY,
@@ -33,12 +32,11 @@ export function TenantScopePicker({ onScopeChange }: TenantScopePickerProps) {
   const [createWorkspaceError, setCreateWorkspaceError] = useState<
     string | null
   >(null);
-  const isHttpBackend = getConfiguredBackendMode() === "http";
   const queryClient = useQueryClient();
 
   const organizationsQuery = useQuery<TenantOrganization[], Error>({
     queryKey: TENANT_QUERY_KEYS.organizations,
-    enabled: isHttpBackend,
+    enabled: true,
     retry: 0,
     queryFn: async () => {
       return IpcClient.getInstance().listOrganizations();
@@ -68,7 +66,7 @@ export function TenantScopePicker({ onScopeChange }: TenantScopePickerProps) {
 
   const workspacesQuery = useQuery<TenantWorkspace[], Error>({
     queryKey: TENANT_QUERY_KEYS.workspaces(activeOrgId ?? "none"),
-    enabled: isHttpBackend && Boolean(activeOrgId),
+    enabled: Boolean(activeOrgId),
     retry: 0,
     queryFn: async () => {
       return IpcClient.getInstance().listWorkspaces({
@@ -226,10 +224,6 @@ export function TenantScopePicker({ onScopeChange }: TenantScopePickerProps) {
     setCreateWorkspaceError(null);
     setNewWorkspaceName("");
   }, [activeOrgId]);
-
-  if (!isHttpBackend) {
-    return null;
-  }
 
   return (
     <div

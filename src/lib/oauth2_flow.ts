@@ -1,6 +1,7 @@
 export const OAUTH2_STATE_STORAGE_KEY = "blaze.auth.oauth2.state";
 export const OAUTH2_CODE_VERIFIER_STORAGE_KEY =
   "blaze.auth.oauth2.code_verifier";
+export const OAUTH2_REDIRECT_URI_STORAGE_KEY = "blaze.auth.oauth2.redirect_uri";
 
 export interface OAuth2PublicConfig {
   enabled: boolean;

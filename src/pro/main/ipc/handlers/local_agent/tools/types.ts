@@ -3,10 +3,10 @@
  */
 
 import { z } from "zod";
-import { IpcMainInvokeEvent } from "electron";
 import { jsonrepair } from "jsonrepair";
 import { AgentToolConsent } from "@/lib/schemas";
 import { AgentTodo } from "@/ipc/ipc_types";
+import type { ServerEventSink } from "@/ipc/utils/server_event_sink";
 
 // ============================================================================
 // XML Escape Helpers
@@ -32,7 +32,7 @@ export function escapeXmlContent(str: string): string {
 export type Todo = AgentTodo;
 
 export interface AgentContext {
-  event: IpcMainInvokeEvent;
+  eventSink: ServerEventSink;
   appId: number;
   appPath: string;
   chatId: number;

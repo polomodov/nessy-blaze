@@ -1,23 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { IpcMainInvokeEvent, WebContents } from "electron";
+import type { ServerEventSink } from "@/ipc/utils/server_event_sink";
 
 // ============================================================================
 // Test Fakes & Builders
 // ============================================================================
 
 /**
- * Creates a fake WebContents that records all sent messages
+ * Creates a fake event sink that records all sent messages
  */
-function createFakeWebContents() {
+function createFakeEventSink() {
   const sentMessages: Array<{ channel: string; args: unknown[] }> = [];
   return {
-    sender: {
-      isDestroyed: () => false,
-      isCrashed: () => false,
+    event: {
+      isClosed: () => false,
       send: (channel: string, ...args: unknown[]) => {
         sentMessages.push({ channel, args });
       },
-    } as unknown as WebContents,
+    } as ServerEventSink,
     sentMessages,
     getMessagesByChannel(channel: string) {
       return sentMessages.filter((m) => m.channel === channel);
@@ -26,14 +25,10 @@ function createFakeWebContents() {
 }
 
 /**
- * Creates a fake IPC event with a recordable sender
+ * Creates a fake event sink with recordable outbound messages
  */
 function createFakeEvent() {
-  const webContents = createFakeWebContents();
-  return {
-    event: { sender: webContents.sender } as IpcMainInvokeEvent,
-    ...webContents,
-  };
+  return createFakeEventSink();
 }
 
 /**
@@ -198,9 +193,12 @@ vi.mock("@/paths/paths", () => ({
 
 // Track IPC messages sent via safeSend
 vi.mock("@/ipc/utils/safe_sender", () => ({
-  safeSend: vi.fn((sender, channel, ...args) => {
-    if (sender && !sender.isDestroyed()) {
-      sender.send(channel, ...args);
+  safeSend: vi.fn((target, channel, ...args) => {
+    if (target && typeof target.send === "function") {
+      if (typeof target.isClosed === "function" && target.isClosed()) {
+        return;
+      }
+      target.send(channel, ...args);
     }
   }),
 }));

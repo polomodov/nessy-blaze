@@ -1,5 +1,6 @@
 import { safeSend } from "../utils/safe_sender";
 import { cleanFullResponse } from "../utils/cleanFullResponse";
+import type { ServerEventSink } from "../utils/server_event_sink";
 
 // e.g. [blaze-qa=add-dep]
 // Canned responses for test prompts
@@ -66,7 +67,7 @@ export function getTestResponse(prompt: string): string | null {
  * @returns The full streamed response
  */
 export async function streamTestResponse(
-  event: Electron.IpcMainInvokeEvent,
+  eventSink: ServerEventSink,
   chatId: number,
   testResponse: string,
   abortController: AbortController,
@@ -89,7 +90,7 @@ export async function streamTestResponse(
     fullResponse = cleanFullResponse(fullResponse);
 
     // Send the current accumulated response
-    safeSend(event.sender, "chat:response:chunk", {
+    safeSend(eventSink, "chat:response:chunk", {
       chatId: chatId,
       messages: [
         ...updatedChat.messages,

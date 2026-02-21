@@ -1,5 +1,4 @@
 import { v4 as uuidv4 } from "uuid";
-import type { IpcMainInvokeEvent } from "electron";
 import {
   ModelMessage,
   TextPart,
@@ -100,6 +99,10 @@ import {
   resolveUiLanguage,
 } from "../utils/response_language_prompt";
 import { extractActionableBlazeTags } from "../utils/actionable_blaze_tags";
+import {
+  createServerEventSinkFromEvent,
+  type ServerEventSink,
+} from "../utils/server_event_sink";
 
 type AsyncIterableStream<T> = AsyncIterable<T> & ReadableStream<T>;
 
@@ -441,7 +444,7 @@ async function processStreamChunks({
 }
 
 export async function handleChatStreamRequest(
-  event: IpcMainInvokeEvent,
+  eventSink: ServerEventSink,
   req: ChatStreamParams,
 ) {
   await initializeDatabase();
@@ -705,7 +708,7 @@ ${componentSnippet}
     }
 
     // Send the messages right away so that the loading state is shown for the message.
-    safeSend(event.sender, "chat:response:chunk", {
+    safeSend(eventSink, "chat:response:chunk", {
       chatId: req.chatId,
       messages: updatedChat.messages,
     });
@@ -719,7 +722,7 @@ ${componentSnippet}
     if (testResponse) {
       // For test prompts, use the dedicated function
       fullResponse = await streamTestResponse(
-        event,
+        eventSink,
         req.chatId,
         testResponse,
         abortController,
@@ -1203,7 +1206,7 @@ This conversation includes one or more image attachments. When the user uploads 
               `AI stream text error for request: ${requestIdPrefix} errorMessage=${errorMessage} error=`,
               error,
             );
-            event.sender.send("chat:response:error", {
+            safeSend(eventSink, "chat:response:error", {
               chatId: req.chatId,
               error: `${AI_STREAMING_ERROR_MESSAGE_PREFIX}${requestIdPrefix}${message}`,
             });
@@ -1248,7 +1251,7 @@ This conversation includes one or more image attachments. When the user uploads 
         }
 
         // Update the assistant message in the database
-        safeSend(event.sender, "chat:response:chunk", {
+        safeSend(eventSink, "chat:response:chunk", {
           chatId: req.chatId,
           messages: currentMessages,
         });
@@ -1272,7 +1275,7 @@ This conversation includes one or more image attachments. When the user uploads 
           readOnly: true,
         });
 
-        await handleLocalAgentStream(event, req, abortController, {
+        await handleLocalAgentStream(eventSink, req, abortController, {
           placeholderMessageId: placeholderAssistantMessage.id,
           systemPrompt: appendResponseLanguageInstruction(
             readOnlySystemPrompt,
@@ -1292,7 +1295,7 @@ This conversation includes one or more image attachments. When the user uploads 
         !mentionedAppsCodebases.length
       ) {
         const handleLocalAgentStream = await getHandleLocalAgentStream();
-        await handleLocalAgentStream(event, req, abortController, {
+        await handleLocalAgentStream(eventSink, req, abortController, {
           placeholderMessageId: placeholderAssistantMessage.id,
           systemPrompt,
           blazeRequestId: blazeRequestId ?? "[no-request-id]",
@@ -1301,7 +1304,7 @@ This conversation includes one or more image attachments. When the user uploads 
       }
 
       if (settings.selectedChatMode === "agent") {
-        const tools = await getMcpTools(event);
+        const tools = await getMcpTools(eventSink);
 
         const { fullStream } = await simpleStreamText({
           chatMessages: limitedHistoryChatMessages,
@@ -1769,7 +1772,7 @@ ${problemReport.problems
         },
       });
 
-      safeSend(event.sender, "chat:response:chunk", {
+      safeSend(eventSink, "chat:response:chunk", {
         chatId: req.chatId,
         messages: chat!.messages,
       });
@@ -1778,7 +1781,7 @@ ${problemReport.problems
         logger.error("AI apply error captured in diagnostics:", status.error);
       }
 
-      safeSend(event.sender, "chat:response:end", {
+      safeSend(eventSink, "chat:response:end", {
         chatId: req.chatId,
         updatedFiles: status.updatedFiles ?? false,
         extraFiles: status.extraFiles,
@@ -1790,7 +1793,7 @@ ${problemReport.problems
     return req.chatId;
   } catch (error) {
     logger.error("Error calling LLM:", error);
-    safeSend(event.sender, "chat:response:error", {
+    safeSend(eventSink, "chat:response:error", {
       chatId: req.chatId,
       error: `Sorry, there was an error processing your request: ${error}`,
     });
@@ -1824,7 +1827,7 @@ ${problemReport.problems
 }
 
 export async function handleChatCancelRequest(
-  event: IpcMainInvokeEvent,
+  eventSink: ServerEventSink,
   chatId: number,
 ) {
   await initializeDatabase();
@@ -1840,7 +1843,7 @@ export async function handleChatCancelRequest(
   }
 
   // Send the end event to the renderer
-  safeSend(event.sender, "chat:response:end", {
+  safeSend(eventSink, "chat:response:end", {
     chatId,
     updatedFiles: false,
   } satisfies ChatResponseEnd);
@@ -1850,8 +1853,12 @@ export async function handleChatCancelRequest(
 
 export function registerChatStreamHandlers() {
   const { ipcMain } = require("electron") as typeof import("electron");
-  ipcMain.handle("chat:stream", handleChatStreamRequest);
-  ipcMain.handle("chat:cancel", handleChatCancelRequest);
+  ipcMain.handle("chat:stream", (event, req: ChatStreamParams) =>
+    handleChatStreamRequest(createServerEventSinkFromEvent(event), req),
+  );
+  ipcMain.handle("chat:cancel", (event, chatId: number) =>
+    handleChatCancelRequest(createServerEventSinkFromEvent(event), chatId),
+  );
 }
 
 export function formatMessagesForSummary(
@@ -2052,7 +2059,7 @@ ${otherAppsCodebaseInfo}
 `;
 }
 
-async function getMcpTools(event: IpcMainInvokeEvent): Promise<ToolSet> {
+async function getMcpTools(eventSink: ServerEventSink): Promise<ToolSet> {
   const mcpToolSet: ToolSet = {};
   try {
     const servers = await db
@@ -2074,7 +2081,7 @@ async function getMcpTools(event: IpcMainInvokeEvent): Promise<ToolSet> {
                 : Array.isArray(args)
                   ? args.join(" ")
                   : JSON.stringify(args).slice(0, 500);
-            const ok = await requireMcpToolConsent(event, {
+            const ok = await requireMcpToolConsent(eventSink, {
               serverId: s.id,
               serverName: s.name,
               toolName: name,

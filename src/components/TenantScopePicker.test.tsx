@@ -2,7 +2,6 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  BACKEND_MODE_STORAGE_KEY,
   TENANT_ORG_ID_STORAGE_KEY,
   TENANT_WORKSPACE_ID_STORAGE_KEY,
 } from "@/ipc/backend_client";
@@ -74,7 +73,6 @@ describe("TenantScopePicker", () => {
     vi.unstubAllGlobals();
 
     const localStorageMock = createLocalStorageMock({
-      [BACKEND_MODE_STORAGE_KEY]: "http",
       [TENANT_ORG_ID_STORAGE_KEY]: "org_1",
       [TENANT_WORKSPACE_ID_STORAGE_KEY]: "ws_1",
     });

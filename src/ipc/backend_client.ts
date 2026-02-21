@@ -1,10 +1,6 @@
 type IpcChannelListener = (...args: unknown[]) => void;
 
-export type BackendMode = "ipc" | "http";
-
-export const BACKEND_MODE_STORAGE_KEY = "blaze.backend.mode";
 export const BACKEND_BASE_URL_STORAGE_KEY = "blaze.backend.base_url";
-export const BACKEND_IPC_FALLBACK_STORAGE_KEY = "blaze.backend.ipc_fallback";
 export const TENANT_ORG_ID_STORAGE_KEY = "blaze.tenant.org_id";
 export const TENANT_WORKSPACE_ID_STORAGE_KEY = "blaze.tenant.workspace_id";
 export const AUTH_TOKEN_STORAGE_KEY = "blaze.auth.token";
@@ -26,9 +22,7 @@ export interface BackendClient {
 }
 
 interface RemoteBackendConfig {
-  mode?: BackendMode;
   baseUrl?: string;
-  allowIpcFallback?: boolean;
   orgId?: string;
   workspaceId?: string;
   authToken?: string;
@@ -45,17 +39,6 @@ declare global {
   }
 }
 
-const FORCE_IPC_CHANNELS = new Set<string>([
-  "chat:stream",
-  "chat:cancel",
-  "respond-to-app-input",
-  "github:start-flow",
-  "help:chat:start",
-  "help:chat:cancel",
-]);
-
-const IPC_HTTP_INVOKE_PATH = "/api/ipc/invoke";
-
 interface HttpApiRequest {
   method: "GET" | "POST" | "PATCH" | "DELETE";
   path: string;
@@ -68,7 +51,23 @@ export interface TenantScope {
   workspaceId: string;
 }
 
+export class FeatureDisabledError extends Error {
+  public readonly code = "FEATURE_DISABLED";
+
+  constructor(
+    message: string,
+    public readonly channel?: string,
+  ) {
+    super(message);
+    this.name = "FeatureDisabledError";
+  }
+}
+
 function getLocalStorageValue(key: string): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
   const storage = window.localStorage as Partial<Storage> | undefined;
   if (storage && typeof storage.getItem === "function") {
     return storage.getItem(key);
@@ -82,10 +81,6 @@ function getLocalStorageValue(key: string): string | null {
   }
 
   return null;
-}
-
-function normalizeBackendMode(value: string | null | undefined): BackendMode {
-  return value === "http" ? "http" : "ipc";
 }
 
 export function getConfiguredTenantScope(): TenantScope {
@@ -293,7 +288,6 @@ function handleExpiredAuthSession() {
 }
 
 function createBackendError(args: {
-  kind: "api" | "invoke";
   channel: string;
   status: number;
   errorText: string;
@@ -312,10 +306,8 @@ function createBackendError(args: {
     return authError;
   }
 
-  const errorPrefix =
-    args.kind === "api" ? "Backend API failed" : "Backend invoke failed";
   return new Error(
-    `${errorPrefix} for "${args.channel}" with status ${args.status}${
+    `Backend API failed for "${args.channel}" with status ${args.status}${
       normalizedErrorText ? `: ${normalizedErrorText}` : ""
     }`,
   );
@@ -340,17 +332,29 @@ function resolveApiRoute(
         method: "GET",
         path: "/api/v1/orgs",
       };
-    case "get-user-settings":
+    case "create-org":
       return {
-        method: "GET",
-        path: "/api/v1/user/settings",
-      };
-    case "set-user-settings":
-      return {
-        method: "PATCH",
-        path: "/api/v1/user/settings",
+        method: "POST",
+        path: "/api/v1/orgs",
         body: getFirstArg(args),
       };
+    case "get-org": {
+      const params = getFirstArg<{ orgId?: string }>(args);
+      const orgId = params?.orgId?.trim() || tenantScope.orgId;
+      return {
+        method: "GET",
+        path: `/api/v1/orgs/${encodeURIComponent(orgId)}`,
+      };
+    }
+    case "patch-org": {
+      const params = getFirstArg<{ orgId?: string }>(args);
+      const orgId = params?.orgId?.trim() || tenantScope.orgId;
+      return {
+        method: "PATCH",
+        path: `/api/v1/orgs/${encodeURIComponent(orgId)}`,
+        body: getFirstArg(args),
+      };
+    }
     case "list-workspaces": {
       const params = getFirstArg<{ orgId?: string }>(args);
       const orgId = params?.orgId?.trim() || tenantScope.orgId;
@@ -392,6 +396,54 @@ function resolveApiRoute(
         body,
       };
     }
+    case "get-workspace": {
+      const params = getFirstArg<{ orgId?: string; workspaceId?: string }>(
+        args,
+      );
+      const orgId = params?.orgId?.trim() || tenantScope.orgId;
+      const workspaceId =
+        params?.workspaceId?.trim() || tenantScope.workspaceId;
+      return {
+        method: "GET",
+        path: `/api/v1/orgs/${encodeURIComponent(orgId)}/workspaces/${encodeURIComponent(workspaceId)}`,
+      };
+    }
+    case "patch-workspace": {
+      const params = getFirstArg<{ orgId?: string; workspaceId?: string }>(
+        args,
+      );
+      const orgId = params?.orgId?.trim() || tenantScope.orgId;
+      const workspaceId =
+        params?.workspaceId?.trim() || tenantScope.workspaceId;
+      return {
+        method: "PATCH",
+        path: `/api/v1/orgs/${encodeURIComponent(orgId)}/workspaces/${encodeURIComponent(workspaceId)}`,
+        body: getFirstArg(args),
+      };
+    }
+    case "delete-workspace": {
+      const params = getFirstArg<{ orgId?: string; workspaceId?: string }>(
+        args,
+      );
+      const orgId = params?.orgId?.trim() || tenantScope.orgId;
+      const workspaceId =
+        params?.workspaceId?.trim() || tenantScope.workspaceId;
+      return {
+        method: "DELETE",
+        path: `/api/v1/orgs/${encodeURIComponent(orgId)}/workspaces/${encodeURIComponent(workspaceId)}`,
+      };
+    }
+    case "get-user-settings":
+      return {
+        method: "GET",
+        path: "/api/v1/user/settings",
+      };
+    case "set-user-settings":
+      return {
+        method: "PATCH",
+        path: "/api/v1/user/settings",
+        body: getFirstArg(args),
+      };
     case "list-apps":
       return {
         method: "GET",
@@ -434,37 +486,26 @@ function resolveApiRoute(
         path: `${scopedBasePath}/apps/${params.appId}/favorite/toggle`,
       };
     }
-    case "get-chats": {
+    case "patch-app": {
       const appId = getFirstArg<number>(args);
-      if (typeof appId === "number") {
-        return {
-          method: "GET",
-          path: `${scopedBasePath}/apps/${appId}/chats`,
-        };
+      const payload = args[1];
+      if (typeof appId !== "number") {
+        return null;
       }
       return {
-        method: "GET",
-        path: `${scopedBasePath}/chats`,
+        method: "PATCH",
+        path: `${scopedBasePath}/apps/${appId}`,
+        body: payload,
       };
     }
-    case "create-chat": {
+    case "delete-app": {
       const appId = getFirstArg<number>(args);
       if (typeof appId !== "number") {
         return null;
       }
       return {
-        method: "POST",
-        path: `${scopedBasePath}/apps/${appId}/chats`,
-      };
-    }
-    case "get-chat": {
-      const chatId = getFirstArg<number>(args);
-      if (typeof chatId !== "number") {
-        return null;
-      }
-      return {
-        method: "GET",
-        path: `${scopedBasePath}/chats/${chatId}`,
+        method: "DELETE",
+        path: `${scopedBasePath}/apps/${appId}`,
       };
     }
     case "run-app": {
@@ -498,6 +539,122 @@ function resolveApiRoute(
         body: params,
       };
     }
+    case "read-app-file": {
+      const params = getFirstArg<{ appId?: number; filePath?: string }>(args);
+      if (!params || typeof params.appId !== "number") {
+        return null;
+      }
+      if (typeof params.filePath !== "string" || !params.filePath) {
+        return null;
+      }
+      return {
+        method: "GET",
+        path: `${scopedBasePath}/apps/${params.appId}/file`,
+        query: { path: params.filePath },
+      };
+    }
+    case "get-chats": {
+      const appId = getFirstArg<number>(args);
+      if (typeof appId === "number") {
+        return {
+          method: "GET",
+          path: `${scopedBasePath}/apps/${appId}/chats`,
+        };
+      }
+      return {
+        method: "GET",
+        path: `${scopedBasePath}/chats`,
+      };
+    }
+    case "create-chat": {
+      const appId = getFirstArg<number>(args);
+      if (typeof appId !== "number") {
+        return null;
+      }
+      return {
+        method: "POST",
+        path: `${scopedBasePath}/apps/${appId}/chats`,
+      };
+    }
+    case "get-chat": {
+      const chatId = getFirstArg<number>(args);
+      if (typeof chatId !== "number") {
+        return null;
+      }
+      return {
+        method: "GET",
+        path: `${scopedBasePath}/chats/${chatId}`,
+      };
+    }
+    case "update-chat": {
+      const params = getFirstArg<{ chatId?: number }>(args);
+      if (!params || typeof params.chatId !== "number") {
+        return null;
+      }
+      return {
+        method: "PATCH",
+        path: `${scopedBasePath}/chats/${params.chatId}`,
+        body: params,
+      };
+    }
+    case "delete-chat": {
+      const chatId = getFirstArg<number>(args);
+      if (typeof chatId !== "number") {
+        return null;
+      }
+      return {
+        method: "DELETE",
+        path: `${scopedBasePath}/chats/${chatId}`,
+      };
+    }
+    case "get-proposal": {
+      const params = getFirstArg<{ chatId?: number }>(args);
+      if (!params || typeof params.chatId !== "number") {
+        return null;
+      }
+      return {
+        method: "GET",
+        path: `${scopedBasePath}/chats/${params.chatId}/proposal`,
+      };
+    }
+    case "approve-proposal": {
+      const params = getFirstArg<{ chatId?: number; messageId?: number }>(args);
+      if (!params || typeof params.chatId !== "number") {
+        return null;
+      }
+      return {
+        method: "POST",
+        path: `${scopedBasePath}/chats/${params.chatId}/proposal/approve`,
+        body: params,
+      };
+    }
+    case "reject-proposal": {
+      const params = getFirstArg<{ chatId?: number; messageId?: number }>(args);
+      if (!params || typeof params.chatId !== "number") {
+        return null;
+      }
+      return {
+        method: "POST",
+        path: `${scopedBasePath}/chats/${params.chatId}/proposal/reject`,
+        body: params,
+      };
+    }
+    case "get-workspace-model-settings":
+      return {
+        method: "GET",
+        path: `${scopedBasePath}/settings/models`,
+      };
+    case "set-workspace-model-settings":
+      return {
+        method: "PATCH",
+        path: `${scopedBasePath}/settings/models`,
+        body: getFirstArg(args),
+      };
+    case "get-workspace-env-providers":
+      return {
+        method: "GET",
+        path: `${scopedBasePath}/env/providers`,
+      };
     case "get-env-vars":
       return {
         method: "GET",
@@ -513,28 +670,20 @@ function resolveApiRoute(
         method: "GET",
         path: "/api/v1/app/version",
       };
+    case "get-oauth2-config":
+      return {
+        method: "GET",
+        path: "/api/v1/auth/oauth/config",
+      };
+    case "exchange-oauth2-code":
+      return {
+        method: "POST",
+        path: "/api/v1/auth/oauth/exchange",
+        body: getFirstArg(args),
+      };
     default:
       return null;
   }
-}
-
-export function getConfiguredBackendMode(): BackendMode {
-  const envMode = normalizeBackendMode(
-    import.meta.env.VITE_BLAZE_BACKEND_MODE as string | undefined,
-  );
-
-  const remoteMode = window.__BLAZE_REMOTE_CONFIG__?.backendClient?.mode;
-  const localMode = normalizeBackendMode(
-    getLocalStorageValue(BACKEND_MODE_STORAGE_KEY),
-  );
-
-  if (localMode !== "ipc") {
-    return localMode;
-  }
-  if (remoteMode === "http") {
-    return remoteMode;
-  }
-  return envMode;
 }
 
 export function getConfiguredBackendBaseUrl(): string | null {
@@ -554,111 +703,6 @@ export function getConfiguredBackendBaseUrl(): string | null {
   }
 
   return null;
-}
-
-export function getAllowIpcFallback(): boolean {
-  const localValue = getLocalStorageValue(BACKEND_IPC_FALLBACK_STORAGE_KEY);
-  if (localValue != null) {
-    return localValue !== "false";
-  }
-
-  const remoteValue =
-    window.__BLAZE_REMOTE_CONFIG__?.backendClient?.allowIpcFallback;
-  if (typeof remoteValue === "boolean") {
-    return remoteValue;
-  }
-
-  const envValue = import.meta.env.VITE_BLAZE_BACKEND_ALLOW_IPC_FALLBACK as
-    | string
-    | undefined;
-  if (envValue != null) {
-    return envValue !== "false";
-  }
-
-  return true;
-}
-
-export class IpcBackendClient implements BackendClient {
-  constructor(private readonly ipcRenderer: BackendClient) {}
-
-  public invoke<T = any>(channel: string, ...args: unknown[]): Promise<T> {
-    return this.ipcRenderer.invoke(channel, ...args);
-  }
-
-  public on(channel: string, listener: IpcChannelListener): () => void {
-    return this.ipcRenderer.on(channel, listener);
-  }
-
-  public removeAllListeners(channel: string): void {
-    this.ipcRenderer.removeAllListeners(channel);
-  }
-
-  public removeListener(channel: string, listener: IpcChannelListener): void {
-    this.ipcRenderer.removeListener(channel, listener);
-  }
-}
-
-export class HttpBackendClient implements BackendClient {
-  private readonly baseUrl: string | null;
-  private readonly allowIpcFallback: boolean;
-
-  constructor(private readonly fallbackClient: BackendClient) {
-    this.baseUrl = getConfiguredBackendBaseUrl();
-    this.allowIpcFallback = getAllowIpcFallback();
-  }
-
-  public async invoke<T = any>(
-    channel: string,
-    ...args: unknown[]
-  ): Promise<T> {
-    if (!this.baseUrl || FORCE_IPC_CHANNELS.has(channel)) {
-      return this.fallbackClient.invoke<T>(channel, ...args);
-    }
-
-    try {
-      const apiRoute = resolveApiRoute(
-        channel,
-        args,
-        getConfiguredTenantScope(),
-      );
-      if (apiRoute) {
-        return await invokeApiRoute<T>({
-          baseUrl: this.baseUrl,
-          channel,
-          request: apiRoute,
-        });
-      }
-
-      return await invokeOverHttp<T>({
-        baseUrl: this.baseUrl,
-        channel,
-        args,
-      });
-    } catch (error) {
-      if (isAuthSessionExpiredError(error) || !this.allowIpcFallback) {
-        throw error;
-      }
-
-      console.warn(
-        `[BackendClient] HTTP transport failed for "${channel}", falling back to IPC.`,
-        error,
-      );
-      return this.fallbackClient.invoke<T>(channel, ...args);
-    }
-  }
-
-  public on(channel: string, listener: IpcChannelListener): () => void {
-    // Events are still forwarded through IPC while HTTP transport matures.
-    return this.fallbackClient.on(channel, listener);
-  }
-
-  public removeAllListeners(channel: string): void {
-    this.fallbackClient.removeAllListeners(channel);
-  }
-
-  public removeListener(channel: string, listener: IpcChannelListener): void {
-    this.fallbackClient.removeListener(channel, listener);
-  }
 }
 
 export class BrowserBackendClient implements BackendClient {
@@ -693,26 +737,29 @@ export class BrowserBackendClient implements BackendClient {
     }
 
     const apiRoute = resolveApiRoute(channel, args, getConfiguredTenantScope());
+    if (!apiRoute) {
+      throw new FeatureDisabledError(
+        `Feature "${channel}" is disabled in HTTP-only mode.`,
+        channel,
+      );
+    }
+
     for (let index = 0; index < this.baseUrls.length; index += 1) {
       const baseUrl = this.baseUrls[index];
       const hasNextBaseUrl = index < this.baseUrls.length - 1;
 
       try {
-        if (apiRoute) {
-          return await invokeApiRoute<T>({
-            baseUrl,
-            channel,
-            request: apiRoute,
-          });
-        }
-
-        return await invokeOverHttp<T>({
+        return await invokeApiRoute<T>({
           baseUrl,
           channel,
-          args,
+          request: apiRoute,
         });
       } catch (error) {
-        if (!hasNextBaseUrl || !isLikelyNetworkFetchError(error)) {
+        if (
+          isAuthSessionExpiredError(error) ||
+          !hasNextBaseUrl ||
+          !isLikelyNetworkFetchError(error)
+        ) {
           throw error;
         }
 
@@ -772,57 +819,6 @@ async function invokeApiRoute<T>({
   if (!response.ok) {
     const errorText = await response.text().catch(() => "");
     throw createBackendError({
-      kind: "api",
-      channel,
-      status: response.status,
-      errorText,
-    });
-  }
-
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
-  const contentType = response.headers.get("content-type") || "";
-  if (contentType.includes("application/json")) {
-    const payload = await response.json();
-    if (
-      payload &&
-      typeof payload === "object" &&
-      "data" in (payload as Record<string, unknown>)
-    ) {
-      return (payload as { data: T }).data;
-    }
-    return payload as T;
-  }
-
-  return (await response.text()) as T;
-}
-
-async function invokeOverHttp<T>({
-  baseUrl,
-  channel,
-  args,
-}: {
-  baseUrl: string;
-  channel: string;
-  args: unknown[];
-}): Promise<T> {
-  const headers = getDefaultRequestHeaders(channel);
-  const scope = getConfiguredTenantScope();
-  headers["x-blaze-org-id"] = scope.orgId;
-  headers["x-blaze-workspace-id"] = scope.workspaceId;
-
-  const response = await fetch(`${baseUrl}${IPC_HTTP_INVOKE_PATH}`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ channel, args }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => "");
-    throw createBackendError({
-      kind: "invoke",
       channel,
       status: response.status,
       errorText,
@@ -850,15 +846,7 @@ async function invokeOverHttp<T>({
 }
 
 export function createBackendClientTransport(
-  ipcRenderer?: BackendClient,
+  _ipcRenderer?: BackendClient,
 ): BackendClient {
-  if (!ipcRenderer) {
-    return new BrowserBackendClient();
-  }
-
-  const mode = getConfiguredBackendMode();
-  if (mode === "http") {
-    return new HttpBackendClient(ipcRenderer);
-  }
-  return new IpcBackendClient(ipcRenderer);
+  return new BrowserBackendClient();
 }

@@ -34,10 +34,6 @@ export function isWebSocketStreamingEnabled(): boolean {
   return readBooleanFlag("WS_STREAMING_ENABLED", true);
 }
 
-export function isLegacyIpcHttpInvokeEnabled(): boolean {
-  return readBooleanFlag("IPC_LEGACY_ENABLED", true);
-}
-
 export function isDevBypassEnabled(): boolean {
   const isProduction =
     (process.env.NODE_ENV ?? "").toLowerCase() === "production";

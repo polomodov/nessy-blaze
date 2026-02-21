@@ -113,9 +113,7 @@ import {
   createBackendClientTransport,
   getConfiguredTenantScope,
   getDefaultRequestHeaders,
-  getAllowIpcFallback,
   getConfiguredBackendBaseUrl,
-  getConfiguredBackendMode,
   type BackendClient as BackendClientTransport,
 } from "./backend_client";
 
@@ -319,7 +317,6 @@ async function encodeAttachmentsForStream(
 export class IpcClient {
   private static instance: IpcClient;
   private ipcRenderer: BackendClientTransport;
-  private readonly hasNativeIpc: boolean;
   private chatStreams: Map<number, ChatStreamCallbacks>;
   private httpChatAbortControllers: Map<number, AbortController>;
   private appStreams: Map<number, AppStreamCallbacks>;
@@ -343,11 +340,7 @@ export class IpcClient {
   // Global handlers called for any chat stream completion (used for cleanup)
   private globalChatStreamEndHandlers: Set<(chatId: number) => void>;
   private constructor() {
-    const electronIpcRenderer = (window as any).electron?.ipcRenderer as
-      | BackendClientTransport
-      | undefined;
-    this.hasNativeIpc = Boolean(electronIpcRenderer);
-    this.ipcRenderer = createBackendClientTransport(electronIpcRenderer);
+    this.ipcRenderer = createBackendClientTransport();
     this.chatStreams = new Map();
     this.httpChatAbortControllers = new Map();
     this.appStreams = new Map();
@@ -700,78 +693,7 @@ export class IpcClient {
 
   // New method for streaming responses
   public streamMessage(prompt: string, options: StreamMessageOptions): void {
-    if (getConfiguredBackendMode() === "http") {
-      this.streamMessageOverHttp(prompt, options);
-      return;
-    }
-
-    this.streamMessageOverIpc(prompt, options);
-  }
-
-  private streamMessageOverIpc(
-    prompt: string,
-    options: StreamMessageOptions,
-    notifyStartHandlers = true,
-  ): void {
-    const {
-      chatId,
-      redo,
-      attachments,
-      selectedComponents,
-      onUpdate,
-      onEnd,
-      onError,
-    } = options;
-    this.chatStreams.set(chatId, { onUpdate, onEnd, onError });
-
-    if (notifyStartHandlers) {
-      for (const handler of this.globalChatStreamStartHandlers) {
-        handler(chatId);
-      }
-    }
-
-    // Handle file attachments if provided
-    if (attachments && attachments.length > 0) {
-      encodeAttachmentsForStream(attachments)
-        .then((fileDataArray) => {
-          // Use invoke to start the stream and pass the chatId and attachments
-          this.ipcRenderer
-            .invoke("chat:stream", {
-              prompt,
-              chatId,
-              redo,
-              selectedComponents,
-              attachments: fileDataArray,
-            })
-            .catch((err) => {
-              console.error("Error streaming message:", err);
-              showError(err);
-              onError(String(err));
-              this.chatStreams.delete(chatId);
-            });
-        })
-        .catch((err) => {
-          console.error("Error streaming message:", err);
-          showError(err);
-          onError(String(err));
-          this.chatStreams.delete(chatId);
-        });
-    } else {
-      // No attachments, proceed normally
-      this.ipcRenderer
-        .invoke("chat:stream", {
-          prompt,
-          chatId,
-          redo,
-          selectedComponents,
-        })
-        .catch((err) => {
-          console.error("Error streaming message:", err);
-          showError(err);
-          onError(String(err));
-          this.chatStreams.delete(chatId);
-        });
-    }
+    this.streamMessageOverHttp(prompt, options);
   }
 
   private streamMessageOverHttp(
@@ -956,15 +878,6 @@ export class IpcClient {
 
         const errorMessage =
           error instanceof Error ? error.message : String(error);
-        if (
-          this.hasNativeIpc &&
-          getAllowIpcFallback() &&
-          isLikelyFetchFailure(error)
-        ) {
-          this.httpChatAbortControllers.delete(chatId);
-          this.streamMessageOverIpc(prompt, options, false);
-          return;
-        }
         showError(error);
         settleWithError(errorMessage);
       }
@@ -973,62 +886,50 @@ export class IpcClient {
 
   // Method to cancel an ongoing stream
   public cancelChatStream(chatId: number): void {
-    if (getConfiguredBackendMode() === "http") {
-      const controller = this.httpChatAbortControllers.get(chatId);
-      if (controller) {
-        controller.abort();
-        this.httpChatAbortControllers.delete(chatId);
-      }
+    const controller = this.httpChatAbortControllers.get(chatId);
+    if (controller) {
+      controller.abort();
+      this.httpChatAbortControllers.delete(chatId);
+    }
 
-      const baseUrls = getBackendBaseUrlCandidates();
-      if (baseUrls.length === 0) {
-        console.error(
-          "Error cancelling HTTP chat stream:",
-          new Error("Backend base URL is not configured."),
-        );
-        return;
-      }
-
-      void (async () => {
-        const scope = getConfiguredTenantScope();
-        const cancelPath = `/api/v1/orgs/${encodeURIComponent(
-          scope.orgId,
-        )}/workspaces/${encodeURIComponent(
-          scope.workspaceId,
-        )}/chats/${chatId}/stream/cancel`;
-        for (let index = 0; index < baseUrls.length; index += 1) {
-          const baseUrl = baseUrls[index];
-          const hasNextBaseUrl = index < baseUrls.length - 1;
-          try {
-            await fetch(`${baseUrl}${cancelPath}`, {
-              method: "POST",
-              headers: getDefaultRequestHeaders("chat:cancel"),
-            });
-            return;
-          } catch (error) {
-            if (!hasNextBaseUrl || !isLikelyFetchFailure(error)) {
-              console.error("Error cancelling HTTP chat stream:", error);
-              if (
-                this.hasNativeIpc &&
-                getAllowIpcFallback() &&
-                isLikelyFetchFailure(error)
-              ) {
-                this.ipcRenderer.invoke("chat:cancel", chatId).catch(() => {});
-              }
-              return;
-            }
-
-            console.warn(
-              `[IpcClient] Stream cancel failed against "${baseUrl}". Retrying with "${baseUrls[index + 1]}".`,
-              error,
-            );
-          }
-        }
-      })();
+    const baseUrls = getBackendBaseUrlCandidates();
+    if (baseUrls.length === 0) {
+      console.error(
+        "Error cancelling HTTP chat stream:",
+        new Error("Backend base URL is not configured."),
+      );
       return;
     }
 
-    this.ipcRenderer.invoke("chat:cancel", chatId);
+    void (async () => {
+      const scope = getConfiguredTenantScope();
+      const cancelPath = `/api/v1/orgs/${encodeURIComponent(
+        scope.orgId,
+      )}/workspaces/${encodeURIComponent(
+        scope.workspaceId,
+      )}/chats/${chatId}/stream/cancel`;
+      for (let index = 0; index < baseUrls.length; index += 1) {
+        const baseUrl = baseUrls[index];
+        const hasNextBaseUrl = index < baseUrls.length - 1;
+        try {
+          await fetch(`${baseUrl}${cancelPath}`, {
+            method: "POST",
+            headers: getDefaultRequestHeaders("chat:cancel"),
+          });
+          return;
+        } catch (error) {
+          if (!hasNextBaseUrl || !isLikelyFetchFailure(error)) {
+            console.error("Error cancelling HTTP chat stream:", error);
+            return;
+          }
+
+          console.warn(
+            `[IpcClient] Stream cancel failed against "${baseUrl}". Retrying with "${baseUrls[index + 1]}".`,
+            error,
+          );
+        }
+      }
+    })();
   }
 
   // Create a new chat for an app
@@ -1050,7 +951,10 @@ export class IpcClient {
 
   // Open an external URL using the default browser
   public async openExternalUrl(url: string): Promise<void> {
-    await this.ipcRenderer.invoke("open-external-url", url);
+    if (!url) {
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
   }
 
   public async showItemInFolder(fullPath: string): Promise<void> {

@@ -14,8 +14,7 @@ Something that I really appreciate are all the non-code contributions, such as r
 
 ## Development
 
-Blaze now defaults to a client-server web mode for local development.
-Electron is supported as a compatibility runtime via explicit desktop scripts.
+Blaze runs in client-server web mode for local development.
 
 **Install dependencies:**
 
@@ -51,13 +50,6 @@ npm run db:generate
 npm start
 ```
 
-The default `npm start` / `npm run dev` command runs client-server mode.  
-To run desktop compatibility mode:
-
-```sh
-npm run start:desktop
-```
-
 ## Setup
 
 If you'd like to contribute a pull request, we highly recommend setting the pre-commit hooks which will run the formatter and linter before each git commit. This is a great way of catching issues early on without waiting to run the GitHub Actions for your pull request.
@@ -78,7 +70,7 @@ npm test
 
 ### E2E tests
 
-Build the app for E2E testing:
+Build the web app for E2E testing:
 
 ```sh
 npm run pre:e2e

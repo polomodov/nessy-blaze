@@ -1,6 +1,5 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { IpcClient } from "@/ipc/ipc_client";
 import { CodeHighlight } from "@/components/chat/CodeHighlight";
 
 const markdownLink = ({
@@ -21,7 +20,7 @@ const markdownLink = ({
           return;
         }
         event.preventDefault();
-        void IpcClient.getInstance().openExternalUrl(href);
+        window.open(href, "_blank", "noopener,noreferrer");
       }}
       rel="noopener noreferrer"
     />

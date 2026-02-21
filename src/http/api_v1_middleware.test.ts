@@ -2,7 +2,6 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 import { createApiV1Middleware } from "./api_v1_middleware";
-import { createIpcInvokeMiddleware } from "./ipc_http_middleware";
 import type { RequestContext } from "./request_context";
 
 function createMockRequest({
@@ -185,6 +184,91 @@ describe("createApiV1Middleware", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it("routes proposal read endpoint", async () => {
+    const invoke = vi.fn().mockResolvedValue({
+      chatId: 42,
+      messageId: 99,
+      proposal: null,
+    });
+    const middleware = createApiV1Middleware(invoke, {
+      resolveRequestContext: resolveRequestContextMock as any,
+    });
+    const req = createMockRequest({
+      method: "GET",
+      url: "/api/v1/orgs/org-1/workspaces/ws-1/chats/42/proposal",
+    });
+    const { response, getBody } = createMockResponse();
+    const next = vi.fn();
+
+    await middleware(req, response, next);
+
+    expect(invoke).toHaveBeenCalledWith("get-proposal", [{ chatId: 42 }], {
+      requestContext,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(getBody())).toEqual({
+      data: {
+        chatId: 42,
+        messageId: 99,
+        proposal: null,
+      },
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("routes proposal approval endpoint", async () => {
+    const invoke = vi.fn().mockResolvedValue({ success: true });
+    const middleware = createApiV1Middleware(invoke, {
+      resolveRequestContext: resolveRequestContextMock as any,
+    });
+    const req = createMockRequest({
+      method: "POST",
+      url: "/api/v1/orgs/org-1/workspaces/ws-1/chats/42/proposal/approve",
+      body: JSON.stringify({ messageId: 7 }),
+    });
+    const { response, getBody } = createMockResponse();
+    const next = vi.fn();
+
+    await middleware(req, response, next);
+
+    expect(invoke).toHaveBeenCalledWith(
+      "approve-proposal",
+      [{ chatId: 42, messageId: 7 }],
+      {
+        requestContext,
+      },
+    );
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(getBody())).toEqual({ data: { success: true } });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("routes app file read endpoint", async () => {
+    const invoke = vi.fn().mockResolvedValue("file-content");
+    const middleware = createApiV1Middleware(invoke, {
+      resolveRequestContext: resolveRequestContextMock as any,
+    });
+    const req = createMockRequest({
+      method: "GET",
+      url: "/api/v1/orgs/org-1/workspaces/ws-1/apps/77/file?path=src%2FApp.tsx",
+    });
+    const { response, getBody } = createMockResponse();
+    const next = vi.fn();
+
+    await middleware(req, response, next);
+
+    expect(invoke).toHaveBeenCalledWith(
+      "read-app-file",
+      [{ appId: 77, filePath: "src/App.tsx" }],
+      {
+        requestContext,
+      },
+    );
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(getBody())).toEqual({ data: "file-content" });
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it("passes through unknown routes", async () => {
     const invoke = vi.fn();
     const middleware = createApiV1Middleware(invoke, {
@@ -201,36 +285,5 @@ describe("createApiV1Middleware", () => {
 
     expect(next).toHaveBeenCalledOnce();
     expect(invoke).not.toHaveBeenCalled();
-  });
-
-  it("does not consume body for non-api-v1 routes in middleware chain", async () => {
-    const invokeApi = vi.fn();
-    const invokeIpc = vi.fn().mockResolvedValue({ ok: true });
-    const apiMiddleware = createApiV1Middleware(invokeApi, {
-      resolveRequestContext: resolveRequestContextMock as any,
-    });
-    const ipcMiddleware = createIpcInvokeMiddleware(invokeIpc);
-
-    const req = createMockRequest({
-      method: "POST",
-      url: "/api/ipc/invoke",
-      body: JSON.stringify({
-        channel: "list-apps",
-        args: [],
-      }),
-    });
-    const { response, getBody } = createMockResponse();
-    const next = vi.fn();
-
-    await apiMiddleware(req, response, next);
-    await ipcMiddleware(req, response, vi.fn());
-
-    expect(next).toHaveBeenCalledOnce();
-    expect(invokeApi).not.toHaveBeenCalled();
-    expect(invokeIpc).toHaveBeenCalledWith("list-apps", [], {
-      requestContext: undefined,
-    });
-    expect(response.statusCode).toBe(200);
-    expect(JSON.parse(getBody())).toEqual({ data: { ok: true } });
   });
 });

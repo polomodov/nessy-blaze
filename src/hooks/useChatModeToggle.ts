@@ -2,7 +2,8 @@ import { useCallback, useMemo } from "react";
 import { useSettings } from "./useSettings";
 import { useShortcut } from "./useShortcut";
 import { usePostHog } from "posthog-js/react";
-import { ChatModeSchema } from "../lib/schemas";
+
+const CHAT_MODE_CYCLE = ["build", "ask"] as const;
 
 export function useChatModeToggle() {
   const { settings, updateSettings } = useSettings();
@@ -24,10 +25,10 @@ export function useChatModeToggle() {
   const toggleChatMode = useCallback(() => {
     if (!settings || !settings.selectedChatMode) return;
 
-    const currentMode = settings.selectedChatMode;
-    const modes = ChatModeSchema.options;
-    const currentIndex = modes.indexOf(settings.selectedChatMode);
-    const newMode = modes[(currentIndex + 1) % modes.length];
+    const currentMode = settings.selectedChatMode === "ask" ? "ask" : "build";
+    const currentIndex = CHAT_MODE_CYCLE.indexOf(currentMode);
+    const newMode =
+      CHAT_MODE_CYCLE[(currentIndex + 1) % CHAT_MODE_CYCLE.length];
 
     updateSettings({ selectedChatMode: newMode });
     posthog.capture("chat:mode_toggle", {

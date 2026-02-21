@@ -14,7 +14,6 @@ function ipcHttpGatewayPlugin(): Plugin {
       let chatStreamModule;
       let chatWsServerModule;
       let apiV1Module;
-      let ipcHttpMiddlewareModule;
       let ipcGatewayModule;
 
       try {
@@ -45,17 +44,6 @@ function ipcHttpGatewayPlugin(): Plugin {
         throw error;
       }
       try {
-        ipcHttpMiddlewareModule = await import(
-          "./src/http/ipc_http_middleware"
-        );
-      } catch (error) {
-        console.error(
-          "[blaze-ipc-http-gateway] failed importing ipc_http_middleware",
-          error,
-        );
-        throw error;
-      }
-      try {
         ipcGatewayModule = await import("./src/http/ipc_http_gateway");
       } catch (error) {
         console.error(
@@ -68,7 +56,6 @@ function ipcHttpGatewayPlugin(): Plugin {
       const { createChatStreamMiddleware } = chatStreamModule;
       const { attachChatWsServer } = chatWsServerModule;
       const { createApiV1Middleware } = apiV1Module;
-      const { createIpcInvokeMiddleware } = ipcHttpMiddlewareModule;
       const { invokeIpcChannelOverHttp } = ipcGatewayModule;
       const chatStreamMiddleware = createChatStreamMiddleware({
         loadChatStreamHandlers: () =>
@@ -82,10 +69,8 @@ function ipcHttpGatewayPlugin(): Plugin {
           })
         : null;
       const apiMiddleware = createApiV1Middleware(invokeIpcChannelOverHttp);
-      const middleware = createIpcInvokeMiddleware(invokeIpcChannelOverHttp);
       server.middlewares.use(chatStreamMiddleware);
       server.middlewares.use(apiMiddleware);
-      server.middlewares.use(middleware);
       if (server.httpServer && wsServerHandle) {
         server.httpServer.once("close", () => {
           wsServerHandle.dispose();

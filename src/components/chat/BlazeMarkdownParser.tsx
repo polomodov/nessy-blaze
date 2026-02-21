@@ -19,7 +19,6 @@ import { isStreamingByIdAtom, selectedChatIdAtom } from "@/atoms/chatAtoms";
 import { CustomTagState } from "./stateTypes";
 import { BlazeOutput } from "./BlazeOutput";
 import { BlazeProblemSummary } from "./BlazeProblemSummary";
-import { IpcClient } from "@/ipc/ipc_client";
 import { BlazeMcpToolCall } from "./BlazeMcpToolCall";
 import { BlazeMcpToolResult } from "./BlazeMcpToolResult";
 import { BlazeWebSearchResult } from "./BlazeWebSearchResult";
@@ -98,7 +97,7 @@ const customLink = ({
       const url = props.href;
       if (url) {
         e.preventDefault();
-        IpcClient.getInstance().openExternalUrl(url);
+        window.open(url, "_blank", "noopener,noreferrer");
       }
     }}
   />

@@ -3,37 +3,14 @@ import {
   AUTH_REDIRECT_REASON_STORAGE_KEY,
   AUTH_TOKEN_STORAGE_KEY,
   BACKEND_BASE_URL_STORAGE_KEY,
-  BACKEND_IPC_FALLBACK_STORAGE_KEY,
-  BACKEND_MODE_STORAGE_KEY,
   BrowserBackendClient,
   createBackendClientTransport,
   DEV_USER_EMAIL_STORAGE_KEY,
   DEV_USER_NAME_STORAGE_KEY,
   DEV_USER_SUB_STORAGE_KEY,
-  HttpBackendClient,
-  IpcBackendClient,
-  type BackendClient,
+  FeatureDisabledError,
 } from "@/ipc/backend_client";
 import { describe, it, expect, beforeEach, vi } from "vitest";
-
-class MockIpcRenderer implements BackendClient {
-  public invokeMock = vi.fn();
-
-  public invoke<T = any>(channel: string, ...args: unknown[]): Promise<T> {
-    this.invokeMock(channel, ...args);
-    return Promise.resolve({
-      transport: "ipc",
-      channel,
-      args,
-    } as T);
-  }
-
-  public on = vi.fn(() => vi.fn());
-
-  public removeAllListeners = vi.fn();
-
-  public removeListener = vi.fn();
-}
 
 describe("backend_client transport", () => {
   beforeEach(() => {
@@ -43,17 +20,13 @@ describe("backend_client transport", () => {
     const storage = window.localStorage as Partial<Storage> &
       Record<string, unknown>;
     if (typeof storage.removeItem === "function") {
-      storage.removeItem(BACKEND_MODE_STORAGE_KEY);
       storage.removeItem(BACKEND_BASE_URL_STORAGE_KEY);
-      storage.removeItem(BACKEND_IPC_FALLBACK_STORAGE_KEY);
       storage.removeItem(AUTH_TOKEN_STORAGE_KEY);
       storage.removeItem(DEV_USER_SUB_STORAGE_KEY);
       storage.removeItem(DEV_USER_EMAIL_STORAGE_KEY);
       storage.removeItem(DEV_USER_NAME_STORAGE_KEY);
     } else {
-      delete storage[BACKEND_MODE_STORAGE_KEY];
       delete storage[BACKEND_BASE_URL_STORAGE_KEY];
-      delete storage[BACKEND_IPC_FALLBACK_STORAGE_KEY];
       delete storage[AUTH_TOKEN_STORAGE_KEY];
       delete storage[DEV_USER_SUB_STORAGE_KEY];
       delete storage[DEV_USER_EMAIL_STORAGE_KEY];
@@ -62,28 +35,17 @@ describe("backend_client transport", () => {
     window.sessionStorage.removeItem(AUTH_REDIRECT_REASON_STORAGE_KEY);
   });
 
-  it("uses IPC transport by default", async () => {
-    const fallback = new MockIpcRenderer();
-    const client = createBackendClientTransport(fallback);
-
-    expect(client).toBeInstanceOf(IpcBackendClient);
-    await client.invoke("list-apps");
-    expect(fallback.invokeMock).toHaveBeenCalledWith("list-apps");
-  });
-
-  it("uses browser transport when Electron bridge is missing", async () => {
+  it("uses browser HTTP transport", () => {
     const client = createBackendClientTransport();
     expect(client).toBeInstanceOf(BrowserBackendClient);
   });
 
-  it("uses HTTP transport when mode is http", async () => {
+  it("uses API route mapping for list-apps", async () => {
     window.__BLAZE_REMOTE_CONFIG__ = {
       backendClient: {
-        mode: "http",
         baseUrl: "https://api.example.com",
       },
     };
-    const fallback = new MockIpcRenderer();
 
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ data: { ok: true } }), {
@@ -95,9 +57,7 @@ describe("backend_client transport", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const client = createBackendClientTransport(fallback);
-    expect(client).toBeInstanceOf(HttpBackendClient);
-
+    const client = createBackendClientTransport();
     const result = await client.invoke("list-apps");
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -107,110 +67,63 @@ describe("backend_client transport", () => {
       }),
     );
     expect(result).toEqual({ ok: true });
-    expect(fallback.invokeMock).not.toHaveBeenCalled();
   });
 
-  it("uses API route mapping for settings reads", async () => {
+  it("routes proposal and file-read core endpoints", async () => {
     window.__BLAZE_REMOTE_CONFIG__ = {
       backendClient: {
-        mode: "http",
         baseUrl: "https://api.example.com",
       },
     };
 
-    const fallback = new MockIpcRenderer();
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ data: { telemetryConsent: "unset" } }), {
-        status: 200,
-        headers: {
-          "content-type": "application/json",
-        },
-      }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    const client = createBackendClientTransport(fallback);
-    const settings = await client.invoke("get-user-settings");
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://api.example.com/api/v1/user/settings",
-      expect.objectContaining({
-        method: "GET",
-      }),
-    );
-    expect(settings).toEqual({ telemetryConsent: "unset" });
-    expect(fallback.invokeMock).not.toHaveBeenCalled();
-  });
-
-  it("uses API route mapping for workspace creation", async () => {
-    window.__BLAZE_REMOTE_CONFIG__ = {
-      backendClient: {
-        mode: "http",
-        baseUrl: "https://api.example.com",
-      },
-    };
-
-    const fallback = new MockIpcRenderer();
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          data: {
-            id: "ws_123",
-            organizationId: "org_123",
-            slug: "new-space",
-            name: "New Space",
-            type: "team",
-            createdByUserId: "user_123",
-            createdAt: "2026-02-19T10:00:00.000Z",
-            updatedAt: "2026-02-19T10:00:00.000Z",
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: { chatId: 77, messageId: 99, proposal: null },
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
           },
-        }),
-        {
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: "<div>Hello</div>" }), {
           status: 200,
           headers: {
             "content-type": "application/json",
           },
-        },
-      ),
-    );
+        }),
+      );
     vi.stubGlobal("fetch", fetchMock);
 
-    const client = createBackendClientTransport(fallback);
-    const workspace = await client.invoke("create-workspace", {
-      orgId: "org_123",
-      name: "New Space",
-      slug: "new-space",
-      type: "team",
+    const client = createBackendClientTransport();
+
+    await client.invoke("get-proposal", { chatId: 77 });
+    await client.invoke("read-app-file", {
+      appId: 42,
+      filePath: "src/App.tsx",
     });
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://api.example.com/api/v1/orgs/org_123/workspaces",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({
-          name: "New Space",
-          slug: "new-space",
-          type: "team",
-        }),
-      }),
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "https://api.example.com/api/v1/orgs/me/workspaces/me/chats/77/proposal",
+      expect.objectContaining({ method: "GET" }),
     );
-    expect(workspace).toEqual({
-      id: "ws_123",
-      organizationId: "org_123",
-      slug: "new-space",
-      name: "New Space",
-      type: "team",
-      createdByUserId: "user_123",
-      createdAt: "2026-02-19T10:00:00.000Z",
-      updatedAt: "2026-02-19T10:00:00.000Z",
-    });
-    expect(fallback.invokeMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "https://api.example.com/api/v1/orgs/me/workspaces/me/apps/42/file?path=src%2FApp.tsx",
+      expect.objectContaining({ method: "GET" }),
+    );
   });
 
   it("clears auth context and redirects to /auth when JWT is expired", async () => {
     window.__BLAZE_REMOTE_CONFIG__ = {
       backendClient: {
-        mode: "http",
         baseUrl: "https://api.example.com",
       },
     };
@@ -218,7 +131,6 @@ describe("backend_client transport", () => {
     const assignMock = vi
       .spyOn(window.location, "assign")
       .mockImplementation((_value: string | URL) => undefined);
-    const fallback = new MockIpcRenderer();
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ error: "JWT is expired" }), {
         status: 401,
@@ -229,46 +141,20 @@ describe("backend_client transport", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const client = createBackendClientTransport(fallback);
+    const client = createBackendClientTransport();
     await expect(client.invoke("get-chats")).rejects.toThrow(
       "Authentication session expired. Please sign in again.",
     );
 
     expect(assignMock).toHaveBeenCalledWith("/auth");
-    expect(fallback.invokeMock).not.toHaveBeenCalled();
     expect(
       window.sessionStorage.getItem(AUTH_REDIRECT_REASON_STORAGE_KEY),
     ).toBe(AUTH_REDIRECT_REASON_SESSION_EXPIRED);
   });
 
-  it("falls back to IPC when HTTP request fails", async () => {
-    window.__BLAZE_REMOTE_CONFIG__ = {
-      backendClient: {
-        mode: "http",
-        baseUrl: "https://api.example.com",
-      },
-    };
-    const fallback = new MockIpcRenderer();
-
-    const fetchMock = vi.fn().mockRejectedValue(new Error("network down"));
-    vi.stubGlobal("fetch", fetchMock);
-
-    const client = createBackendClientTransport(fallback);
-    const result = await client.invoke("list-apps", { page: 1 });
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fallback.invokeMock).toHaveBeenCalledWith("list-apps", { page: 1 });
-    expect(result).toEqual({
-      transport: "ipc",
-      channel: "list-apps",
-      args: [{ page: 1 }],
-    });
-  });
-
   it("retries browser requests with window origin when configured backend URL is unreachable", async () => {
     window.__BLAZE_REMOTE_CONFIG__ = {
       backendClient: {
-        mode: "http",
         baseUrl: "https://api.example.com",
       },
     };
@@ -306,23 +192,16 @@ describe("backend_client transport", () => {
     expect(result).toEqual({ ok: true });
   });
 
-  it("forces IPC for streaming channels in HTTP mode", async () => {
+  it("returns controlled error for unmapped channels", async () => {
     window.__BLAZE_REMOTE_CONFIG__ = {
       backendClient: {
-        mode: "http",
         baseUrl: "https://api.example.com",
       },
     };
-    const fallback = new MockIpcRenderer();
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
 
-    const client = createBackendClientTransport(fallback);
-    await client.invoke("chat:stream", { chatId: 1 });
-
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(fallback.invokeMock).toHaveBeenCalledWith("chat:stream", {
-      chatId: 1,
-    });
+    const client = createBackendClientTransport();
+    await expect(
+      client.invoke("open-external-url", "https://example.com"),
+    ).rejects.toBeInstanceOf(FeatureDisabledError);
   });
 });

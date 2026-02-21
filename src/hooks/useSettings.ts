@@ -35,15 +35,18 @@ export function useSettings() {
         ipcClient.getUserSettings(),
         ipcClient.getEnvVars(),
       ]);
-      processSettingsForTelemetry(userSettings);
+      const normalizedSettings = normalizeSettingsForHttpOnly(userSettings);
+      processSettingsForTelemetry(normalizedSettings);
       if (!isInitialLoad && appVersion) {
         posthog.capture("app:initial-load", {
-          isPro: Boolean(userSettings.providerSettings?.auto?.apiKey?.value),
+          isPro: Boolean(
+            normalizedSettings.providerSettings?.auto?.apiKey?.value,
+          ),
           appVersion,
         });
         isInitialLoad = true;
       }
-      setSettingsAtom(userSettings);
+      setSettingsAtom(normalizedSettings);
       setEnvVarsAtom(fetchedEnvVars);
       setError(null);
     } catch (error) {
@@ -64,11 +67,12 @@ export function useSettings() {
     try {
       const ipcClient = IpcClient.getInstance();
       const updatedSettings = await ipcClient.setUserSettings(newSettings);
-      setSettingsAtom(updatedSettings);
-      processSettingsForTelemetry(updatedSettings);
+      const normalizedSettings = normalizeSettingsForHttpOnly(updatedSettings);
+      setSettingsAtom(normalizedSettings);
+      processSettingsForTelemetry(normalizedSettings);
 
       setError(null);
-      return updatedSettings;
+      return normalizedSettings;
     } catch (error) {
       console.error("Error updating settings:", error);
       setError(error instanceof Error ? error : new Error(String(error)));
@@ -108,4 +112,16 @@ function processSettingsForTelemetry(settings: UserSettings) {
   } else {
     window.localStorage.removeItem(TELEMETRY_USER_ID_KEY);
   }
+}
+
+function normalizeSettingsForHttpOnly(settings: UserSettings): UserSettings {
+  const normalizeMode = (value: UserSettings["selectedChatMode"]) => {
+    return value === "ask" ? "ask" : "build";
+  };
+
+  return {
+    ...settings,
+    selectedChatMode: normalizeMode(settings.selectedChatMode),
+    defaultChatMode: normalizeMode(settings.defaultChatMode),
+  };
 }

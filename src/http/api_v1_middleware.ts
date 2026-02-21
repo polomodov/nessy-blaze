@@ -1,11 +1,17 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { isMultitenantEnforced } from "./feature_flags";
 import { isHttpError } from "./http_errors";
-import type { IpcInvokeHandler } from "./ipc_http_middleware";
 import { resolveRequestContext } from "./request_context";
 
 type Next = (error?: unknown) => void;
 type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
+type IpcInvokeHandler = (
+  channel: string,
+  args: unknown[],
+  meta?: {
+    requestContext?: unknown;
+  },
+) => Promise<unknown>;
 
 interface TenantPathParams {
   orgId?: string;
@@ -195,6 +201,24 @@ const SCOPED_ROUTES: RouteDefinition[] = [
     },
   },
   {
+    method: "GET",
+    pattern:
+      /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/apps\/(\d+)\/file$/,
+    build: (url, match) => {
+      const appId = parseNumber(match[3]);
+      const filePath = url.searchParams.get("path");
+      if (appId == null || !filePath) {
+        return null;
+      }
+      return {
+        channel: "read-app-file",
+        args: [{ appId, filePath }],
+        tenantPath: { orgId: match[1], workspaceId: match[2] },
+        requiresAuth: true,
+      };
+    },
+  },
+  {
     method: "POST",
     pattern:
       /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/apps\/(\d+)\/favorite\/toggle$/,
@@ -343,6 +367,65 @@ const SCOPED_ROUTES: RouteDefinition[] = [
       return {
         channel: "get-chat",
         args: [chatId],
+        tenantPath: { orgId: match[1], workspaceId: match[2] },
+        requiresAuth: true,
+      };
+    },
+  },
+  {
+    method: "GET",
+    pattern:
+      /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/chats\/(\d+)\/proposal$/,
+    build: (_url, match) => {
+      const chatId = parseNumber(match[3]);
+      if (chatId == null) {
+        return null;
+      }
+      return {
+        channel: "get-proposal",
+        args: [{ chatId }],
+        tenantPath: { orgId: match[1], workspaceId: match[2] },
+        requiresAuth: true,
+      };
+    },
+  },
+  {
+    method: "POST",
+    pattern:
+      /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/chats\/(\d+)\/proposal\/approve$/,
+    build: (_url, match, body) => {
+      const chatId = parseNumber(match[3]);
+      if (chatId == null) {
+        return null;
+      }
+      const payload =
+        body && typeof body === "object"
+          ? (body as Record<string, unknown>)
+          : {};
+      return {
+        channel: "approve-proposal",
+        args: [{ chatId, ...payload }],
+        tenantPath: { orgId: match[1], workspaceId: match[2] },
+        requiresAuth: true,
+      };
+    },
+  },
+  {
+    method: "POST",
+    pattern:
+      /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/chats\/(\d+)\/proposal\/reject$/,
+    build: (_url, match, body) => {
+      const chatId = parseNumber(match[3]);
+      if (chatId == null) {
+        return null;
+      }
+      const payload =
+        body && typeof body === "object"
+          ? (body as Record<string, unknown>)
+          : {};
+      return {
+        channel: "reject-proposal",
+        args: [{ chatId, ...payload }],
         tenantPath: { orgId: match[1], workspaceId: match[2] },
         requiresAuth: true,
       };

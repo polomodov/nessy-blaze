@@ -32,6 +32,7 @@ import type {
 } from "@/lib/oauth2_flow";
 import {
   OAUTH2_CODE_VERIFIER_STORAGE_KEY,
+  OAUTH2_REDIRECT_URI_STORAGE_KEY,
   OAUTH2_STATE_STORAGE_KEY,
   buildOAuth2AuthorizationUrl,
   createOAuth2State,
@@ -110,10 +111,56 @@ function saveOAuthSessionValue(key: string, value: string) {
 function clearOAuthSessionValues() {
   window.sessionStorage.removeItem(OAUTH2_STATE_STORAGE_KEY);
   window.sessionStorage.removeItem(OAUTH2_CODE_VERIFIER_STORAGE_KEY);
+  window.sessionStorage.removeItem(OAUTH2_REDIRECT_URI_STORAGE_KEY);
 }
 
 function readOAuthSessionValue(key: string): string {
   return window.sessionStorage.getItem(key)?.trim() ?? "";
+}
+
+function isLoopbackHost(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1";
+}
+
+function resolveOAuthRedirectUri(
+  configuredRedirectUri?: string | null,
+): string {
+  const currentRedirectUri = `${window.location.origin}/auth`;
+  const configured = configuredRedirectUri?.trim();
+  if (!configured) {
+    return currentRedirectUri;
+  }
+
+  try {
+    const configuredUrl = new URL(configured);
+    const currentUrl = new URL(currentRedirectUri);
+
+    if (
+      isLoopbackHost(configuredUrl.hostname) &&
+      isLoopbackHost(currentUrl.hostname) &&
+      configuredUrl.origin !== currentUrl.origin
+    ) {
+      // Avoid callback/session storage origin mismatch between localhost and 127.0.0.1.
+      return currentRedirectUri;
+    }
+  } catch {
+    return currentRedirectUri;
+  }
+
+  return configured;
+}
+
+async function readApiEnvelope<T>(
+  response: Response,
+): Promise<ApiResponseEnvelope<T>> {
+  try {
+    return (await response.json()) as ApiResponseEnvelope<T>;
+  } catch {
+    const text = await response.text().catch(() => "");
+    return {
+      error: text || undefined,
+    };
+  }
 }
 
 function readOAuthCallbackSearchParams(): URLSearchParams | null {
@@ -223,8 +270,7 @@ export default function AuthPage() {
           "Content-Type": "application/json",
         },
       });
-      const payload =
-        (await response.json()) as ApiResponseEnvelope<OAuth2PublicConfig>;
+      const payload = await readApiEnvelope<OAuth2PublicConfig>(response);
       if (!response.ok || !payload?.data) {
         throw new Error(
           payload?.error || t("auth.toast.oauthConfigLoadFailed"),
@@ -247,7 +293,7 @@ export default function AuthPage() {
         body: JSON.stringify(params),
       });
       const payload =
-        (await response.json()) as ApiResponseEnvelope<OAuth2TokenExchangeResult>;
+        await readApiEnvelope<OAuth2TokenExchangeResult>(response);
       if (!response.ok || !payload?.data) {
         throw new Error(payload?.error || t("auth.toast.oauthExchangeFailed"));
       }
@@ -286,6 +332,9 @@ export default function AuthPage() {
     const codeVerifier = readOAuthSessionValue(
       OAUTH2_CODE_VERIFIER_STORAGE_KEY,
     );
+    const savedRedirectUri = readOAuthSessionValue(
+      OAUTH2_REDIRECT_URI_STORAGE_KEY,
+    );
 
     if (!code) {
       toast.error(t("auth.toast.oauthCodeMissing"));
@@ -316,7 +365,7 @@ export default function AuthPage() {
       }
 
       const redirectUri =
-        oauthConfig.redirectUri?.trim() || `${window.location.origin}/auth`;
+        savedRedirectUri || resolveOAuthRedirectUri(oauthConfig.redirectUri);
       const exchangeResult = await exchangeOAuth2Code({
         code,
         codeVerifier,
@@ -436,11 +485,11 @@ export default function AuthPage() {
       const codeVerifier = createPkceCodeVerifier();
       const codeChallenge = await createPkceCodeChallenge(codeVerifier);
       const state = createOAuth2State();
-      const redirectUri =
-        oauthConfig.redirectUri?.trim() || `${window.location.origin}/auth`;
+      const redirectUri = resolveOAuthRedirectUri(oauthConfig.redirectUri);
 
       saveOAuthSessionValue(OAUTH2_STATE_STORAGE_KEY, state);
       saveOAuthSessionValue(OAUTH2_CODE_VERIFIER_STORAGE_KEY, codeVerifier);
+      saveOAuthSessionValue(OAUTH2_REDIRECT_URI_STORAGE_KEY, redirectUri);
 
       const authorizationUrl = buildOAuth2AuthorizationUrl({
         config: oauthConfig,

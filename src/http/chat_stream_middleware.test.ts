@@ -173,12 +173,12 @@ describe("createChatStreamMiddleware", () => {
 
   it("streams chat updates over SSE", async () => {
     mockHandleChatStreamRequest.mockImplementationOnce(
-      async (event: any, request: ChatStreamParams) => {
-        event.sender.send("chat:response:chunk", {
+      async (eventSink: any, request: ChatStreamParams) => {
+        eventSink.send("chat:response:chunk", {
           chatId: request.chatId,
           chunk: "hello",
         });
-        event.sender.send("chat:response:end", {
+        eventSink.send("chat:response:end", {
           chatId: request.chatId,
           updatedFiles: false,
         });
@@ -212,8 +212,8 @@ describe("createChatStreamMiddleware", () => {
 
   it("supports scoped SSE stream route", async () => {
     mockHandleChatStreamRequest.mockImplementationOnce(
-      async (event: any, request: ChatStreamParams) => {
-        event.sender.send("chat:response:end", {
+      async (eventSink: any, request: ChatStreamParams) => {
+        eventSink.send("chat:response:end", {
           chatId: request.chatId,
           updatedFiles: false,
         });

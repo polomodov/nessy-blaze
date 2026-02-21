@@ -39,14 +39,14 @@ describe("chat_ws_server", () => {
       loadChatStreamHandlers: async () =>
         ({
           handleChatStreamRequest: async (
-            event: any,
+            eventSink: any,
             req: { chatId: number },
           ) => {
-            event.sender.send("chat:response:chunk", {
+            eventSink.send("chat:response:chunk", {
               chatId: req.chatId,
               textDelta: "chunk",
             });
-            event.sender.send("chat:response:end", {
+            eventSink.send("chat:response:end", {
               chatId: req.chatId,
               updatedFiles: false,
               totalTokens: 7,
@@ -130,8 +130,8 @@ describe("chat_ws_server", () => {
     });
 
     const handleChatStreamRequest = vi.fn(async () => pendingStream);
-    const handleChatCancelRequest = vi.fn(async (event, chatId: number) => {
-      event.sender.send("chat:response:end", {
+    const handleChatCancelRequest = vi.fn(async (eventSink, chatId: number) => {
+      eventSink.send("chat:response:end", {
         chatId,
         updatedFiles: false,
       });

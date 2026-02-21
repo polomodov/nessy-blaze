@@ -13,7 +13,6 @@ describe("IpcClient tenant collections", () => {
   it("normalizes wrapped organization and workspace payloads", async () => {
     window.__BLAZE_REMOTE_CONFIG__ = {
       backendClient: {
-        mode: "http",
         baseUrl: "https://api.example.com",
       },
     };

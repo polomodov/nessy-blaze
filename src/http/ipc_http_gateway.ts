@@ -39,6 +39,7 @@ import { DEFAULT_THEME_ID } from "../shared/themes";
 import { getAppPort } from "../../shared/ports";
 import { isMultitenantEnforced } from "./feature_flags";
 import { HttpError } from "./http_errors";
+import { cleanUpPortWithVerification } from "./preview_port_cleanup";
 import { enforceAndRecordUsage, writeAuditEvent } from "./quota_audit";
 import type { RequestContext } from "./request_context";
 import { requireRoleForMutation } from "./request_context";
@@ -906,11 +907,11 @@ async function waitForAppReady({
 }
 
 async function cleanUpPort(port: number): Promise<void> {
-  try {
-    await killPort(port, "tcp");
-  } catch {
-    // ignore: no process bound to this port
-  }
+  await cleanUpPortWithVerification({
+    port,
+    isPortOpen,
+    killPortFn: killPort,
+  });
 }
 
 async function startPreviewAppForHttp(

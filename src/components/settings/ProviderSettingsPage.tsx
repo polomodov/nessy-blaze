@@ -15,7 +15,6 @@ import {
   UserSettings,
   AzureProviderSetting,
   VertexProviderSetting,
-  hasBlazeProKey,
 } from "@/lib/schemas";
 
 import { ProviderSettingsHeader } from "./ProviderSettingsHeader";
@@ -125,10 +124,6 @@ export function ProviderSettingsPage({ provider }: ProviderSettingsPageProps) {
     setIsSaving(true);
     setSaveError(null);
     try {
-      // Check if this is the first time user is setting up Blaze Pro
-      const isNewBlazeProSetup =
-        isBlaze && settings && !hasBlazeProKey(settings);
-
       const settingsUpdate: Partial<UserSettings> = {
         providerSettings: {
           ...settings?.providerSettings,
@@ -142,10 +137,7 @@ export function ProviderSettingsPage({ provider }: ProviderSettingsPageProps) {
       };
       if (isBlaze) {
         settingsUpdate.enableBlazePro = true;
-        // Set default chat mode to local-agent when user upgrades to pro
-        if (isNewBlazeProSetup) {
-          settingsUpdate.defaultChatMode = "local-agent";
-        }
+        settingsUpdate.defaultChatMode = "build";
       }
       await updateSettings(settingsUpdate);
       setApiKeyInput(""); // Clear input on success

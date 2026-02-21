@@ -100,7 +100,7 @@ export const runTypeChecksTool: ToolDefinition<
     });
 
     // Send the full problem report to update the Problems panel in the UI
-    safeSend(ctx.event.sender, "agent-tool:problems-update", {
+    safeSend(ctx.eventSink, "agent-tool:problems-update", {
       appId: ctx.appId,
       problems: problemReport,
     });

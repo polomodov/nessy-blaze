@@ -1,10 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { IpcClient } from "@/ipc/ipc_client";
-import {
-  BACKEND_BASE_URL_STORAGE_KEY,
-  BACKEND_IPC_FALLBACK_STORAGE_KEY,
-  BACKEND_MODE_STORAGE_KEY,
-} from "@/ipc/backend_client";
+import { BACKEND_BASE_URL_STORAGE_KEY } from "@/ipc/backend_client";
 
 function createSseResponse(chunks: string[]) {
   const encoder = new TextEncoder();
@@ -34,21 +30,16 @@ describe("IpcClient HTTP stream", () => {
     const storage = window.localStorage as Partial<Storage> &
       Record<string, unknown>;
     if (typeof storage.removeItem === "function") {
-      storage.removeItem(BACKEND_MODE_STORAGE_KEY);
       storage.removeItem(BACKEND_BASE_URL_STORAGE_KEY);
-      storage.removeItem(BACKEND_IPC_FALLBACK_STORAGE_KEY);
     } else {
-      delete storage[BACKEND_MODE_STORAGE_KEY];
       delete storage[BACKEND_BASE_URL_STORAGE_KEY];
-      delete storage[BACKEND_IPC_FALLBACK_STORAGE_KEY];
     }
     (IpcClient as any).instance = undefined;
   });
 
-  it("parses SSE chunk/end events in HTTP mode", async () => {
+  it("parses SSE chunk/end events", async () => {
     window.__BLAZE_REMOTE_CONFIG__ = {
       backendClient: {
-        mode: "http",
         baseUrl: "https://api.example.com",
       },
     };
@@ -102,21 +93,18 @@ describe("IpcClient HTTP stream", () => {
     expect(onError).not.toHaveBeenCalled();
   });
 
-  it("falls back to IPC stream when HTTP fetch fails in desktop mode", async () => {
+  it("surfaces streaming errors without IPC fallback", async () => {
     window.__BLAZE_REMOTE_CONFIG__ = {
       backendClient: {
-        mode: "http",
         baseUrl: "https://api.example.com",
       },
     };
 
-    const invokeMock = vi.fn().mockResolvedValue(undefined);
-    const onMock = vi.fn().mockReturnValue(() => {});
-
+    const invokeMock = vi.fn();
     (window as any).electron = {
       ipcRenderer: {
         invoke: invokeMock,
-        on: onMock,
+        on: vi.fn().mockReturnValue(() => {}),
         removeAllListeners: vi.fn(),
         removeListener: vi.fn(),
       },
@@ -128,28 +116,24 @@ describe("IpcClient HTTP stream", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const client = IpcClient.getInstance();
+    const onError = vi.fn();
+
     client.streamMessage("Build a page", {
       chatId: 99,
       onUpdate: vi.fn(),
       onEnd: vi.fn(),
-      onError: vi.fn(),
+      onError,
     });
 
     await vi.waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith(
-        "chat:stream",
-        expect.objectContaining({
-          prompt: "Build a page",
-          chatId: 99,
-        }),
-      );
+      expect(onError).toHaveBeenCalled();
     });
+    expect(invokeMock).not.toHaveBeenCalled();
   });
 
   it("emits preview url output when run-app returns HTTP payload", async () => {
     window.__BLAZE_REMOTE_CONFIG__ = {
       backendClient: {
-        mode: "http",
         baseUrl: "https://api.example.com",
       },
     };

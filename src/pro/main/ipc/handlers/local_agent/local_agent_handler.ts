@@ -3,7 +3,6 @@
  * Main orchestrator for tool-based agent mode with parallel execution
  */
 
-import type { IpcMainInvokeEvent } from "electron";
 import {
   streamText,
   ToolSet,
@@ -57,6 +56,7 @@ import { TOOL_DEFINITIONS } from "./tool_definitions";
 import { parseAiMessagesJson } from "@/ipc/utils/ai_messages_utils";
 import { parseMcpToolKey, sanitizeMcpName } from "@/ipc/utils/mcp_tool_utils";
 import { addIntegrationTool } from "./tools/add_integration";
+import type { ServerEventSink } from "@/ipc/utils/server_event_sink";
 
 const logger = log.scope("local_agent_handler");
 
@@ -100,7 +100,7 @@ function findToolDefinition(toolName: string) {
  * Handle a chat stream in local-agent mode
  */
 export async function handleLocalAgentStream(
-  event: IpcMainInvokeEvent,
+  eventSink: ServerEventSink,
   req: ChatStreamParams,
   abortController: AbortController,
   {
@@ -123,7 +123,7 @@ export async function handleLocalAgentStream(
 
   // Check Pro status
   if (!isBlazeProEnabled(settings)) {
-    safeSend(event.sender, "chat:response:error", {
+    safeSend(eventSink, "chat:response:error", {
       chatId: req.chatId,
       error:
         "Agent v2 requires Blaze Pro. Please enable Blaze Pro in Settings → Pro.",
@@ -149,7 +149,7 @@ export async function handleLocalAgentStream(
   const appPath = getBlazeAppPath(chat.app.path);
 
   // Send initial message update
-  safeSend(event.sender, "chat:response:chunk", {
+  safeSend(eventSink, "chat:response:chunk", {
     chatId: req.chatId,
     messages: chat.messages,
   });
@@ -171,7 +171,7 @@ export async function handleLocalAgentStream(
 
     // Build tool execute context
     const ctx: AgentContext = {
-      event,
+      eventSink,
       appId: chat.app.id,
       appPath,
       chatId: chat.id,
@@ -185,7 +185,7 @@ export async function handleLocalAgentStream(
         // Stream accumulated XML to UI without persisting
         streamingPreview = accumulatedXml;
         sendResponseChunk(
-          event,
+          eventSink,
           req.chatId,
           chat,
           fullResponse + streamingPreview,
@@ -196,14 +196,14 @@ export async function handleLocalAgentStream(
         fullResponse += finalXml + "\n";
         streamingPreview = ""; // Clear preview
         updateResponseInDb(placeholderMessageId, fullResponse);
-        sendResponseChunk(event, req.chatId, chat, fullResponse);
+        sendResponseChunk(eventSink, req.chatId, chat, fullResponse);
       },
       requireConsent: async (params: {
         toolName: string;
         toolDescription?: string | null;
         inputPreview?: string | null;
       }) => {
-        return requireAgentToolConsent(event, {
+        return requireAgentToolConsent(eventSink, {
           chatId: chat.id,
           toolName: params.toolName as AgentToolName,
           toolDescription: params.toolDescription,
@@ -214,7 +214,7 @@ export async function handleLocalAgentStream(
         pendingUserMessages.push(content);
       },
       onUpdateTodos: (todos) => {
-        safeSend(event.sender, "agent-tool:todos-update", {
+        safeSend(eventSink, "agent-tool:todos-update", {
           chatId: chat.id,
           todos,
         });
@@ -225,7 +225,7 @@ export async function handleLocalAgentStream(
     // In read-only mode, only include read-only tools and skip MCP tools
     // (since we can't determine if MCP tools modify state)
     const agentTools = buildAgentToolSet(ctx, { readOnly });
-    const mcpTools = readOnly ? {} : await getMcpTools(event, ctx);
+    const mcpTools = readOnly ? {} : await getMcpTools(eventSink, ctx);
     const allTools: ToolSet = { ...agentTools, ...mcpTools };
 
     // Prepare message history with graceful fallback
@@ -287,7 +287,7 @@ export async function handleLocalAgentStream(
       onError: (error: any) => {
         const errorMessage = error?.error?.message || JSON.stringify(error);
         logger.error("Local agent stream error:", errorMessage);
-        safeSend(event.sender, "chat:response:error", {
+        safeSend(eventSink, "chat:response:error", {
           chatId: req.chatId,
           error: `AI error: ${errorMessage}`,
         });
@@ -397,7 +397,7 @@ export async function handleLocalAgentStream(
       if (chunk) {
         fullResponse += chunk;
         await updateResponseInDb(placeholderMessageId, fullResponse);
-        sendResponseChunk(event, req.chatId, chat, fullResponse);
+        sendResponseChunk(eventSink, req.chatId, chat, fullResponse);
       }
     }
 
@@ -444,7 +444,7 @@ export async function handleLocalAgentStream(
       .where(eq(messages.id, placeholderMessageId));
 
     // Send completion
-    safeSend(event.sender, "chat:response:end", {
+    safeSend(eventSink, "chat:response:end", {
       chatId: req.chatId,
       updatedFiles: !readOnly,
     } satisfies ChatResponseEnd);
@@ -467,7 +467,7 @@ export async function handleLocalAgentStream(
     }
 
     logger.error("Local agent error:", error);
-    safeSend(event.sender, "chat:response:error", {
+    safeSend(eventSink, "chat:response:error", {
       chatId: req.chatId,
       error: `Error: ${error}`,
     });
@@ -484,7 +484,7 @@ async function updateResponseInDb(messageId: number, content: string) {
 }
 
 function sendResponseChunk(
-  event: IpcMainInvokeEvent,
+  eventSink: ServerEventSink,
   chatId: number,
   chat: any,
   fullResponse: string,
@@ -496,14 +496,14 @@ function sendResponseChunk(
       lastMsg.content = fullResponse;
     }
   }
-  safeSend(event.sender, "chat:response:chunk", {
+  safeSend(eventSink, "chat:response:chunk", {
     chatId,
     messages: currentMessages,
   });
 }
 
 async function getMcpTools(
-  event: IpcMainInvokeEvent,
+  eventSink: ServerEventSink,
   ctx: AgentContext,
 ): Promise<ToolSet> {
   const mcpToolSet: ToolSet = {};
@@ -533,7 +533,7 @@ async function getMcpTools(
                     ? args.join(" ")
                     : JSON.stringify(args).slice(0, 500);
 
-              const ok = await requireMcpToolConsent(event, {
+              const ok = await requireMcpToolConsent(eventSink, {
                 serverId: s.id,
                 serverName: s.name,
                 toolName: name,

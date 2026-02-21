@@ -1,10 +1,10 @@
 import type { IncomingMessage, Server as HttpServer } from "node:http";
 import type { Duplex } from "node:stream";
-import type { IpcMainInvokeEvent } from "electron";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { initializeDatabase } from "../db";
 import type { ChatResponseEnd, ChatStreamParams } from "../ipc/ipc_types";
 import { resolveConsent } from "../ipc/utils/mcp_consent";
+import type { ServerEventSink } from "../ipc/utils/server_event_sink";
 import { resolveAgentToolConsent } from "../pro/main/ipc/handlers/local_agent/agent_tool_consent";
 import { isWebSocketStreamingEnabled } from "./feature_flags";
 import { isHttpError } from "./http_errors";
@@ -27,11 +27,11 @@ export type ChatStreamHandlersLoader = () => Promise<ChatStreamHandlerModule>;
 
 interface ChatStreamHandlers {
   handleChatStreamRequest: (
-    event: IpcMainInvokeEvent,
+    eventSink: ServerEventSink,
     req: ChatStreamParams,
   ) => Promise<unknown>;
   handleChatCancelRequest: (
-    event: IpcMainInvokeEvent,
+    eventSink: ServerEventSink,
     chatId: number,
   ) => Promise<unknown>;
 }
@@ -79,7 +79,7 @@ interface ActiveStream {
   requestId: string;
   chatId: number;
   context: RequestContext;
-  event: IpcMainInvokeEvent;
+  eventSink: ServerEventSink;
   ended: boolean;
 }
 
@@ -176,11 +176,11 @@ export function createChatWsSession(
     });
   };
 
-  const createWsIpcEvent = (params: {
+  const createWsEventSink = (params: {
     requestId: string;
     chatId: number;
     onEnd: (payload: ChatResponseEnd) => void;
-  }): IpcMainInvokeEvent => {
+  }): ServerEventSink => {
     const stableEmitter = createChatStreamStableEmitter({
       chatId: params.chatId,
       onEvent: (event) => {
@@ -201,63 +201,60 @@ export function createChatWsSession(
     });
 
     return {
-      sender: {
-        send: (channel: string, ...args: unknown[]) => {
-          const payload = args[0];
+      send: (channel: string, ...args: unknown[]) => {
+        const payload = args[0];
 
-          if (channel === "chat:response:chunk") {
-            stableEmitter.emitChunk(payload);
-            return;
-          }
+        if (channel === "chat:response:chunk") {
+          stableEmitter.emitChunk(payload);
+          return;
+        }
 
-          if (channel === "chat:response:error") {
-            stableEmitter.emitError(payload);
-            return;
-          }
+        if (channel === "chat:response:error") {
+          stableEmitter.emitError(payload);
+          return;
+        }
 
-          if (channel === "chat:response:end") {
-            stableEmitter.emitEnd(
-              (payload as ChatResponseEnd) ?? {
-                chatId: params.chatId,
-                updatedFiles: false,
-              },
-            );
-            return;
-          }
+        if (channel === "chat:response:end") {
+          stableEmitter.emitEnd(
+            (payload as ChatResponseEnd) ?? {
+              chatId: params.chatId,
+              updatedFiles: false,
+            },
+          );
+          return;
+        }
 
-          if (
-            channel === "mcp:tool-consent-request" &&
-            payload &&
-            typeof payload === "object" &&
-            "requestId" in (payload as Record<string, unknown>)
-          ) {
-            const requestId = String(
-              (payload as Record<string, unknown>).requestId ?? "",
-            );
-            if (requestId) {
-              resolveConsent(requestId, "decline");
-            }
-            return;
+        if (
+          channel === "mcp:tool-consent-request" &&
+          payload &&
+          typeof payload === "object" &&
+          "requestId" in (payload as Record<string, unknown>)
+        ) {
+          const requestId = String(
+            (payload as Record<string, unknown>).requestId ?? "",
+          );
+          if (requestId) {
+            resolveConsent(requestId, "decline");
           }
+          return;
+        }
 
-          if (
-            channel === "agent-tool:consent-request" &&
-            payload &&
-            typeof payload === "object" &&
-            "requestId" in (payload as Record<string, unknown>)
-          ) {
-            const requestId = String(
-              (payload as Record<string, unknown>).requestId ?? "",
-            );
-            if (requestId) {
-              resolveAgentToolConsent(requestId, "decline");
-            }
+        if (
+          channel === "agent-tool:consent-request" &&
+          payload &&
+          typeof payload === "object" &&
+          "requestId" in (payload as Record<string, unknown>)
+        ) {
+          const requestId = String(
+            (payload as Record<string, unknown>).requestId ?? "",
+          );
+          if (requestId) {
+            resolveAgentToolConsent(requestId, "decline");
           }
-        },
-        isDestroyed: () => false,
-        isCrashed: () => false,
-      } as any,
-    } as IpcMainInvokeEvent;
+        }
+      },
+      isClosed: () => !options.isOpen() || stableEmitter.isEnded(),
+    };
   };
 
   const handleStart = async (message: WsStartChatStreamMessage) => {
@@ -294,7 +291,10 @@ export function createChatWsSession(
       chatId: message.chatId,
       context: requestContext,
       ended: false,
-      event: {} as IpcMainInvokeEvent,
+      eventSink: {
+        send() {},
+        isClosed: () => true,
+      },
     };
 
     const onEnd = (payload: ChatResponseEnd) => {
@@ -331,7 +331,7 @@ export function createChatWsSession(
       });
     };
 
-    active.event = createWsIpcEvent({
+    active.eventSink = createWsEventSink({
       requestId: message.requestId,
       chatId: message.chatId,
       onEnd,
@@ -363,7 +363,7 @@ export function createChatWsSession(
     };
 
     try {
-      await handlers.handleChatStreamRequest(active.event, streamRequest);
+      await handlers.handleChatStreamRequest(active.eventSink, streamRequest);
     } catch (error) {
       sendError(serializeError(error), {
         requestId: message.requestId,
@@ -404,7 +404,7 @@ export function createChatWsSession(
 
     await ensureChatScoped(target.context, target.chatId);
     const handlers = await getHandlers();
-    await handlers.handleChatCancelRequest(target.event, target.chatId);
+    await handlers.handleChatCancelRequest(target.eventSink, target.chatId);
 
     await recordAudit({
       context: target.context,
@@ -473,7 +473,10 @@ export function createChatWsSession(
       await Promise.all(
         current.map(async (active) => {
           try {
-            await handlers.handleChatCancelRequest(active.event, active.chatId);
+            await handlers.handleChatCancelRequest(
+              active.eventSink,
+              active.chatId,
+            );
           } catch {
             // Ignore close-time cancellation errors.
           } finally {

@@ -58,6 +58,7 @@ describe("readSettings", () => {
       );
       expect(scrubSettings(result)).toMatchInlineSnapshot(`
         {
+          "autoApproveChanges": true,
           "enableAutoFixProblems": false,
           "enableAutoUpdate": true,
           "enableNativeGit": true,
@@ -315,6 +316,7 @@ describe("readSettings", () => {
 
       expect(scrubSettings(result)).toMatchInlineSnapshot(`
         {
+          "autoApproveChanges": true,
           "enableAutoFixProblems": false,
           "enableAutoUpdate": true,
           "enableNativeGit": true,

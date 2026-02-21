@@ -70,6 +70,7 @@ describe("invokeIpcChannelOverHttp", () => {
   });
 
   it("returns disabled OAuth2 config when not configured", async () => {
+    process.env.AUTH_OAUTH2_ENABLED = "false";
     delete process.env.AUTH_OAUTH2_CLIENT_ID;
     delete process.env.AUTH_OAUTH2_AUTHORIZATION_URL;
     delete process.env.AUTH_OAUTH2_TOKEN_URL;

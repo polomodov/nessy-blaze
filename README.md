@@ -1,50 +1,50 @@
-# Blaze
+# Blaze (Internal)
 
-Blaze is a local, open-source AI app builder. It's fast, private, and fully under your control — like Lovable, v0, or Bolt, but running right on your machine.
+Blaze is an internal client-server application for building frontend apps from prompts.
+The repository contains both the web client and backend service used in local/dev environments.
 
-[![Image](https://github.com/user-attachments/assets/f6c83dfc-6ffd-4d32-93dd-4b9c46d17790)](https://blaze.sh/)
+## Architecture
 
-More info at: [https://blaze.sh/](https://blaze.sh/)
+- Web client (React + TanStack Router + TanStack Query)
+- In-repo HTTP backend (`/api/v1`, SSE/WS chat streaming)
+- PostgreSQL + drizzle ORM
+- Shared domain types/schemas used by client and server
 
-## 🚀 Features
+## Runtime Mode
 
-- ⚡️ **Local**: Fast, private and no lock-in.
-- 🛠 **Bring your own keys**: Use your own AI API keys — no vendor lock-in.
-- 🖥️ **Cross-platform**: Easy to run on Mac or Windows.
+The default and supported runtime is client-server (HTTP-only transport).
+Legacy desktop compatibility paths are being removed from active runtime flow.
 
-## 📦 Download
+## Main Project Parts
 
-No sign-up required. Just download and go.
+- `src/components`, `src/routes`, `src/hooks`: frontend application UI and flows
+- `src/http`: HTTP API middleware, chat stream middleware, WS server
+- `src/ipc/backend_client.ts`: frontend transport layer to backend HTTP routes
+- `src/ipc/ipc_client.ts`: app client facade used by UI hooks/components
+- `src/db`: schema, DB setup, and migrations
+- `src/pro`: extended internal/pro feature modules
 
-### [👉 Download for your platform](https://www.blaze.sh/#download)
-
-## 🤝 Community
-
-Join our growing community of AI app builders on **Reddit**: [r/blazebuilders](https://www.reddit.com/r/blazebuilders/) - share your projects and get help from the community!
-
-## 🧑‍💻 Local development
+## Development
 
 ```sh
 npm install
+npm run init-precommit
 npm run dev
 ```
 
-`npm run dev` now starts client-server web mode by default.  
-For desktop compatibility mode, use:
+Database:
 
 ```sh
-npm run dev:desktop
+npm run db:generate
 ```
 
-Need more setup details? See [CONTRIBUTING.md](./CONTRIBUTING.md).
+## Testing
 
-## 🛠️ Contributing
+```sh
+npm test
+```
 
-**Blaze** is open-source (see License info below).
+## Contributing
 
-If you're interested in contributing to blaze, please read our [contributing](./CONTRIBUTING.md) doc.
-
-## License
-
-- All the code in this repo outside of `src/pro` is open-source and licensed under Apache 2.0 - see [LICENSE](./LICENSE).
-- All the code in this repo within `src/pro` is fair-source and licensed under [Functional Source License 1.1 Apache 2.0](https://fsl.software/) - see [LICENSE](./src/pro/LICENSE).
+Contributions inside the company are welcome.
+Contribution rules and process are described in `CONTRIBUTING.md`.

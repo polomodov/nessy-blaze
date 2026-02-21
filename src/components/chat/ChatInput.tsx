@@ -26,8 +26,6 @@ import {
   chatInputValueAtom,
   chatMessagesByIdAtom,
   selectedChatIdAtom,
-  pendingAgentConsentsAtom,
-  agentTodosByChatIdAtom,
 } from "@/atoms/chatAtoms";
 import { atom, useAtom, useSetAtom, useAtomValue } from "jotai";
 import { useStreamChat } from "@/hooks/useStreamChat";
@@ -63,8 +61,6 @@ import { showExtraFilesToast } from "@/lib/toast";
 import { useSummarizeInNewChat } from "./SummarizeInNewChatButton";
 import { ChatInputControls } from "../ChatInputControls";
 import { ChatErrorBox } from "./ChatErrorBox";
-import { AgentConsentBanner } from "./AgentConsentBanner";
-import { TodoList } from "./TodoList";
 import {
   selectedComponentsPreviewAtom,
   previewIframeRefAtom,
@@ -115,18 +111,6 @@ export function ChatInput({ chatId }: { chatId?: number }) {
     currentComponentCoordinatesAtom,
   );
   const setPendingVisualChanges = useSetAtom(pendingVisualChangesAtom);
-  const [pendingAgentConsents, setPendingAgentConsents] = useAtom(
-    pendingAgentConsentsAtom,
-  );
-  // Get the first consent in the queue for this chat (if any)
-  const consentsForThisChat = pendingAgentConsents.filter(
-    (c) => c.chatId === chatId,
-  );
-  const pendingAgentConsent = consentsForThisChat[0] ?? null;
-
-  // Get todos for this chat
-  const agentTodosByChatId = useAtomValue(agentTodosByChatIdAtom);
-  const chatTodos = chatId ? (agentTodosByChatId.get(chatId) ?? []) : [];
   const { checkProblems } = useCheckProblems(appId);
   const { refreshAppIframe } = useRunApp();
   // Use the attachments hook
@@ -154,7 +138,7 @@ export function ChatInput({ chatId }: { chatId?: number }) {
 
   const lastMessage = (chatId ? (messagesById.get(chatId) ?? []) : []).at(-1);
   const disableSendButton =
-    settings?.selectedChatMode !== "local-agent" &&
+    settings?.selectedChatMode === "build" &&
     lastMessage?.role === "assistant" &&
     !lastMessage.approvalState &&
     !!proposal &&
@@ -325,45 +309,11 @@ export function ChatInput({ chatId }: { chatId?: number }) {
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
-          {/* Show todo list if there are todos for this chat */}
-          {chatTodos.length > 0 && <TodoList todos={chatTodos} />}
-          {/* Show agent consent banner if there's a pending consent request */}
-          {pendingAgentConsent && (
-            <AgentConsentBanner
-              consent={pendingAgentConsent}
-              queueTotal={consentsForThisChat.length}
-              onDecision={(decision) => {
-                IpcClient.getInstance().respondToAgentConsentRequest({
-                  requestId: pendingAgentConsent.requestId,
-                  decision,
-                });
-                // Remove this consent from the queue by requestId
-                setPendingAgentConsents((prev) =>
-                  prev.filter(
-                    (c) => c.requestId !== pendingAgentConsent.requestId,
-                  ),
-                );
-              }}
-              onClose={() => {
-                IpcClient.getInstance().respondToAgentConsentRequest({
-                  requestId: pendingAgentConsent.requestId,
-                  decision: "decline",
-                });
-                // Remove this consent from the queue by requestId
-                setPendingAgentConsents((prev) =>
-                  prev.filter(
-                    (c) => c.requestId !== pendingAgentConsent.requestId,
-                  ),
-                );
-              }}
-            />
-          )}
-          {/* Only render ChatInputActions if proposal is loaded and no pending consent */}
-          {!pendingAgentConsent &&
-            proposal &&
+          {/* Only render ChatInputActions for build-mode code proposals */}
+          {proposal &&
             proposalResult?.chatId === chatId &&
             settings.selectedChatMode !== "ask" &&
-            settings.selectedChatMode !== "local-agent" && (
+            settings.selectedChatMode === "build" && (
               <ChatInputActions
                 proposal={proposal}
                 onApprove={handleApprove}
@@ -413,8 +363,10 @@ export function ChatInput({ chatId }: { chatId?: number }) {
                     <TooltipTrigger asChild>
                       <button
                         onClick={() => {
-                          IpcClient.getInstance().openExternalUrl(
+                          window.open(
                             "https://blaze.sh/pro",
+                            "_blank",
+                            "noopener,noreferrer",
                           );
                         }}
                         className="flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors cursor-pointer"
@@ -873,8 +825,10 @@ function ChatInputActions({
                       key={index}
                       className="flex items-center space-x-2"
                       onClick={() => {
-                        IpcClient.getInstance().openExternalUrl(
+                        window.open(
                           `https://www.npmjs.com/package/${pkg}`,
+                          "_blank",
+                          "noopener,noreferrer",
                         );
                       }}
                     >
