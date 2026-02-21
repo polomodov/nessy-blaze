@@ -67,8 +67,6 @@ import type {
   PromptDto,
   CreatePromptParamsDto,
   UpdatePromptParamsDto,
-  McpServerUpdate,
-  CreateMcpServer,
   CloneRepoParams,
   SupabaseBranch,
   SetSupabaseAppProjectParams,
@@ -77,12 +75,6 @@ import type {
   DeleteSupabaseOrganizationParams,
   ApplyVisualEditingChangesParams,
   AnalyseComponentParams,
-  AgentTool,
-  SetAgentToolConsentParams,
-  AgentToolConsentRequestPayload,
-  AgentToolConsentResponseParams,
-  AgentTodosUpdatePayload,
-  AgentProblemsUpdatePayload,
   TelemetryEventPayload,
   GithubSyncOptions,
   ConsoleEntry,
@@ -321,12 +313,6 @@ export class IpcClient {
       onError: (error: string) => void;
     }
   >;
-  private mcpConsentHandlers: Map<string, (payload: any) => void>;
-  private agentConsentHandlers: Map<string, (payload: any) => void>;
-  private agentTodosHandlers: Set<(payload: AgentTodosUpdatePayload) => void>;
-  private agentProblemsHandlers: Set<
-    (payload: AgentProblemsUpdatePayload) => void
-  >;
   private telemetryEventHandlers: Set<(payload: TelemetryEventPayload) => void>;
   // Global handlers called for any chat stream start (used for cleanup)
   private globalChatStreamStartHandlers: Set<(chatId: number) => void>;
@@ -338,10 +324,6 @@ export class IpcClient {
     this.httpChatAbortControllers = new Map();
     this.appStreams = new Map();
     this.helpStreams = new Map();
-    this.mcpConsentHandlers = new Map();
-    this.agentConsentHandlers = new Map();
-    this.agentTodosHandlers = new Set();
-    this.agentProblemsHandlers = new Set();
     this.telemetryEventHandlers = new Set();
     this.globalChatStreamStartHandlers = new Set();
     this.globalChatStreamEndHandlers = new Set();
@@ -477,32 +459,6 @@ export class IpcClient {
         const callbacks = this.helpStreams.get(sessionId);
         if (callbacks) callbacks.onError(error);
         this.helpStreams.delete(sessionId);
-      }
-    });
-
-    // MCP tool consent request from main
-    this.ipcRenderer.on("mcp:tool-consent-request", (payload) => {
-      const handler = this.mcpConsentHandlers.get("consent");
-      if (handler) handler(payload);
-    });
-
-    // Agent tool consent request from main
-    this.ipcRenderer.on("agent-tool:consent-request", (payload) => {
-      const handler = this.agentConsentHandlers.get("consent");
-      if (handler) handler(payload);
-    });
-
-    // Agent todos update from main
-    this.ipcRenderer.on("agent-tool:todos-update", (payload) => {
-      for (const handler of this.agentTodosHandlers) {
-        handler(payload as unknown as AgentTodosUpdatePayload);
-      }
-    });
-
-    // Agent problems update from main
-    this.ipcRenderer.on("agent-tool:problems-update", (payload) => {
-      for (const handler of this.agentProblemsHandlers) {
-        handler(payload as unknown as AgentProblemsUpdatePayload);
       }
     });
 
@@ -1448,118 +1404,9 @@ export class IpcClient {
     return result.version as string;
   }
 
-  // --- MCP Client Methods ---
-  public async listMcpServers() {
-    return this.ipcRenderer.invoke("mcp:list-servers");
-  }
-
-  public async createMcpServer(params: CreateMcpServer) {
-    return this.ipcRenderer.invoke("mcp:create-server", params);
-  }
-
-  public async updateMcpServer(params: McpServerUpdate) {
-    return this.ipcRenderer.invoke("mcp:update-server", params);
-  }
-
-  public async deleteMcpServer(id: number) {
-    return this.ipcRenderer.invoke("mcp:delete-server", id);
-  }
-
-  public async listMcpTools(serverId: number) {
-    return this.ipcRenderer.invoke("mcp:list-tools", serverId);
-  }
-
-  // Removed: upsertMcpTools and setMcpToolActive – tools are fetched dynamically at runtime
-
-  public async getMcpToolConsents() {
-    return this.ipcRenderer.invoke("mcp:get-tool-consents");
-  }
-
-  public async setMcpToolConsent(params: {
-    serverId: number;
-    toolName: string;
-    consent: "ask" | "always" | "denied";
-  }) {
-    return this.ipcRenderer.invoke("mcp:set-tool-consent", params);
-  }
-
-  public onMcpToolConsentRequest(
-    handler: (payload: {
-      requestId: string;
-      serverId: number;
-      serverName: string;
-      toolName: string;
-      toolDescription?: string | null;
-      inputPreview?: string | null;
-    }) => void,
-  ) {
-    this.mcpConsentHandlers.set("consent", handler as any);
-    return () => {
-      this.mcpConsentHandlers.delete("consent");
-    };
-  }
-
-  public respondToMcpConsentRequest(
-    requestId: string,
-    decision: "accept-once" | "accept-always" | "decline",
-  ) {
-    this.ipcRenderer.invoke("mcp:tool-consent-response", {
-      requestId,
-      decision,
-    });
-  }
-
-  // --- Agent Tool Methods ---
-  public async getAgentTools(): Promise<AgentTool[]> {
-    return this.ipcRenderer.invoke("agent-tool:get-tools");
-  }
-
-  public async setAgentToolConsent(params: SetAgentToolConsentParams) {
-    return this.ipcRenderer.invoke("agent-tool:set-consent", params);
-  }
-
-  public onAgentToolConsentRequest(
-    handler: (payload: AgentToolConsentRequestPayload) => void,
-  ) {
-    this.agentConsentHandlers.set("consent", handler as any);
-    return () => {
-      this.agentConsentHandlers.delete("consent");
-    };
-  }
-
-  public respondToAgentConsentRequest(params: AgentToolConsentResponseParams) {
-    this.ipcRenderer.invoke("agent-tool:consent-response", params);
-  }
-
-  /**
-   * Subscribe to agent todos updates from the local agent.
-   * Called when the agent updates its todo list during a streaming session.
-   */
-  public onAgentTodosUpdate(
-    handler: (payload: AgentTodosUpdatePayload) => void,
-  ) {
-    this.agentTodosHandlers.add(handler);
-    return () => {
-      this.agentTodosHandlers.delete(handler);
-    };
-  }
-
-  /**
-   * Subscribe to agent problems updates from the local agent.
-   * Called when the agent runs type checks and updates the problems report.
-   */
-  public onAgentProblemsUpdate(
-    handler: (payload: AgentProblemsUpdatePayload) => void,
-  ) {
-    this.agentProblemsHandlers.add(handler);
-    return () => {
-      this.agentProblemsHandlers.delete(handler);
-    };
-  }
-
   /**
    * Subscribe to be notified when any chat stream starts.
-   * Useful for cleanup tasks like clearing pending consent requests.
+   * Useful for global cleanup tasks tied to stream lifecycle.
    * @returns Unsubscribe function
    */
   public onChatStreamStart(handler: (chatId: number) => void): () => void {
@@ -1571,7 +1418,7 @@ export class IpcClient {
 
   /**
    * Subscribe to be notified when any chat stream ends (either successfully or with an error).
-   * Useful for cleanup tasks like clearing pending consent requests.
+   * Useful for global cleanup tasks tied to stream lifecycle.
    * @returns Unsubscribe function
    */
   public onChatStreamEnd(handler: (chatId: number) => void): () => void {

@@ -9,13 +9,8 @@ import {
   QueryClientProvider,
   MutationCache,
 } from "@tanstack/react-query";
-import { showError, showMcpConsentToast } from "./lib/toast";
+import { showError } from "./lib/toast";
 import { IpcClient } from "./ipc/ipc_client";
-import { useSetAtom } from "jotai";
-import {
-  pendingAgentConsentsAtom,
-  agentTodosByChatIdAtom,
-} from "./atoms/chatAtoms";
 import { getTelemetryClient } from "@/lib/telemetry_client";
 
 // @ts-ignore
@@ -82,93 +77,11 @@ function App() {
     };
   }, []);
 
-  useEffect(() => {
-    const ipc = IpcClient.getInstance();
-    const unsubscribe = ipc.onMcpToolConsentRequest((payload) => {
-      showMcpConsentToast({
-        serverName: payload.serverName,
-        toolName: payload.toolName,
-        toolDescription: payload.toolDescription,
-        inputPreview: payload.inputPreview,
-        onDecision: (d) => ipc.respondToMcpConsentRequest(payload.requestId, d),
-      });
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // Agent v2 tool consent requests - queue consents instead of overwriting
-  const setPendingAgentConsents = useSetAtom(pendingAgentConsentsAtom);
-  const setAgentTodosByChatId = useSetAtom(agentTodosByChatIdAtom);
-
-  // Agent todos updates
-  useEffect(() => {
-    const ipc = IpcClient.getInstance();
-    const unsubscribe = ipc.onAgentTodosUpdate((payload) => {
-      setAgentTodosByChatId((prev) => {
-        const next = new Map(prev);
-        next.set(payload.chatId, payload.todos);
-        return next;
-      });
-    });
-    return () => unsubscribe();
-  }, [setAgentTodosByChatId]);
-
-  // Clear todos when a new stream starts (so previous turn's todos don't persist)
-  useEffect(() => {
-    const ipc = IpcClient.getInstance();
-    const unsubscribe = ipc.onChatStreamStart((chatId) => {
-      setAgentTodosByChatId((prev) => {
-        const next = new Map(prev);
-        next.delete(chatId);
-        return next;
-      });
-    });
-    return () => unsubscribe();
-  }, [setAgentTodosByChatId]);
-
-  useEffect(() => {
-    const ipc = IpcClient.getInstance();
-    const unsubscribe = ipc.onAgentToolConsentRequest((payload) => {
-      setPendingAgentConsents((prev) => [
-        ...prev,
-        {
-          requestId: payload.requestId,
-          chatId: payload.chatId,
-          toolName: payload.toolName,
-          toolDescription: payload.toolDescription,
-          inputPreview: payload.inputPreview,
-        },
-      ]);
-    });
-    return () => unsubscribe();
-  }, [setPendingAgentConsents]);
-
-  // Clear pending agent consents when a chat stream ends or errors
-  // This prevents stale consent banners from remaining visible after cancellation
-  useEffect(() => {
-    const ipc = IpcClient.getInstance();
-    const unsubscribe = ipc.onChatStreamEnd((chatId) => {
-      setPendingAgentConsents((prev) =>
-        prev.filter((consent) => consent.chatId !== chatId),
-      );
-    });
-    return () => unsubscribe();
-  }, [setPendingAgentConsents]);
-
   // Forward telemetry events from main process to PostHog
   useEffect(() => {
     const ipc = IpcClient.getInstance();
     const unsubscribe = ipc.onTelemetryEvent(({ eventName, properties }) => {
       posthogClient.capture(eventName, properties);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // Agent problems updates - update the TanStack Query cache when the agent runs type checks
-  useEffect(() => {
-    const ipc = IpcClient.getInstance();
-    const unsubscribe = ipc.onAgentProblemsUpdate((payload) => {
-      queryClient.setQueryData(["problems", payload.appId], payload.problems);
     });
     return () => unsubscribe();
   }, []);
