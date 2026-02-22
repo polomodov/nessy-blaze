@@ -38,9 +38,8 @@
     "test:ui": "vitest --ui",
     "extract-codebase": "ts-node scripts/extract-codebase.ts",
     "init-precommit": "husky",
-    "pre:e2e": "cross-env E2E_TEST_BUILD=true npm run build:client",
-    "e2e": "playwright test",
-    "e2e:shard": "playwright test --shard"
+    "e2e": "cross-env NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost playwright test",
+    "e2e:shard": "cross-env NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost playwright test --shard"
   },
   "keywords": [],
   "author": {
@@ -132,7 +131,6 @@
     "drizzle-orm": "^0.41.0",
     "dugite": "^3.0.0",
     "electron-log": "^5.4.3",
-    "electron-playwright-helpers": "^2.1.0",
     "esbuild-register": "^3.6.0",
     "fastest-levenshtein": "^1.0.16",
     "fix-path": "^4.0.0",

@@ -15,8 +15,8 @@
 2. **Multi-tenant by design**: изоляция по организациям и проектам на всех уровнях.
 3. **Безопасность по умолчанию**: sandbox для выполнения кода, audit trail, строгие политики доступа.
 4. **Надежный streaming UX**: генерация кода и ответов модели должна идти потоково с низкой задержкой.
-5. **Постепенная миграция**: без big-bang переписывания, через совместимость с текущим IPC-слоем.
-6. **HTTP-only контракт для client-service**: клиент и сервер взаимодействуют только через HTTP API (включая streaming). IPC остается legacy-компатибилити для desktop runtime.
+5. **Постепенная миграция**: без big-bang переписывания, с поэтапным выведением IPC из runtime.
+6. **HTTP-only контракт для client-service**: клиент и сервер взаимодействуют только через HTTP API (включая streaming).
 
 ## 3) Целевая логическая схема
 
@@ -127,8 +127,7 @@ Cross-cutting:
 
 ### Фаза A — абстракция транспорта
 - Ввести `BackendClient` в renderer:
-  - `HttpBackendClient` (основной и обязательный transport в client-service)
-  - `IpcBackendClient` (legacy compatibility для desktop runtime)
+  - HTTP transport как основной и обязательный путь в client-service
 
 ### Фаза B — Control Plane
 - Вынести CRUD (apps/chats/messages/settings) в backend API.

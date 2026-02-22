@@ -8,7 +8,6 @@ import {
   TextStreamPart,
   stepCountIs,
   hasToolCall,
-  type ToolExecutionOptions,
 } from "ai";
 
 import { db } from "../../db";
@@ -57,8 +56,6 @@ import { getMaxTokens, getTemperature } from "../utils/token_utils";
 import { MAX_CHAT_TURNS_IN_CONTEXT } from "../../constants/settings_constants";
 import { validateChatContext } from "../utils/context_paths_utils";
 import { getProviderOptions, getAiHeaders } from "../utils/provider_options";
-import { mcpServers } from "../../db/schema";
-import { requireMcpToolConsent } from "../utils/mcp_consent";
 
 import { safeSend } from "../utils/safe_sender";
 import { cleanFullResponse } from "../utils/cleanFullResponse";
@@ -67,6 +64,7 @@ import { createProblemFixPrompt } from "../../shared/problem_prompt";
 import { AsyncVirtualFileSystem } from "../../../shared/VirtualFilesystem";
 import {
   getBlazeAddDependencyTags,
+  getBlazeSearchReplaceTags,
   getBlazeWriteTags,
   getBlazeDeleteTags,
   getBlazeRenameTags,
@@ -78,13 +76,7 @@ import { parseAppMentions } from "../../shared/parse_mention_apps";
 import { prompts as promptsTable } from "../../db/schema";
 import { inArray } from "drizzle-orm";
 import { replacePromptReference } from "../utils/replacePromptReference";
-import { mcpManager } from "../utils/mcp_manager";
-import z from "zod";
-import {
-  isBlazeProEnabled,
-  isSupabaseConnected,
-  isTurboEditsV2Enabled,
-} from "../../lib/schemas";
+import { isSupabaseConnected, isTurboEditsV2Enabled } from "../../lib/schemas";
 import { AI_STREAMING_ERROR_MESSAGE_PREFIX } from "../../shared/texts";
 import { getCurrentCommitHash } from "../utils/git_utils";
 import {
@@ -116,20 +108,6 @@ const partialResponses = new Map<number, string>();
 
 // Directory for storing temporary files
 const TEMP_DIR = path.join(os.tmpdir(), "blaze-attachments");
-
-let localAgentStreamHandlerPromise: Promise<
-  typeof import("../../pro/main/ipc/handlers/local_agent/local_agent_handler")
-> | null = null;
-
-async function getHandleLocalAgentStream() {
-  if (!localAgentStreamHandlerPromise) {
-    localAgentStreamHandlerPromise = import(
-      "../../pro/main/ipc/handlers/local_agent/local_agent_handler"
-    );
-  }
-  const module = await localAgentStreamHandlerPromise;
-  return module.handleLocalAgentStream;
-}
 
 // Common helper functions
 const TEXT_FILE_EXTENSIONS = [
@@ -166,6 +144,10 @@ type ApplyStatus = {
   extraFiles?: string[];
   extraFilesError?: string;
 };
+
+const COMMAND_RECOMMENDATION_PATTERNS = [
+  /<blaze-command\b[\s\S]*?<\/blaze-command>/gi,
+];
 
 function truncateText(value: string, maxChars: number): string {
   if (value.length <= maxChars) {
@@ -242,7 +224,9 @@ function buildFallbackSummary({
       ? "### Что изменилось"
       : "### Что изменилось (ожидает подтверждения)";
     const applyState = autoApplied
-      ? "Изменения обработаны и применены автоматически."
+      ? status.updatedFiles
+        ? "Изменения применены автоматически."
+        : "Автоприменение не внесло изменений в файлы."
       : "Изменения готовы к проверке и подтверждению.";
     const errorLine = status.error
       ? `- Ошибка применения: ${status.error}`
@@ -267,7 +251,9 @@ function buildFallbackSummary({
     ? "### What changed"
     : "### What changed (pending approval)";
   const applyState = autoApplied
-    ? "Changes were processed and applied automatically."
+    ? status.updatedFiles
+      ? "Changes were applied automatically."
+      : "Auto-apply did not produce effective file changes."
     : "Changes are ready for review and approval.";
   const errorLine = status.error
     ? `- Apply error: ${status.error}`
@@ -286,6 +272,57 @@ function buildFallbackSummary({
     errorLine,
     extraFilesLine,
   ].join("\n");
+}
+
+function isCommandRecommendationLine(line: string): boolean {
+  const normalized = line.trim();
+  if (!normalized) {
+    return false;
+  }
+
+  return (
+    /\b(rebuild|restart|refresh)\b/i.test(normalized) ||
+    /пересоб/i.test(normalized) ||
+    /перезапуск/i.test(normalized)
+  );
+}
+
+export function sanitizeGeneratedSummary(content: string): string {
+  if (!content.trim()) {
+    return "";
+  }
+
+  let sanitized = content;
+  for (const pattern of COMMAND_RECOMMENDATION_PATTERNS) {
+    sanitized = sanitized.replace(pattern, "");
+  }
+
+  const lines = sanitized
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter((line) => !isCommandRecommendationLine(line));
+
+  const compactLines: string[] = [];
+  for (const line of lines) {
+    if (line.trim().length === 0) {
+      if (compactLines.length === 0) {
+        continue;
+      }
+      if (compactLines[compactLines.length - 1].trim().length === 0) {
+        continue;
+      }
+    }
+    compactLines.push(line);
+  }
+
+  while (
+    compactLines.length > 0 &&
+    compactLines[compactLines.length - 1].trim().length === 0
+  ) {
+    compactLines.pop();
+  }
+
+  return compactLines.join("\n").trim();
 }
 
 async function collectStreamText(
@@ -650,12 +687,14 @@ ${componentSnippet}
       .returning({ id: messages.id });
     const userMessageId = insertedUserMessage.id;
     const settings = readSettings();
+    const selectedChatMode =
+      settings.selectedChatMode === "ask" ? "ask" : "build";
     const responseLanguage = resolveUiLanguage(settings.uiLanguage);
     logger.log(
       "chat stream start",
       JSON.stringify({
         chatId: req.chatId,
-        selectedChatMode: settings.selectedChatMode,
+        selectedChatMode,
         uiLanguage: settings.uiLanguage ?? "unset",
         responseLanguage,
         selectedModel: `${settings.selectedModel.provider}/${settings.selectedModel.name}`,
@@ -879,10 +918,7 @@ ${componentSnippet}
 
       let systemPrompt = constructSystemPrompt({
         aiRules,
-        chatMode:
-          settings.selectedChatMode === "agent"
-            ? "build"
-            : settings.selectedChatMode,
+        chatMode: selectedChatMode,
         enableTurboEditsV2: isTurboEditsV2Enabled(settings),
         themePrompt,
       });
@@ -926,18 +962,13 @@ ${componentSnippet}
           "\n\n" +
           getSupabaseAvailableSystemPrompt(supabaseClientCode) +
           "\n\n" +
-          // For local agent, we will explicitly fetch the database context when needed.
-          (settings.selectedChatMode === "local-agent"
-            ? ""
-            : await getSupabaseContext({
-                supabaseProjectId: chatApp.supabaseProjectId,
-                organizationSlug: chatApp.supabaseOrganizationSlug ?? null,
-              }));
+          (await getSupabaseContext({
+            supabaseProjectId: chatApp.supabaseProjectId,
+            organizationSlug: chatApp.supabaseOrganizationSlug ?? null,
+          }));
       } else if (
         // Neon projects don't need Supabase.
         !chatApp?.neonProjectId &&
-        // In local agent mode, we will suggest supabase as part of the add-integration tool
-        settings.selectedChatMode !== "local-agent" &&
         // If in security review mode, we don't need to mention supabase is available.
         !isSecurityReviewIntent
       ) {
@@ -1035,7 +1066,7 @@ This conversation includes one or more image attachments. When the user uploads 
         // Thinking tags are generally not critical for the context
         // and eats up extra tokens.
         content:
-          settings.selectedChatMode === "ask"
+          selectedChatMode === "ask"
             ? removeBlazeTags(removeNonEssentialTags(msg.content))
             : removeNonEssentialTags(msg.content),
         providerOptions: {
@@ -1064,24 +1095,15 @@ This conversation includes one or more image attachments. When the user uploads 
               attachmentPaths,
             );
           }
-          // Save aiMessagesJson for modes that use handleLocalAgentStream
-          // (which reads from DB and needs structured image content)
-          const willUseLocalAgentStream =
-            settings.selectedChatMode === "local-agent" ||
-            (settings.selectedChatMode === "ask" &&
-              isBlazeProEnabled(settings) &&
-              !mentionedAppsCodebases.length);
-          if (willUseLocalAgentStream) {
-            // Insert into DB (with size guard)
-            const userAiMessagesJson = getAiMessagesJsonIfWithinLimit([
-              chatMessages[lastUserIndex],
-            ]);
-            if (userAiMessagesJson) {
-              await db
-                .update(messages)
-                .set({ aiMessagesJson: userAiMessagesJson })
-                .where(eq(messages.id, userMessageId));
-            }
+          // Persist aiMessagesJson for compatibility with existing message schema.
+          const userAiMessagesJson = getAiMessagesJsonIfWithinLimit([
+            chatMessages[lastUserIndex],
+          ]);
+          if (userAiMessagesJson) {
+            await db
+              .update(messages)
+              .set({ aiMessagesJson: userAiMessagesJson })
+              .where(eq(messages.id, userMessageId));
           }
         }
       } else {
@@ -1258,96 +1280,6 @@ This conversation includes one or more image attachments. When the user uploads 
         return fullResponse;
       };
 
-      // Handle pro ask mode: use local-agent in read-only mode
-      // This gives pro users access to code reading tools while in ask mode
-      if (
-        settings.selectedChatMode === "ask" &&
-        isBlazeProEnabled(settings) &&
-        !mentionedAppsCodebases.length
-      ) {
-        const handleLocalAgentStream = await getHandleLocalAgentStream();
-        // Reconstruct system prompt for local-agent read-only mode
-        const readOnlySystemPrompt = constructSystemPrompt({
-          aiRules,
-          chatMode: "local-agent",
-          enableTurboEditsV2: false,
-          themePrompt,
-          readOnly: true,
-        });
-
-        await handleLocalAgentStream(eventSink, req, abortController, {
-          placeholderMessageId: placeholderAssistantMessage.id,
-          systemPrompt: appendResponseLanguageInstruction(
-            readOnlySystemPrompt,
-            settings.uiLanguage,
-          ),
-          blazeRequestId: blazeRequestId ?? "[no-request-id]",
-          readOnly: true,
-        });
-        return;
-      }
-
-      // Handle local-agent mode (Agent v2)
-      // Mentioned apps can't be handled by the local agent (defer to balanced smart context
-      // in build mode)
-      if (
-        settings.selectedChatMode === "local-agent" &&
-        !mentionedAppsCodebases.length
-      ) {
-        const handleLocalAgentStream = await getHandleLocalAgentStream();
-        await handleLocalAgentStream(eventSink, req, abortController, {
-          placeholderMessageId: placeholderAssistantMessage.id,
-          systemPrompt,
-          blazeRequestId: blazeRequestId ?? "[no-request-id]",
-        });
-        return;
-      }
-
-      if (settings.selectedChatMode === "agent") {
-        const tools = await getMcpTools(eventSink);
-
-        const { fullStream } = await simpleStreamText({
-          chatMessages: limitedHistoryChatMessages,
-          modelClient,
-          tools: {
-            ...tools,
-            "generate-code": {
-              description:
-                "ALWAYS use this tool whenever generating or editing code for the codebase.",
-              inputSchema: z.object({}),
-              execute: async () => "",
-            },
-          },
-          systemPromptOverride: appendResponseLanguageInstruction(
-            constructSystemPrompt({
-              aiRules: await readAiRules(getBlazeAppPath(chatApp.path)),
-              chatMode: "agent",
-              enableTurboEditsV2: false,
-            }),
-            settings.uiLanguage,
-          ),
-          files: files,
-          blazeDisableFiles: true,
-        });
-
-        const result = await processStreamChunks({
-          fullStream,
-          fullResponse,
-          abortController,
-          chatId: req.chatId,
-          processResponseChunkUpdate,
-        });
-        fullResponse = result.fullResponse;
-        chatMessages.push({
-          role: "assistant",
-          content: fullResponse,
-        });
-        chatMessages.push({
-          role: "user",
-          content: "OK.",
-        });
-      }
-
       // When calling streamText, the messages need to be properly formatted for mixed content
       const { fullStream } = await simpleStreamText({
         chatMessages,
@@ -1366,10 +1298,12 @@ This conversation includes one or more image attachments. When the user uploads 
         });
         fullResponse = result.fullResponse;
 
-        if (
+        const shouldFixSearchReplaceIssues =
           settings.selectedChatMode !== "ask" &&
-          isTurboEditsV2Enabled(settings)
-        ) {
+          (isTurboEditsV2Enabled(settings) ||
+            getBlazeSearchReplaceTags(fullResponse).length > 0);
+
+        if (shouldFixSearchReplaceIssues) {
           let issues = await dryRunSearchReplace({
             fullResponse,
             appPath: getBlazeAppPath(chatApp.path),
@@ -1724,20 +1658,27 @@ ${problemReport.problems
         .set({ content: diagnosticTag })
         .where(eq(messages.id, placeholderAssistantMessage.id));
 
+      const shouldPreferDeterministicSummary =
+        !autoApplied || Boolean(status.error) || !status.updatedFiles;
+
       let summaryMessageContent = "";
-      try {
-        summaryMessageContent = await generateSummaryWithExternalLlm({
-          settings,
-          appId: chatApp.id,
-          diagnosticsPayload,
-          autoApplied,
-        });
-      } catch (summaryError) {
-        logger.error(
-          "Failed to generate external summary message:",
-          summaryError,
-        );
+      if (!shouldPreferDeterministicSummary) {
+        try {
+          summaryMessageContent = await generateSummaryWithExternalLlm({
+            settings,
+            appId: chatApp.id,
+            diagnosticsPayload,
+            autoApplied,
+          });
+        } catch (summaryError) {
+          logger.error(
+            "Failed to generate external summary message:",
+            summaryError,
+          );
+        }
       }
+
+      summaryMessageContent = sanitizeGeneratedSummary(summaryMessageContent);
 
       if (!summaryMessageContent.trim()) {
         summaryMessageContent = buildFallbackSummary({
@@ -2057,48 +1998,4 @@ These are the other apps that I've mentioned in my prompt. These other apps' cod
 
 ${otherAppsCodebaseInfo}
 `;
-}
-
-async function getMcpTools(eventSink: ServerEventSink): Promise<ToolSet> {
-  const mcpToolSet: ToolSet = {};
-  try {
-    const servers = await db
-      .select()
-      .from(mcpServers)
-      .where(eq(mcpServers.enabled, true as any));
-    for (const s of servers) {
-      const client = await mcpManager.getClient(s.id);
-      const toolSet = await client.tools();
-      for (const [name, mcpTool] of Object.entries(toolSet)) {
-        const key = `${String(s.name || "").replace(/[^a-zA-Z0-9_-]/g, "-")}__${String(name).replace(/[^a-zA-Z0-9_-]/g, "-")}`;
-        mcpToolSet[key] = {
-          description: mcpTool.description,
-          inputSchema: mcpTool.inputSchema,
-          execute: async (args: unknown, execCtx: ToolExecutionOptions) => {
-            const inputPreview =
-              typeof args === "string"
-                ? args
-                : Array.isArray(args)
-                  ? args.join(" ")
-                  : JSON.stringify(args).slice(0, 500);
-            const ok = await requireMcpToolConsent(eventSink, {
-              serverId: s.id,
-              serverName: s.name,
-              toolName: name,
-              toolDescription: mcpTool.description,
-              inputPreview,
-            });
-
-            if (!ok) throw new Error(`User declined running tool ${key}`);
-            const res = await mcpTool.execute(args, execCtx);
-
-            return typeof res === "string" ? res : JSON.stringify(res);
-          },
-        };
-      }
-    }
-  } catch (e) {
-    logger.warn("Failed building MCP toolset", e);
-  }
-  return mcpToolSet;
 }

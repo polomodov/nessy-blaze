@@ -24,14 +24,6 @@ export function getExtraProviderOptions(
     return {};
   }
   if (providerId === "openai") {
-    if (settings.selectedChatMode === "local-agent") {
-      return {
-        reasoning: {
-          summary: "detailed",
-          effort: "medium",
-        },
-      };
-    }
     return { reasoning_effort: "medium" };
   }
   if (PROVIDERS_THAT_SUPPORT_THINKING.includes(providerId)) {

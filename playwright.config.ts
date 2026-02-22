@@ -2,9 +2,11 @@ import { PlaywrightTestConfig } from "@playwright/test";
 import os from "os";
 
 const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+const appBaseUrl = process.env.E2E_BASE_URL || "http://127.0.0.1:4173";
 
 const config: PlaywrightTestConfig = {
   testDir: "./e2e-tests",
+  testMatch: "**/*.web.spec.ts",
   workers: 1,
   retries: process.env.CI ? 2 : 0,
   timeout: process.env.CI ? 180_000 : 45_000,
@@ -33,19 +35,22 @@ const config: PlaywrightTestConfig = {
   use: {
     /* See https://playwright.dev/docs/trace-viewer */
     trace: "retain-on-failure",
-
-    // These options do NOT work for electron playwright.
-    // Instead, you need to do a workaround.
-    // See https://github.com/microsoft/playwright/issues/8208
-    //
-    // screenshot: "on",
-    // video: "retain-on-failure",
+    baseURL: appBaseUrl,
   },
 
   webServer: [
     {
-      command: `cd testing/fake-llm-server && npm run build && npm start`,
+      command: `npm run dev:client -- --host 127.0.0.1 --port 4173 --strictPort`,
+      url: `${appBaseUrl}/auth`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+    {
+      command:
+        "cd testing/fake-llm-server && if [ ! -d node_modules ]; then npm install --no-audit --no-fund --progress=false; fi && npm run build && npm start",
       url: "http://localhost:3500/health",
+      reuseExistingServer: !process.env.CI,
+      timeout: 240_000,
     },
   ],
 };

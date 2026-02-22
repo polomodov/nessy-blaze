@@ -184,12 +184,14 @@ export async function processFullResponseActions(
 
   const warnings: Output[] = [];
   const errors: Output[] = [];
+  const searchReplaceFailures: { filePath: string; error: string }[] = [];
 
   try {
     // Extract all tags
     const blazeWriteTags = getBlazeWriteTags(fullResponse);
     const blazeRenameTags = getBlazeRenameTags(fullResponse);
     const blazeDeletePaths = getBlazeDeleteTags(fullResponse);
+    const blazeSearchReplaceTags = getBlazeSearchReplaceTags(fullResponse);
     const blazeAddDependencyPackages = getBlazeAddDependencyTags(fullResponse);
     const blazeExecuteSqlQueries = chatWithApp.app.supabaseProjectId
       ? getBlazeExecuteSqlTags(fullResponse)
@@ -394,7 +396,6 @@ export async function processFullResponseActions(
     }
 
     // Process all search-replace edits
-    const blazeSearchReplaceTags = getBlazeSearchReplaceTags(fullResponse);
     for (const tag of blazeSearchReplaceTags) {
       const filePath = tag.path;
       const fullFilePath = safeJoin(appPath, filePath);
@@ -406,17 +407,17 @@ export async function processFullResponseActions(
 
       try {
         if (!fs.existsSync(fullFilePath)) {
-          // Do not show warning to user because we already attempt to do a <blaze-write> tag to fix it.
-          logger.warn(`Search-replace target file does not exist: ${filePath}`);
+          const error = `Search-replace target file does not exist: ${filePath}`;
+          searchReplaceFailures.push({ filePath, error });
+          logger.warn(error);
           continue;
         }
         const original = await readFile(fullFilePath, "utf8");
         const result = applySearchReplace(original, tag.content);
         if (!result.success || typeof result.content !== "string") {
-          // Do not show warning to user because we already attempt to do a <blaze-write> and/or a subsequent <blaze-search-replace> tag to fix it.
-          logger.warn(
-            `Failed to apply search-replace to ${filePath}: ${result.error ?? "unknown"}`,
-          );
+          const error = `Failed to apply search-replace to ${filePath}: ${result.error ?? "unknown"}`;
+          searchReplaceFailures.push({ filePath, error });
+          logger.warn(error);
           continue;
         }
         // Write modified content
@@ -441,6 +442,10 @@ export async function processFullResponseActions(
           }
         }
       } catch (error) {
+        searchReplaceFailures.push({
+          filePath,
+          error: `Error applying search-replace to ${filePath}: ${error?.toString() ?? "Unknown error"}`,
+        });
         errors.push({
           message: `Error applying search-replace to ${filePath}`,
           error: error,
@@ -633,6 +638,22 @@ export async function processFullResponseActions(
           .where(eq(messages.id, messageId));
       }
     }
+
+    if (!hasChanges && searchReplaceFailures.length > 0) {
+      const searchReplaceError = `Failed to apply search-replace edits: ${searchReplaceFailures
+        .map(({ filePath, error }) => `${filePath}: ${error}`)
+        .join(" | ")}`;
+      errors.push({
+        message: "Search-replace apply failed",
+        error: searchReplaceError,
+      });
+      logger.warn(searchReplaceError);
+      return {
+        updatedFiles: false,
+        error: searchReplaceError,
+      };
+    }
+
     logger.log("mark as approved: hasChanges", hasChanges);
     // Update the message to approved
     await db

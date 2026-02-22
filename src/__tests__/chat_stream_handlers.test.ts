@@ -13,6 +13,7 @@ import {
   hasUnclosedBlazeWrite,
   buildDiagnosticStatusTag,
   extractActionTagsForManualApproval,
+  sanitizeGeneratedSummary,
 } from "../ipc/handlers/chat_stream_handlers";
 import fs from "node:fs";
 import { db } from "../db";
@@ -794,6 +795,56 @@ describe("processFullResponse", () => {
     });
   });
 
+  it("should return an explicit error when search-replace fails and no other changes are applied", async () => {
+    vi.mocked(fs.promises.readFile).mockResolvedValue(
+      `export const heroTitle = "Быстрый запуск";`,
+    );
+
+    const response = `<blaze-search-replace path="src/Landing.tsx">
+<<<<<<< SEARCH
+export const heroTitle = "Быстрый старт";
+=======
+export const heroTitle = "Моментальный запуск";
+>>>>>>> REPLACE
+</blaze-search-replace>`;
+
+    const result = await processFullResponseActions(response, 1, {
+      chatSummary: undefined,
+      messageId: 1,
+    });
+
+    expect(result.updatedFiles).toBe(false);
+    expect(result.error).toContain("Failed to apply search-replace edits");
+    expect(gitCommit).not.toHaveBeenCalled();
+  });
+
+  it("should still commit other file changes when search-replace fails", async () => {
+    vi.mocked(fs.promises.readFile).mockResolvedValue(
+      `export const heroTitle = "Быстрый запуск";`,
+    );
+    vi.mocked(fs.mkdirSync).mockImplementation(() => undefined);
+    vi.mocked(fs.writeFileSync).mockImplementation(() => undefined);
+
+    const response = `
+    <blaze-search-replace path="src/Landing.tsx">
+<<<<<<< SEARCH
+export const heroTitle = "Быстрый старт";
+=======
+export const heroTitle = "Моментальный запуск";
+>>>>>>> REPLACE
+    </blaze-search-replace>
+    <blaze-write path="src/Landing.tsx">export const heroTitle = "Моментальный запуск";</blaze-write>
+    `;
+
+    const result = await processFullResponseActions(response, 1, {
+      chatSummary: undefined,
+      messageId: 1,
+    });
+
+    expect(result).toEqual({ updatedFiles: true });
+    expect(gitCommit).toHaveBeenCalledTimes(1);
+  });
+
   it("should handle file system errors gracefully", async () => {
     // Set up the mock to throw an error on mkdirSync
     vi.mocked(fs.mkdirSync).mockImplementationOnce(() => {
@@ -1208,6 +1259,36 @@ describe("extractActionTagsForManualApproval", () => {
     );
 
     expect(payload).toBe("");
+  });
+});
+
+describe("sanitizeGeneratedSummary", () => {
+  it("removes manual command recommendations from generated summary", () => {
+    const sanitized = sanitizeGeneratedSummary(`
+### Что изменилось
+- ✅ Обновлен заголовок.
+- 🔄 Изменения не применены автоматически — требуется ручной Rebuild.
+- 🔁 Пожалуйста, нажмите "Rebuild", чтобы пересобрать приложение.
+- ⚠️ Если не поможет, попробуйте Restart.
+    `);
+
+    expect(sanitized).toContain("### Что изменилось");
+    expect(sanitized).toContain("✅ Обновлен заголовок.");
+    expect(sanitized).not.toMatch(/rebuild/i);
+    expect(sanitized).not.toMatch(/restart/i);
+    expect(sanitized).not.toMatch(/нажмите/i);
+  });
+
+  it("strips blaze-command tags from generated summary", () => {
+    const sanitized = sanitizeGeneratedSummary(`
+### What changed
+- Updated hero copy.
+<blaze-command type="rebuild"></blaze-command>
+    `);
+
+    expect(sanitized).toContain("### What changed");
+    expect(sanitized).toContain("Updated hero copy.");
+    expect(sanitized).not.toContain("<blaze-command");
   });
 });
 

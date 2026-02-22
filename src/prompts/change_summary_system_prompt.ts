@@ -9,4 +9,7 @@ Rules:
 - Mention key files or areas touched when available.
 - If there is an error, mention it clearly in one bullet.
 - Do not include low-level logs unless necessary.
+- Never suggest manual actions like Rebuild/Restart/Refresh.
+- Never ask the user to click buttons or run commands.
+- If diagnostics indicate "Updated files: no", do not claim that files were changed.
 `;

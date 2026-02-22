@@ -6,9 +6,9 @@
 
 ## Политика транспорта (актуально)
 
-- IPC взаимодействие между клиентом и сервером помечено как **legacy**.
-- В режиме `client-server` клиент обязан обращаться к серверу только через HTTP API ручки.
-- `IpcBackendClient` сохраняется исключительно как compatibility путь для legacy desktop runtime.
+- IPC взаимодействие между клиентом и сервером выведено из active runtime.
+- В режиме `client-server` клиент обращается к серверу только через HTTP API ручки.
+- `BackendClient` в runtime реализован как HTTP-only transport.
 
 ## 1) Цель миграции
 
@@ -50,9 +50,7 @@
 
 ### Задачи
 - Ввести интерфейс `BackendClient` в renderer-слое.
-- Реализовать:
-  - `HttpBackendClient` (основной и обязательный путь),
-  - `IpcBackendClient` (legacy compatibility only).
+- Реализовать HTTP-only transport для runtime-пути.
 - Включить feature flag/remote config для переключения режима.
 - Стабилизировать query/mutation контракты под единый клиент.
 

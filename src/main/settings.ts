@@ -4,6 +4,7 @@ import { getUserDataPath } from "../paths/paths";
 import {
   UserSettingsSchema,
   type UserSettings,
+  type ChatMode,
   Secret,
   VertexProviderSetting,
 } from "../lib/schemas";
@@ -47,6 +48,12 @@ const DEFAULT_SETTINGS: UserSettings = {
 };
 
 const SETTINGS_FILE = "user-settings.json";
+
+function normalizeChatModeForHttpOnly(
+  value: ChatMode | undefined,
+): "build" | "ask" {
+  return value === "ask" ? "ask" : "build";
+}
 
 export function getSettingsFilePath(): string {
   return path.join(getUserDataPath(), SETTINGS_FILE);
@@ -173,6 +180,12 @@ export function readSettings(): UserSettings {
     if (validatedSettings.proSmartContextOption === "conservative") {
       validatedSettings.proSmartContextOption = undefined;
     }
+    validatedSettings.selectedChatMode = normalizeChatModeForHttpOnly(
+      validatedSettings.selectedChatMode,
+    );
+    validatedSettings.defaultChatMode = normalizeChatModeForHttpOnly(
+      validatedSettings.defaultChatMode,
+    );
     return validatedSettings;
   } catch (error) {
     logger.error("Error reading settings:", error);

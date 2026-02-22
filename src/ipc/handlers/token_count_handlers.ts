@@ -61,6 +61,8 @@ export function registerTokenCountHandlers() {
       const inputTokens = estimateTokens(req.input);
 
       const settings = readSettings();
+      const selectedChatMode =
+        settings.selectedChatMode === "ask" ? "ask" : "build";
 
       // Parse app mentions from the input
       const mentionedAppNames = parseAppMentions(req.input);
@@ -69,11 +71,7 @@ export function registerTokenCountHandlers() {
       const themePrompt = getThemePrompt(chat.app?.themeId ?? null);
       let systemPrompt = constructSystemPrompt({
         aiRules: await readAiRules(getBlazeAppPath(chat.app.path)),
-        chatMode:
-          settings.selectedChatMode === "agent" ||
-          settings.selectedChatMode === "local-agent"
-            ? "build"
-            : settings.selectedChatMode,
+        chatMode: selectedChatMode,
         enableTurboEditsV2: isTurboEditsV2Enabled(settings),
         themePrompt,
       });
