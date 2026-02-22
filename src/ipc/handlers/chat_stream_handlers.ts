@@ -145,9 +145,14 @@ type ApplyStatus = {
   extraFilesError?: string;
 };
 
+type SelectedComponent = NonNullable<
+  ChatStreamParams["selectedComponents"]
+>[number];
+
 const COMMAND_RECOMMENDATION_PATTERNS = [
   /<blaze-command\b[\s\S]*?<\/blaze-command>/gi,
 ];
+const DOM_COMPONENT_PATH_PREFIX = "__dom__/";
 
 function truncateText(value: string, maxChars: number): string {
   if (value.length <= maxChars) {
@@ -323,6 +328,138 @@ export function sanitizeGeneratedSummary(content: string): string {
   }
 
   return compactLines.join("\n").trim();
+}
+
+export function formatSelectedComponentLabel(
+  component: SelectedComponent,
+): string {
+  const componentName =
+    typeof component.name === "string" && component.name.trim().length > 0
+      ? component.name.trim()
+      : "component";
+
+  if (component.relativePath.startsWith(DOM_COMPONENT_PATH_PREFIX)) {
+    return `${componentName} ...`;
+  }
+
+  return `${componentName} (${component.relativePath}:${component.lineNumber})`;
+}
+
+export function shouldIncludeSelectedComponentSnippet(
+  component: SelectedComponent,
+): boolean {
+  return !component.relativePath.startsWith(DOM_COMPONENT_PATH_PREFIX);
+}
+
+function getDomPathHint(component: SelectedComponent): string | null {
+  if (component.domPath?.trim()) {
+    return component.domPath.trim();
+  }
+
+  if (component.relativePath.startsWith(DOM_COMPONENT_PATH_PREFIX)) {
+    const pathFromRelative = component.relativePath
+      .slice(DOM_COMPONENT_PATH_PREFIX.length)
+      .trim();
+    if (pathFromRelative.length > 0) {
+      return pathFromRelative;
+    }
+  }
+
+  if (component.id.startsWith(DOM_COMPONENT_PATH_PREFIX)) {
+    const match = component.id.match(/^__dom__\/(.+?):\d+:\d+$/);
+    if (match?.[1]?.trim()) {
+      return match[1].trim();
+    }
+  }
+
+  return null;
+}
+
+function getDomTagHint(component: SelectedComponent): string | null {
+  if (component.tagName?.trim()) {
+    return component.tagName.trim().toLowerCase();
+  }
+
+  if (
+    typeof component.name === "string" &&
+    /^[a-z][a-z0-9-]*$/i.test(component.name.trim())
+  ) {
+    return component.name.trim().toLowerCase();
+  }
+
+  const domPathHint = getDomPathHint(component);
+  if (!domPathHint) {
+    return null;
+  }
+
+  const leafSegment = domPathHint.split("/").pop();
+  if (!leafSegment) {
+    return null;
+  }
+
+  const match = leafSegment.match(/^([a-z][a-z0-9-]*?)-\d+$/i);
+  if (!match?.[1]) {
+    return null;
+  }
+
+  return match[1].toLowerCase();
+}
+
+export function formatSelectedComponentPromptBlock({
+  component,
+  index,
+  totalComponents,
+  snippet,
+}: {
+  component: SelectedComponent;
+  index: number;
+  totalComponents: number;
+  snippet?: string;
+}): string {
+  const listPrefix = totalComponents > 1 ? `${index + 1}. ` : "";
+  const header = `\n${listPrefix}Component: ${formatSelectedComponentLabel(component)}`;
+
+  if (!shouldIncludeSelectedComponentSnippet(component)) {
+    const domContextLines: string[] = [];
+    const domTagHint = getDomTagHint(component);
+    if (domTagHint) {
+      domContextLines.push(`- Tag: <${domTagHint}>`);
+    }
+    if (component.textPreview?.trim()) {
+      domContextLines.push(
+        `- Rendered text: "${component.textPreview.trim()}"`,
+      );
+    }
+    const domPathHint = getDomPathHint(component);
+    if (domPathHint) {
+      domContextLines.push(`- DOM path: ${domPathHint}`);
+    } else {
+      domContextLines.push(`- Selection reference: ${component.id}`);
+    }
+
+    domContextLines.push(
+      "- Source file path for this selected element is unavailable. Use these hints to locate and edit the matching UI in code.",
+    );
+
+    return `${header}\n${domContextLines.join("\n")}\n`;
+  }
+
+  const resolvedSnippet =
+    typeof snippet === "string" && snippet.length > 0
+      ? snippet
+      : "[component snippet not available]";
+
+  return `${header}\n\nSnippet:\n\`\`\`\n${resolvedSnippet}\n\`\`\`\n`;
+}
+
+function hasApplicableChangeTags(rawResponse: string): boolean {
+  return (
+    getBlazeWriteTags(rawResponse).length > 0 ||
+    getBlazeSearchReplaceTags(rawResponse).length > 0 ||
+    getBlazeRenameTags(rawResponse).length > 0 ||
+    getBlazeDeleteTags(rawResponse).length > 0 ||
+    getBlazeAddDependencyTags(rawResponse).length > 0
+  );
 }
 
 async function collectStreamText(
@@ -636,43 +773,47 @@ export async function handleChatStreamRequest(
     if (componentsToProcess.length > 0) {
       userPrompt += "\n\nSelected components:\n";
 
-      for (const component of componentsToProcess) {
-        let componentSnippet = "[component snippet not available]";
-        try {
-          const componentFileContent = await readFile(
-            path.join(
-              getBlazeAppPath(initialChatApp.path),
-              component.relativePath,
-            ),
-            "utf8",
-          );
-          const lines = componentFileContent.split(/\r?\n/);
-          const selectedIndex = component.lineNumber - 1;
+      for (const [index, component] of componentsToProcess.entries()) {
+        let componentSnippet: string | undefined;
 
-          // Let's get one line before and three after for context.
-          const startIndex = Math.max(0, selectedIndex - 1);
-          const endIndex = Math.min(lines.length, selectedIndex + 4);
+        if (shouldIncludeSelectedComponentSnippet(component)) {
+          try {
+            const componentFileContent = await readFile(
+              path.join(
+                getBlazeAppPath(initialChatApp.path),
+                component.relativePath,
+              ),
+              "utf8",
+            );
+            const lines = componentFileContent.split(/\r?\n/);
+            const selectedIndex = component.lineNumber - 1;
 
-          const snippetLines = lines.slice(startIndex, endIndex);
-          const selectedLineInSnippetIndex = selectedIndex - startIndex;
+            // Let's get one line before and three after for context.
+            const startIndex = Math.max(0, selectedIndex - 1);
+            const endIndex = Math.min(lines.length, selectedIndex + 4);
 
-          if (snippetLines[selectedLineInSnippetIndex]) {
-            snippetLines[selectedLineInSnippetIndex] =
-              `${snippetLines[selectedLineInSnippetIndex]} // <-- EDIT HERE`;
+            const snippetLines = lines.slice(startIndex, endIndex);
+            const selectedLineInSnippetIndex = selectedIndex - startIndex;
+
+            if (snippetLines[selectedLineInSnippetIndex]) {
+              snippetLines[selectedLineInSnippetIndex] =
+                `${snippetLines[selectedLineInSnippetIndex]} // <-- EDIT HERE`;
+            }
+
+            componentSnippet = snippetLines.join("\n");
+          } catch (err) {
+            logger.error(
+              `Error reading selected component file content: ${err}`,
+            );
           }
-
-          componentSnippet = snippetLines.join("\n");
-        } catch (err) {
-          logger.error(`Error reading selected component file content: ${err}`);
         }
 
-        userPrompt += `\n${componentsToProcess.length > 1 ? `${componentsToProcess.indexOf(component) + 1}. ` : ""}Component: ${component.name} (file: ${component.relativePath})
-
-Snippet:
-\`\`\`
-${componentSnippet}
-\`\`\`
-`;
+        userPrompt += formatSelectedComponentPromptBlock({
+          component,
+          index,
+          totalComponents: componentsToProcess.length,
+          snippet: componentSnippet,
+        });
       }
     }
 
@@ -1298,6 +1439,48 @@ This conversation includes one or more image attachments. When the user uploads 
         });
         fullResponse = result.fullResponse;
 
+        const shouldRetryForMissingActionableTags =
+          settings.selectedChatMode !== "ask" &&
+          (req.selectedComponents?.length ?? 0) > 0 &&
+          !hasApplicableChangeTags(fullResponse);
+
+        if (shouldRetryForMissingActionableTags) {
+          logger.warn(
+            "Selected components were provided but the model response did not include actionable change tags. Retrying with strict tag-only instruction.",
+          );
+
+          const retryPrompt = `Your previous response did not include any actionable Blaze change tags.
+Generate ONLY actionable tags that implement the user's request for the selected components:
+- Use <blaze-write>, <blaze-search-replace>, <blaze-rename>, <blaze-delete>, and <blaze-add-dependency> when needed.
+- You may include <blaze-chat-summary>.
+- Do not provide plain-language completion claims without actionable tags.`;
+
+          const { fullStream: retryStream } = await simpleStreamText({
+            chatMessages: [
+              ...chatMessages,
+              {
+                role: "assistant",
+                content: removeNonEssentialTags(fullResponse),
+              },
+              {
+                role: "user",
+                content: retryPrompt,
+              },
+            ],
+            modelClient,
+            files: files,
+          });
+
+          const retryResult = await processStreamChunks({
+            fullStream: retryStream,
+            fullResponse,
+            abortController,
+            chatId: req.chatId,
+            processResponseChunkUpdate,
+          });
+          fullResponse = retryResult.fullResponse;
+        }
+
         const shouldFixSearchReplaceIssues =
           settings.selectedChatMode !== "ask" &&
           (isTurboEditsV2Enabled(settings) ||
@@ -1640,6 +1823,19 @@ ${problemReport.problems
         if (processedMessage?.content?.trim()) {
           diagnosticSource = processedMessage.content;
         }
+      }
+
+      const hasSelectedComponentsInRequest =
+        (req.selectedComponents?.length ?? 0) > 0;
+      if (
+        autoApplied &&
+        hasSelectedComponentsInRequest &&
+        !status.updatedFiles &&
+        !status.error &&
+        !hasApplicableChangeTags(diagnosticSource)
+      ) {
+        status.error =
+          "No actionable change tags were generated for the selected components, so no file updates were applied.";
       }
 
       const diagnosticsPayload = buildDiagnosticsPayload({

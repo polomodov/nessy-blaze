@@ -855,6 +855,80 @@
     }
   }
 
+  function isMultiSelectModifierPressed(event) {
+    return isMac ? event.metaKey : event.ctrlKey;
+  }
+
+  function postComponentDeselected(el) {
+    if (!el || !el.dataset) {
+      return;
+    }
+
+    const componentId = el.dataset.blazeId;
+    if (!componentId) {
+      return;
+    }
+
+    window.parent.postMessage(
+      {
+        type: "blaze-component-deselected",
+        componentId,
+        runtimeId: el.dataset.blazeRuntimeId || undefined,
+      },
+      "*",
+    );
+  }
+
+  function removeOverlayItem(item) {
+    if (!item) {
+      return;
+    }
+    item.overlay.remove();
+    overlays = overlays.filter((candidate) => candidate !== item);
+  }
+
+  function keepOnlySelectedElement(selectedElement) {
+    const nextOverlays = [];
+    for (const item of overlays) {
+      if (item.el === selectedElement) {
+        nextOverlays.push(item);
+        continue;
+      }
+
+      item.overlay.remove();
+      postComponentDeselected(item.el);
+    }
+
+    overlays = nextOverlays;
+
+    if (highlightedElement && highlightedElement !== selectedElement) {
+      highlightedElement = null;
+    }
+  }
+
+  function getElementTextPreview(el, maxLength = 160) {
+    if (!el) {
+      return undefined;
+    }
+
+    const rawText =
+      typeof el.innerText === "string"
+        ? el.innerText
+        : typeof el.textContent === "string"
+          ? el.textContent
+          : "";
+    const normalizedText = rawText.replace(/\s+/g, " ").trim();
+    if (!normalizedText) {
+      return undefined;
+    }
+
+    if (normalizedText.length <= maxLength) {
+      return normalizedText;
+    }
+
+    return `${normalizedText.slice(0, Math.max(0, maxLength - 3))}...`;
+  }
+
   function onClick(e) {
     if (state.type !== "inspecting" || !state.element) return;
     e.preventDefault();
@@ -866,29 +940,33 @@
     if (!clickedComponentId) {
       return;
     }
+    const isMultiSelect = isMultiSelectModifierPressed(e);
     const selectedItem = overlays.find((item) => item.el === state.element);
 
-    // If clicking on the currently highlighted component, deselect it
-    if (selectedItem && (highlightedElement === state.element || !isProMode)) {
+    // Multi-select modifier toggles the clicked component only.
+    if (isMultiSelect && selectedItem) {
       if (state.element.contentEditable === "true") {
         return;
       }
 
-      removeOverlayById(clickedComponentId);
+      removeOverlayItem(selectedItem);
       requestAnimationFrame(updateAllOverlayPositions);
-      highlightedElement = null;
+      if (highlightedElement === state.element) {
+        highlightedElement = null;
+      }
 
-      // Only post message once for all elements with the same ID
-      window.parent.postMessage(
-        {
-          type: "blaze-component-deselected",
-          componentId: clickedComponentId,
-          runtimeId: state.element.dataset.blazeRuntimeId || undefined,
-        },
-        "*",
-      );
+      postComponentDeselected(state.element);
       return;
     }
+
+    // Default click behaves as single-select: keep only the clicked component.
+    if (!isMultiSelect) {
+      keepOnlySelectedElement(state.element);
+    }
+
+    const selectedItemAfterCleanup = overlays.find(
+      (item) => item.el === state.element,
+    );
 
     // Update only the previously highlighted component
     if (highlightedElement && highlightedElement !== state.element) {
@@ -905,14 +983,14 @@
 
     highlightedElement = state.element;
 
-    if (selectedItem && isProMode) {
-      css(selectedItem.overlay, {
+    if (selectedItemAfterCleanup && isProMode) {
+      css(selectedItemAfterCleanup.overlay, {
         border: `3px solid #00ff00`,
         background: "rgba(0, 255, 0, 0.05)",
       });
     }
 
-    if (!selectedItem) {
+    if (!selectedItemAfterCleanup) {
       updateOverlay(state.element, true, isProMode);
       requestAnimationFrame(updateAllOverlayPositions);
     }
@@ -925,6 +1003,11 @@
           id: clickedComponentId,
           name: state.element.dataset.blazeName,
           runtimeId: state.element.dataset.blazeRuntimeId,
+          tagName: state.element.tagName
+            ? state.element.tagName.toLowerCase()
+            : undefined,
+          textPreview: getElementTextPreview(state.element),
+          domPath: state.element.dataset.blazeDomPath || undefined,
         },
         coordinates: {
           top: rect.top,

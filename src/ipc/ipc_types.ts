@@ -375,6 +375,9 @@ export interface ComponentSelection {
   id: string;
   name: string;
   runtimeId?: string; // Unique runtime ID for duplicate components
+  tagName?: string;
+  textPreview?: string;
+  domPath?: string;
   relativePath: string;
   lineNumber: number;
   columnNumber: number;

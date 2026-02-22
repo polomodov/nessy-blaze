@@ -43,7 +43,7 @@ testSkipIfWindows("select multiple components", async ({ po }) => {
     .getPreviewIframeElement()
     .contentFrame()
     .getByText("Start building your amazing project here!")
-    .click();
+    .click({ modifiers: ["ControlOrMeta"] });
 
   await po.snapshotPreview();
   await po.snapshotSelectedComponentsDisplay();
@@ -99,7 +99,7 @@ testSkipIfWindows(
       .getPreviewIframeElement()
       .contentFrame()
       .getByText("Start building your amazing project here!")
-      .click();
+      .click({ modifiers: ["ControlOrMeta"] });
 
     await po.snapshotSelectedComponentsDisplay();
 

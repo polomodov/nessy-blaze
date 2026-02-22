@@ -14,6 +14,8 @@ import {
   buildDiagnosticStatusTag,
   extractActionTagsForManualApproval,
   sanitizeGeneratedSummary,
+  formatSelectedComponentLabel,
+  formatSelectedComponentPromptBlock,
 } from "../ipc/handlers/chat_stream_handlers";
 import fs from "node:fs";
 import { db } from "../db";
@@ -1289,6 +1291,96 @@ describe("sanitizeGeneratedSummary", () => {
     expect(sanitized).toContain("### What changed");
     expect(sanitized).toContain("Updated hero copy.");
     expect(sanitized).not.toContain("<blaze-command");
+  });
+});
+
+describe("formatSelectedComponentLabel", () => {
+  it("keeps file location for source-backed components", () => {
+    const label = formatSelectedComponentLabel({
+      id: "src/App.tsx:12:5",
+      name: "HeroSection",
+      relativePath: "src/App.tsx",
+      lineNumber: 12,
+      columnNumber: 5,
+    });
+
+    expect(label).toBe("HeroSection (src/App.tsx:12)");
+  });
+
+  it("returns compact label for DOM-only selections", () => {
+    const label = formatSelectedComponentLabel({
+      id: "__dom__/div-1/h3-1:1:1",
+      name: "h3",
+      relativePath: "__dom__/div-1/h3-1",
+      lineNumber: 1,
+      columnNumber: 1,
+    });
+
+    expect(label).toBe("h3 ...");
+  });
+});
+
+describe("formatSelectedComponentPromptBlock", () => {
+  it("omits snippet section for DOM-only selected components and includes DOM context", () => {
+    const block = formatSelectedComponentPromptBlock({
+      component: {
+        id: "__dom__/div-1/h3-1:1:1",
+        name: "h3",
+        tagName: "h3",
+        textPreview: "Быстрейший запуск",
+        domPath: "div-1/section-2/h3-1",
+        relativePath: "__dom__/div-1/h3-1",
+        lineNumber: 1,
+        columnNumber: 1,
+      },
+      index: 0,
+      totalComponents: 3,
+    });
+
+    expect(block).toContain("1. Component: h3 ...");
+    expect(block).toContain("Tag: <h3>");
+    expect(block).toContain('Rendered text: "Быстрейший запуск"');
+    expect(block).toContain("DOM path: div-1/section-2/h3-1");
+    expect(block).not.toContain("Snippet:");
+    expect(block).not.toContain("[component snippet not available]");
+  });
+
+  it("derives DOM tag/path hints from fallback component fields", () => {
+    const block = formatSelectedComponentPromptBlock({
+      component: {
+        id: "__dom__/div-1/section-2/p-3:1:1",
+        name: "p",
+        relativePath: "__dom__/div-1/section-2/p-3",
+        lineNumber: 1,
+        columnNumber: 1,
+      },
+      index: 1,
+      totalComponents: 3,
+    });
+
+    expect(block).toContain("2. Component: p ...");
+    expect(block).toContain("Tag: <p>");
+    expect(block).toContain("DOM path: div-1/section-2/p-3");
+    expect(block).not.toContain("Snippet:");
+  });
+
+  it("includes snippet for source-backed selected components", () => {
+    const block = formatSelectedComponentPromptBlock({
+      component: {
+        id: "src/App.tsx:12:5",
+        name: "HeroSection",
+        relativePath: "src/App.tsx",
+        lineNumber: 12,
+        columnNumber: 5,
+      },
+      index: 0,
+      totalComponents: 1,
+      snippet: "<h1>Hello</h1>",
+    });
+
+    expect(block).toContain("Component: HeroSection (src/App.tsx:12)");
+    expect(block).toContain("Snippet:");
+    expect(block).toContain("<h1>Hello</h1>");
   });
 });
 

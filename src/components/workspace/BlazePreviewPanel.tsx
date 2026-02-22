@@ -80,6 +80,9 @@ function parseComponentSelection(data: unknown): ComponentSelection | null {
       id?: string;
       name?: string;
       runtimeId?: string;
+      tagName?: string;
+      textPreview?: string;
+      domPath?: string;
     };
   };
 
@@ -112,6 +115,20 @@ function parseComponentSelection(data: unknown): ComponentSelection | null {
     return null;
   }
 
+  const normalizedTagName =
+    typeof component.tagName === "string" && component.tagName.trim().length > 0
+      ? component.tagName.trim().toLowerCase()
+      : null;
+  const normalizedTextPreview =
+    typeof component.textPreview === "string" &&
+    component.textPreview.trim().length > 0
+      ? component.textPreview.trim()
+      : null;
+  const normalizedDomPath =
+    typeof component.domPath === "string" && component.domPath.trim().length > 0
+      ? component.domPath.trim()
+      : null;
+
   return {
     id: component.id,
     name:
@@ -119,6 +136,9 @@ function parseComponentSelection(data: unknown): ComponentSelection | null {
         ? component.name
         : "component",
     runtimeId: component.runtimeId,
+    ...(normalizedTagName ? { tagName: normalizedTagName } : {}),
+    ...(normalizedTextPreview ? { textPreview: normalizedTextPreview } : {}),
+    ...(normalizedDomPath ? { domPath: normalizedDomPath } : {}),
     relativePath: normalizePath(relativePath),
     lineNumber,
     columnNumber,

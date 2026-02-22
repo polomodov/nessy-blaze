@@ -6,6 +6,28 @@ import {
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { Code2, X } from "lucide-react";
 
+function isDomSelectionPath(path: string): boolean {
+  return path.startsWith("__dom__/");
+}
+
+function getComponentTitle(name: string, relativePath: string): string {
+  const normalizedName = name.trim().length > 0 ? name.trim() : "component";
+  if (isDomSelectionPath(relativePath)) {
+    return `${normalizedName} ...`;
+  }
+  return normalizedName;
+}
+
+function getComponentSubtitle(
+  relativePath: string,
+  lineNumber: number,
+): string {
+  if (isDomSelectionPath(relativePath)) {
+    return "DOM selection";
+  }
+  return `${relativePath}:${lineNumber}`;
+}
+
 export function SelectedComponentsDisplay() {
   const [selectedComponents, setSelectedComponents] = useAtom(
     selectedComponentsPreviewAtom,
@@ -76,16 +98,27 @@ export function SelectedComponentsDisplay() {
               <div className="flex flex-col overflow-hidden">
                 <span
                   className="truncate font-medium text-indigo-800 dark:text-indigo-300"
-                  title={selectedComponent.name}
+                  title={getComponentTitle(
+                    selectedComponent.name,
+                    selectedComponent.relativePath,
+                  )}
                 >
-                  {selectedComponent.name}
+                  {getComponentTitle(
+                    selectedComponent.name,
+                    selectedComponent.relativePath,
+                  )}
                 </span>
                 <span
                   className="truncate text-xs text-indigo-600/80 dark:text-indigo-400/80"
-                  title={`${selectedComponent.relativePath}:${selectedComponent.lineNumber}`}
+                  title={getComponentSubtitle(
+                    selectedComponent.relativePath,
+                    selectedComponent.lineNumber,
+                  )}
                 >
-                  {selectedComponent.relativePath}:
-                  {selectedComponent.lineNumber}
+                  {getComponentSubtitle(
+                    selectedComponent.relativePath,
+                    selectedComponent.lineNumber,
+                  )}
                 </span>
               </div>
             </div>

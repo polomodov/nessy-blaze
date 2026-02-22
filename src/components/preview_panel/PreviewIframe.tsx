@@ -1327,10 +1327,27 @@ function parseComponentSelection(data: any): ComponentSelection | null {
     return null;
   }
 
+  const normalizedTagName =
+    typeof component.tagName === "string" && component.tagName.trim().length > 0
+      ? component.tagName.trim().toLowerCase()
+      : null;
+  const normalizedTextPreview =
+    typeof component.textPreview === "string" &&
+    component.textPreview.trim().length > 0
+      ? component.textPreview.trim()
+      : null;
+  const normalizedDomPath =
+    typeof component.domPath === "string" && component.domPath.trim().length > 0
+      ? component.domPath.trim()
+      : null;
+
   return {
     id,
     name,
     runtimeId,
+    ...(normalizedTagName ? { tagName: normalizedTagName } : {}),
+    ...(normalizedTextPreview ? { textPreview: normalizedTextPreview } : {}),
+    ...(normalizedDomPath ? { domPath: normalizedDomPath } : {}),
     relativePath: normalizePath(relativePath),
     lineNumber,
     columnNumber,
