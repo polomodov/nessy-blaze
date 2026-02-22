@@ -10,20 +10,10 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from "@/components/ui/tooltip";
-import {
-  Trash2,
-  Edit2,
-  Plus,
-  Save,
-  X,
-  HelpCircle,
-  ArrowRight,
-} from "lucide-react";
+import { Trash2, Edit2, Plus, Save, X, HelpCircle } from "lucide-react";
 import { showError, showSuccess } from "@/lib/toast";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
 import { IpcClient } from "@/ipc/ipc_client";
-import { useNavigate } from "@tanstack/react-router";
-import { NeonConfigure } from "./NeonConfigure";
 
 const EnvironmentVariablesTitle = () => (
   <div className="flex items-center gap-2">
@@ -54,7 +44,6 @@ export const ConfigurePanel = () => {
   const [newKey, setNewKey] = useState("");
   const [newValue, setNewValue] = useState("");
   const [isAddingNew, setIsAddingNew] = useState(false);
-  const navigate = useNavigate();
 
   // Query to get environment variables
   const {
@@ -376,33 +365,8 @@ export const ConfigurePanel = () => {
               ))
             )}
           </div>
-
-          {/* More app configurations button */}
-          <div className="pt-4 border-t">
-            <Button
-              variant="outline"
-              className="w-full text-sm justify-between"
-              onClick={() => {
-                if (selectedAppId) {
-                  navigate({
-                    to: "/app-details",
-                    search: { appId: selectedAppId },
-                  });
-                }
-              }}
-            >
-              <span>More app settings</span>
-              <ArrowRight size={16} />
-            </Button>
-          </div>
         </CardContent>
       </Card>
-
-      {/* Neon Database Configuration */}
-      {/* Neon Connector */}
-      <div className="grid grid-cols-1 gap-6">
-        <NeonConfigure />
-      </div>
     </div>
   );
 };

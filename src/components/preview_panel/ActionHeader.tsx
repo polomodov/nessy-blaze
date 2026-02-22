@@ -10,7 +10,6 @@ import {
   Trash2,
   AlertTriangle,
   Wrench,
-  Globe,
   Shield,
 } from "lucide-react";
 import { ChatActivityButton } from "@/components/chat/ChatActivity";
@@ -40,7 +39,6 @@ export type PreviewMode =
   | "code"
   | "problems"
   | "configure"
-  | "publish"
   | "security";
 
 // Preview Header component with preview mode toggle
@@ -52,7 +50,6 @@ export const ActionHeader = () => {
   const codeRef = useRef<HTMLButtonElement>(null);
   const problemsRef = useRef<HTMLButtonElement>(null);
   const configureRef = useRef<HTMLButtonElement>(null);
-  const publishRef = useRef<HTMLButtonElement>(null);
   const securityRef = useRef<HTMLButtonElement>(null);
   const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0 });
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
@@ -135,9 +132,6 @@ export const ActionHeader = () => {
           break;
         case "configure":
           targetRef = configureRef;
-          break;
-        case "publish":
-          targetRef = publishRef;
           break;
         case "security":
           targetRef = securityRef;
@@ -262,13 +256,6 @@ export const ActionHeader = () => {
             <Shield size={iconSize} />,
             "Security",
             "security-mode-button",
-          )}
-          {renderButton(
-            "publish",
-            publishRef,
-            <Globe size={iconSize} />,
-            "Publish",
-            "publish-mode-button",
           )}
         </div>
         {/* Chat activity bell */}

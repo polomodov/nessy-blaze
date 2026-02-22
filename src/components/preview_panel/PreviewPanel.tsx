@@ -15,9 +15,7 @@ import { useEffect, useRef, useState } from "react";
 import { PanelGroup, Panel, PanelResizeHandle } from "react-resizable-panels";
 import { Console } from "./Console";
 import { useRunApp } from "@/hooks/useRunApp";
-import { PublishPanel } from "./PublishPanel";
 import { SecurityPanel } from "./SecurityPanel";
-import { useSupabase } from "@/hooks/useSupabase";
 
 interface ConsoleHeaderProps {
   isOpen: boolean;
@@ -55,7 +53,6 @@ export function PreviewPanel() {
   const selectedAppId = useAtomValue(selectedAppIdAtom);
   const [isConsoleOpen, setIsConsoleOpen] = useState(false);
   const { runApp, stopApp, loading, app } = useRunApp();
-  const { loadEdgeLogs } = useSupabase();
   const runningAppIdRef = useRef<number | null>(null);
   const key = useAtomValue(previewPanelKeyAtom);
   const consoleEntries = useAtomValue(appConsoleEntriesAtom);
@@ -110,27 +107,6 @@ export function PreviewPanel() {
     // runApp/stopApp are stable due to useCallback.
   }, [selectedAppId, runApp, stopApp]);
 
-  // Load edge logs if app has Supabase project configured
-  useEffect(() => {
-    const projectId = app?.supabaseProjectId;
-    const organizationSlug = app?.supabaseOrganizationSlug ?? undefined;
-    if (!projectId) return;
-
-    // Load logs immediately
-    loadEdgeLogs({ projectId, organizationSlug }).catch((error) => {
-      console.error("Failed to load edge logs:", error);
-    });
-
-    // Poll for new logs every 5 seconds
-    const intervalId = setInterval(() => {
-      loadEdgeLogs({ projectId, organizationSlug }).catch((error) => {
-        console.error("Failed to load edge logs:", error);
-      });
-    }, 5000);
-
-    return () => clearInterval(intervalId);
-  }, [app?.supabaseProjectId, app?.supabaseOrganizationSlug, loadEdgeLogs]);
-
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-hidden">
@@ -143,8 +119,6 @@ export function PreviewPanel() {
                 <CodeView loading={loading} app={app} />
               ) : previewMode === "configure" ? (
                 <ConfigurePanel />
-              ) : previewMode === "publish" ? (
-                <PublishPanel />
               ) : previewMode === "security" ? (
                 <SecurityPanel />
               ) : (

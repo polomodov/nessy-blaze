@@ -8,7 +8,6 @@ import { BlazeAddDependency } from "./BlazeAddDependency";
 import { BlazeExecuteSql } from "./BlazeExecuteSql";
 import { BlazeLogs } from "./BlazeLogs";
 import { BlazeGrep } from "./BlazeGrep";
-import { BlazeAddIntegration } from "./BlazeAddIntegration";
 import { BlazeEdit } from "./BlazeEdit";
 import { BlazeSearchReplace } from "./BlazeSearchReplace";
 import { BlazeCodebaseContext } from "./BlazeCodebaseContext";
@@ -19,8 +18,6 @@ import { isStreamingByIdAtom, selectedChatIdAtom } from "@/atoms/chatAtoms";
 import { CustomTagState } from "./stateTypes";
 import { BlazeOutput } from "./BlazeOutput";
 import { BlazeProblemSummary } from "./BlazeProblemSummary";
-import { BlazeMcpToolCall } from "./BlazeMcpToolCall";
-import { BlazeMcpToolResult } from "./BlazeMcpToolResult";
 import { BlazeWebSearchResult } from "./BlazeWebSearchResult";
 import { BlazeWebSearch } from "./BlazeWebSearch";
 import { BlazeWebCrawl } from "./BlazeWebCrawl";
@@ -29,8 +26,6 @@ import { BlazeCodeSearch } from "./BlazeCodeSearch";
 import { BlazeRead } from "./BlazeRead";
 import { BlazeListFiles } from "./BlazeListFiles";
 import { BlazeDatabaseSchema } from "./BlazeDatabaseSchema";
-import { BlazeSupabaseTableSchema } from "./BlazeSupabaseTableSchema";
-import { BlazeSupabaseProjectInfo } from "./BlazeSupabaseProjectInfo";
 import { BlazeStatus } from "./BlazeStatus";
 import { mapActionToButton } from "./ChatInput";
 import { SuggestedAction } from "@/lib/schemas";
@@ -324,6 +319,14 @@ function getState({
   return isStreaming ? "pending" : "aborted";
 }
 
+function renderDisabledFeatureNotice(featureLabel: string): React.ReactNode {
+  return (
+    <div className="my-2 rounded-md border border-muted-foreground/30 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+      Feature "{featureLabel}" is disabled in client-server mode.
+    </div>
+  );
+}
+
 /**
  * Render a custom tag based on its type
  */
@@ -521,17 +524,7 @@ function renderCustomTag(
       );
 
     case "blaze-add-integration":
-      return (
-        <BlazeAddIntegration
-          node={{
-            properties: {
-              provider: attributes.provider || "",
-            },
-          }}
-        >
-          {content}
-        </BlazeAddIntegration>
-      );
+      return renderDisabledFeatureNotice("integrations");
 
     case "blaze-edit":
       return (
@@ -578,32 +571,10 @@ function renderCustomTag(
       );
 
     case "blaze-mcp-tool-call":
-      return (
-        <BlazeMcpToolCall
-          node={{
-            properties: {
-              serverName: attributes.server || "",
-              toolName: attributes.tool || "",
-            },
-          }}
-        >
-          {content}
-        </BlazeMcpToolCall>
-      );
+      return renderDisabledFeatureNotice("MCP tools");
 
     case "blaze-mcp-tool-result":
-      return (
-        <BlazeMcpToolResult
-          node={{
-            properties: {
-              serverName: attributes.server || "",
-              toolName: attributes.tool || "",
-            },
-          }}
-        >
-          {content}
-        </BlazeMcpToolResult>
-      );
+      return renderDisabledFeatureNotice("MCP tools");
 
     case "blaze-output":
       return (
@@ -664,31 +635,10 @@ function renderCustomTag(
       );
 
     case "blaze-supabase-table-schema":
-      return (
-        <BlazeSupabaseTableSchema
-          node={{
-            properties: {
-              table: attributes.table || "",
-              state: getState({ isStreaming, inProgress }),
-            },
-          }}
-        >
-          {content}
-        </BlazeSupabaseTableSchema>
-      );
+      return renderDisabledFeatureNotice("Supabase tooling");
 
     case "blaze-supabase-project-info":
-      return (
-        <BlazeSupabaseProjectInfo
-          node={{
-            properties: {
-              state: getState({ isStreaming, inProgress }),
-            },
-          }}
-        >
-          {content}
-        </BlazeSupabaseProjectInfo>
-      );
+      return renderDisabledFeatureNotice("Supabase tooling");
 
     case "blaze-status":
       return (
