@@ -27,6 +27,7 @@ const {
   getChatsMock,
   getChatMock,
   createChatMock,
+  listVersionsMock,
   getProposalMock,
   approveProposalMock,
   revertVersionMock,
@@ -37,6 +38,7 @@ const {
   getChatsMock: vi.fn(),
   getChatMock: vi.fn(),
   createChatMock: vi.fn(),
+  listVersionsMock: vi.fn(),
   getProposalMock: vi.fn(),
   approveProposalMock: vi.fn(),
   revertVersionMock: vi.fn(),
@@ -59,6 +61,7 @@ vi.mock("@/ipc/ipc_client", () => ({
       getChats: getChatsMock,
       getChat: getChatMock,
       createChat: createChatMock,
+      listVersions: listVersionsMock,
       getProposal: getProposalMock,
       approveProposal: approveProposalMock,
       revertVersion: revertVersionMock,
@@ -102,6 +105,7 @@ describe("BlazeChatArea", () => {
     streamMessageMock.mockImplementation(() => {});
     getChatsMock.mockResolvedValue([]);
     getProposalMock.mockResolvedValue(null);
+    listVersionsMock.mockResolvedValue([]);
     approveProposalMock.mockResolvedValue({
       updatedFiles: false,
       extraFiles: undefined,
@@ -429,6 +433,54 @@ describe("BlazeChatArea", () => {
 
     expect(screen.getByText(/^Отправлено:/)).toBeTruthy();
     expect(screen.getByText(/^Получено:/)).toBeTruthy();
+  });
+
+  it("loads version history when history tab is opened", async () => {
+    listVersionsMock.mockResolvedValue([
+      {
+        oid: "abc123def456",
+        message: "Updated landing hero",
+        timestamp: 1760000000,
+      },
+    ]);
+
+    render(<BlazeChatArea activeAppId={13} />);
+
+    fireEvent.click(screen.getByTestId("workspace-chat-tab-history"));
+
+    await waitFor(() => {
+      expect(listVersionsMock).toHaveBeenCalledWith({ appId: 13 });
+      expect(screen.getByText("Updated landing hero")).toBeTruthy();
+    });
+  });
+
+  it("restores version from history tab", async () => {
+    listVersionsMock.mockResolvedValue([
+      {
+        oid: "deadbeef1234567",
+        message: "Before CTA redesign",
+        timestamp: 1761000000,
+      },
+    ]);
+
+    render(<BlazeChatArea activeAppId={88} />);
+
+    fireEvent.click(screen.getByTestId("workspace-chat-tab-history"));
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("history-restore-deadbeef1234567"),
+      ).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTestId("history-restore-deadbeef1234567"));
+
+    await waitFor(() => {
+      expect(revertVersionMock).toHaveBeenCalledWith({
+        appId: 88,
+        previousVersionId: "deadbeef1234567",
+      });
+    });
   });
 
   it("shows optimistic auto-fix start message in chat", async () => {

@@ -139,6 +139,19 @@ export const en = {
   "chat.input.cancel": "Cancel generation",
   "chat.messageMeta.sentAt": "Sent: {timestamp}",
   "chat.messageMeta.receivedAt": "Received: {timestamp}",
+  "chat.tab.chat": "Chat",
+  "chat.tab.history": "History",
+  "chat.history.loading": "Loading changes history...",
+  "chat.history.error.load":
+    "Failed to load changes history. Please try again.",
+  "chat.history.empty.noApp":
+    "Select a project or send the first message to create one.",
+  "chat.history.empty.noVersions": "No saved changes yet.",
+  "chat.history.versionLabel": "Version {index} ({hash})",
+  "chat.history.restore": "Restore",
+  "chat.history.restoreInProgress": "Restoring...",
+  "chat.history.hint":
+    "Use this tab to inspect and rollback saved project versions.",
   "chat.footer.hint": "The agent drafts pages based on your design system.",
   "chat.autofix.started":
     "Auto-fix started. Gathering diagnostics and preparing changes.",

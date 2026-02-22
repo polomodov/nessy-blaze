@@ -12,7 +12,10 @@ import {
   ChevronUp,
   Code2,
   Globe,
+  History,
   Image,
+  Loader2,
+  MessageSquare,
   RotateCcw,
   Send,
   StopCircle,
@@ -28,7 +31,7 @@ import { SelectedComponentsDisplay } from "../chat/SelectedComponentDisplay";
 import { useI18n } from "@/contexts/I18nContext";
 import { useSettings } from "@/hooks/useSettings";
 import { IpcClient } from "@/ipc/ipc_client";
-import type { Message as BackendMessage } from "@/ipc/ipc_types";
+import type { Message as BackendMessage, Version } from "@/ipc/ipc_types";
 import type { ProposalResult } from "@/lib/schemas";
 import type { TranslationParams } from "@/i18n/types";
 import {
@@ -65,6 +68,8 @@ type PendingCodeProposal = {
   packagesCount: number;
   sqlQueriesCount: number;
 };
+
+type ChatAreaTabId = "chat" | "history";
 
 type TranslateFn = (key: string, params?: TranslationParams) => string;
 
@@ -402,6 +407,26 @@ export function BlazeChatArea({
       timestamp ? messageTimestampFormatter.format(timestamp) : null,
     [messageTimestampFormatter],
   );
+  const versionTimestampFormatter = useMemo(
+    () =>
+      new Intl.DateTimeFormat(
+        settings?.uiLanguage === "ru" ? "ru-RU" : "en-US",
+        {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        },
+      ),
+    [settings?.uiLanguage],
+  );
+  const formatVersionTimestamp = useCallback(
+    (timestampInSeconds: number) =>
+      versionTimestampFormatter.format(new Date(timestampInSeconds * 1000)),
+    [versionTimestampFormatter],
+  );
+  const [activeTab, setActiveTab] = useState<ChatAreaTabId>("chat");
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [appId, setAppId] = useState<number | null>(null);
@@ -412,6 +437,14 @@ export function BlazeChatArea({
   const [revertingMessageId, setRevertingMessageId] = useState<string | null>(
     null,
   );
+  const [versionHistory, setVersionHistory] = useState<Version[]>([]);
+  const [isLoadingVersionHistory, setIsLoadingVersionHistory] = useState(false);
+  const [versionHistoryError, setVersionHistoryError] = useState<string | null>(
+    null,
+  );
+  const [revertingHistoryVersionId, setRevertingHistoryVersionId] = useState<
+    string | null
+  >(null);
   const [isHiddenAgentActivity, setIsHiddenAgentActivity] = useState(false);
   const [visibleStartIndex, setVisibleStartIndex] = useState(0);
   const [pendingCodeProposal, setPendingCodeProposal] =
@@ -436,6 +469,7 @@ export function BlazeChatArea({
     previousTop: number;
   } | null>(null);
   const shouldUseSmoothScrollRef = useRef(false);
+  const versionHistoryRequestIdRef = useRef(0);
 
   const getHistoryWindowStart = useCallback(
     (targetMessages: Message[]) =>
@@ -487,6 +521,45 @@ export function BlazeChatArea({
     [settings?.autoApproveChanges],
   );
 
+  const refreshVersionHistory = useCallback(
+    async (targetAppId: number | null) => {
+      const requestId = versionHistoryRequestIdRef.current + 1;
+      versionHistoryRequestIdRef.current = requestId;
+
+      if (targetAppId === null) {
+        setVersionHistory([]);
+        setVersionHistoryError(null);
+        setIsLoadingVersionHistory(false);
+        return;
+      }
+
+      setIsLoadingVersionHistory(true);
+      setVersionHistoryError(null);
+      try {
+        const versions = await IpcClient.getInstance().listVersions({
+          appId: targetAppId,
+        });
+        if (versionHistoryRequestIdRef.current !== requestId) {
+          return;
+        }
+        setVersionHistory(versions);
+      } catch (versionError) {
+        if (versionHistoryRequestIdRef.current !== requestId) {
+          return;
+        }
+        setVersionHistory([]);
+        setVersionHistoryError(
+          resolveErrorMessage(versionError, t("chat.history.error.load")),
+        );
+      } finally {
+        if (versionHistoryRequestIdRef.current === requestId) {
+          setIsLoadingVersionHistory(false);
+        }
+      }
+    },
+    [t],
+  );
+
   useEffect(() => {
     visibleChatIdRef.current = chatId;
   }, [chatId]);
@@ -494,6 +567,13 @@ export function BlazeChatArea({
   useEffect(() => {
     void syncPendingCodeProposal(chatId);
   }, [chatId, syncPendingCodeProposal]);
+
+  useEffect(() => {
+    if (activeTab !== "history") {
+      return;
+    }
+    void refreshVersionHistory(appId);
+  }, [activeTab, appId, refreshVersionHistory]);
 
   useEffect(() => {
     if (typeof activeAppId === "undefined") {
@@ -573,6 +653,9 @@ export function BlazeChatArea({
 
       if (activeAppId === null) {
         setAppId(null);
+        setVersionHistory([]);
+        setVersionHistoryError(null);
+        setIsLoadingVersionHistory(false);
         setChatId(null);
         visibleChatIdRef.current = null;
         setMessages([]);
@@ -585,6 +668,8 @@ export function BlazeChatArea({
       }
 
       setAppId(activeAppId);
+      setVersionHistory([]);
+      setVersionHistoryError(null);
       const chats = await IpcClient.getInstance().getChats(activeAppId);
       if (cancelled) {
         return;
@@ -835,6 +920,9 @@ export function BlazeChatArea({
             setIsHiddenAgentActivity(false);
           }
           void syncPendingCodeProposal(streamChatId);
+          if (activeTab === "history") {
+            void refreshVersionHistory(appIdForMessage ?? appId);
+          }
         },
         onError: (streamError) => {
           pendingStreamChatIdsRef.current.delete(streamChatId);
@@ -875,6 +963,11 @@ export function BlazeChatArea({
 
       const resolvedAppId =
         typeof refreshedChat.appId === "number" ? refreshedChat.appId : appId;
+      if (activeTab === "history") {
+        await refreshVersionHistory(
+          typeof resolvedAppId === "number" ? resolvedAppId : appId,
+        );
+      }
       if (approveResult.updatedFiles && typeof resolvedAppId === "number") {
         const detail: WorkspacePreviewRefreshDetail = {
           appId: resolvedAppId,
@@ -944,12 +1037,47 @@ export function BlazeChatArea({
         setIsHiddenAgentActivity(hasHiddenActivity(refreshedChat.messages));
       }
       await syncPendingCodeProposal(chatId);
+      if (activeTab === "history") {
+        await refreshVersionHistory(appId);
+      }
     } catch (revertError) {
       setError(
         resolveErrorMessage(revertError, t("chat.error.rollbackFailed")),
       );
     } finally {
       setRevertingMessageId(null);
+    }
+  };
+
+  const handleRestoreVersionFromHistory = async (versionId: string) => {
+    if (!appId || isTyping || revertingMessageId || revertingHistoryVersionId) {
+      return;
+    }
+
+    setRevertingHistoryVersionId(versionId);
+    setError(null);
+    try {
+      await IpcClient.getInstance().revertVersion({
+        appId,
+        previousVersionId: versionId,
+      });
+
+      if (chatId !== null) {
+        const refreshedChat = await IpcClient.getInstance().getChat(chatId);
+        if (visibleChatIdRef.current === chatId) {
+          setMessages(mapMessages(refreshedChat.messages));
+          setIsHiddenAgentActivity(hasHiddenActivity(refreshedChat.messages));
+        }
+        await syncPendingCodeProposal(chatId);
+      }
+
+      await refreshVersionHistory(appId);
+    } catch (revertError) {
+      setError(
+        resolveErrorMessage(revertError, t("chat.error.rollbackFailed")),
+      );
+    } finally {
+      setRevertingHistoryVersionId(null);
     }
   };
 
@@ -994,6 +1122,7 @@ export function BlazeChatArea({
     visibleStartIndex >= messages.length ? 0 : visibleStartIndex;
   const visibleMessages = messages.slice(normalizedVisibleStartIndex);
   const isEmpty = messages.length === 0;
+  const isChatTabActive = activeTab === "chat";
   const hasPendingManualProposal =
     !settings?.autoApproveChanges && pendingCodeProposal !== null;
   const toggleStatusKey = (key: string) => {
@@ -1010,276 +1139,412 @@ export function BlazeChatArea({
 
   return (
     <div className="flex h-full flex-1 flex-col bg-background">
-      <div
-        ref={scrollContainerRef}
-        data-testid="workspace-chat-scroll"
-        className="scrollbar-thin flex-1 overflow-y-auto"
-        onScroll={handleMessagesScroll}
-      >
-        {isEmpty ? (
-          <div className="flex h-full flex-col items-center justify-center px-6">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-              className="max-w-2xl text-center"
-            >
-              <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary">
-                <Sparkles size={28} className="text-primary-foreground" />
-              </div>
-              <h2 className="mb-2 text-2xl font-bold text-foreground">
-                {t("chat.empty.title")}
-              </h2>
-              <p className="mb-8 text-muted-foreground">
-                {t("chat.empty.subtitle")}
-              </p>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                {starterPrompts.map((item, index) => (
-                  <motion.button
-                    key={item.label}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.2 + index * 0.1 }}
-                    onClick={() => {
-                      setInput(item.prompt);
-                      inputRef.current?.focus();
-                    }}
-                    className="group flex items-start gap-3 rounded-xl border border-border bg-card p-4 text-left transition-all hover:border-primary/40 hover:shadow-sm"
-                  >
-                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground transition-colors group-hover:bg-primary/10 group-hover:text-foreground">
-                      <item.icon size={16} />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-foreground">
-                        {item.label}
-                      </p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        {item.prompt}
-                      </p>
-                    </div>
-                  </motion.button>
-                ))}
-              </div>
-            </motion.div>
-          </div>
-        ) : (
-          <div className="mx-auto max-w-2xl px-6 py-6">
-            <AnimatePresence>
-              {visibleMessages.map((message, messageIndex) => {
-                const absoluteMessageIndex =
-                  normalizedVisibleStartIndex + messageIndex;
-                const formattedTimestamp = formatMessageTimestamp(
-                  message.createdAt,
-                );
-                return (
-                  <motion.div
-                    key={message.id}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={`mb-4 flex ${
-                      message.role === "user" ? "justify-end" : "justify-start"
-                    }`}
-                  >
-                    <div
-                      className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                        message.role === "user"
-                          ? "bg-user-bubble text-primary-foreground"
-                          : message.isAssistantActionOnly
-                            ? "border border-dashed border-primary/40 bg-primary/5 text-muted-foreground"
-                            : "bg-agent-bubble text-foreground"
-                      }`}
-                    >
-                      {message.content &&
-                        (message.role === "agent" ? (
-                          <WorkspaceMarkdown content={message.content} />
-                        ) : (
-                          <div className="whitespace-pre-wrap">
-                            {message.content}
-                          </div>
-                        ))}
-                      {message.statusBlocks?.map((statusBlock, index) => {
-                        const statusKey = `${message.id}:status:${index}`;
-                        const isExpanded = expandedStatusKeys.has(statusKey);
-                        return (
-                          <div
-                            key={statusKey}
-                            className={`${
-                              message.content ? "mt-3" : ""
-                            } rounded-lg border border-border bg-(--background-lightest)`}
-                          >
-                            <button
-                              className="w-full flex items-center justify-between px-3 py-2 text-left cursor-pointer"
-                              onClick={() => toggleStatusKey(statusKey)}
-                            >
-                              <span className="font-medium text-xs">
-                                {statusBlock.title}
-                              </span>
-                              {isExpanded ? (
-                                <ChevronUp
-                                  size={16}
-                                  className="text-muted-foreground"
-                                />
-                              ) : (
-                                <ChevronDown
-                                  size={16}
-                                  className="text-muted-foreground"
-                                />
-                              )}
-                            </button>
-                            {isExpanded && (
-                              <pre className="px-3 pb-3 text-xs whitespace-pre-wrap break-words text-muted-foreground font-mono overflow-auto max-h-60">
-                                {statusBlock.body}
-                              </pre>
-                            )}
-                          </div>
-                        );
-                      })}
-                      {message.role === "agent" && message.sourceCommitHash && (
-                        <div className="mt-3 border-t border-border/60 pt-2">
-                          <button
-                            type="button"
-                            data-testid={`rollback-button-${message.id}`}
-                            onClick={() => {
-                              void handleRollbackMessage(
-                                message.id,
-                                absoluteMessageIndex,
-                              );
-                            }}
-                            disabled={Boolean(revertingMessageId) || isTyping}
-                            className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            <RotateCcw size={12} />
-                            {revertingMessageId === message.id
-                              ? t("chat.rollback.button.reverting")
-                              : t("chat.rollback.button")}
-                          </button>
+      <div className="border-b border-border bg-card px-4 py-2">
+        <div className="mx-auto flex w-full max-w-2xl items-center gap-1">
+          <button
+            type="button"
+            data-testid="workspace-chat-tab-chat"
+            onClick={() => setActiveTab("chat")}
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+              isChatTabActive
+                ? "bg-primary/10 text-primary"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            }`}
+          >
+            <MessageSquare size={14} />
+            {t("chat.tab.chat")}
+          </button>
+          <button
+            type="button"
+            data-testid="workspace-chat-tab-history"
+            onClick={() => setActiveTab("history")}
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+              !isChatTabActive
+                ? "bg-primary/10 text-primary"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            }`}
+          >
+            <History size={14} />
+            {t("chat.tab.history")}
+          </button>
+        </div>
+      </div>
+
+      {isChatTabActive ? (
+        <>
+          <div
+            ref={scrollContainerRef}
+            data-testid="workspace-chat-scroll"
+            className="scrollbar-thin flex-1 overflow-y-auto"
+            onScroll={handleMessagesScroll}
+          >
+            {isEmpty ? (
+              <div className="flex h-full flex-col items-center justify-center px-6">
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5 }}
+                  className="max-w-2xl text-center"
+                >
+                  <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary">
+                    <Sparkles size={28} className="text-primary-foreground" />
+                  </div>
+                  <h2 className="mb-2 text-2xl font-bold text-foreground">
+                    {t("chat.empty.title")}
+                  </h2>
+                  <p className="mb-8 text-muted-foreground">
+                    {t("chat.empty.subtitle")}
+                  </p>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    {starterPrompts.map((item, index) => (
+                      <motion.button
+                        key={item.label}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.2 + index * 0.1 }}
+                        onClick={() => {
+                          setInput(item.prompt);
+                          inputRef.current?.focus();
+                        }}
+                        className="group flex items-start gap-3 rounded-xl border border-border bg-card p-4 text-left transition-all hover:border-primary/40 hover:shadow-sm"
+                      >
+                        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground transition-colors group-hover:bg-primary/10 group-hover:text-foreground">
+                          <item.icon size={16} />
                         </div>
-                      )}
-                      {formattedTimestamp && (
+                        <div>
+                          <p className="text-sm font-medium text-foreground">
+                            {item.label}
+                          </p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {item.prompt}
+                          </p>
+                        </div>
+                      </motion.button>
+                    ))}
+                  </div>
+                </motion.div>
+              </div>
+            ) : (
+              <div className="mx-auto max-w-2xl px-6 py-6">
+                <AnimatePresence>
+                  {visibleMessages.map((message, messageIndex) => {
+                    const absoluteMessageIndex =
+                      normalizedVisibleStartIndex + messageIndex;
+                    const formattedTimestamp = formatMessageTimestamp(
+                      message.createdAt,
+                    );
+                    return (
+                      <motion.div
+                        key={message.id}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className={`mb-4 flex ${
+                          message.role === "user"
+                            ? "justify-end"
+                            : "justify-start"
+                        }`}
+                      >
                         <div
-                          className={`mt-2 text-[11px] ${
+                          className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
                             message.role === "user"
-                              ? "text-right text-primary-foreground/80"
-                              : "text-muted-foreground"
+                              ? "bg-user-bubble text-primary-foreground"
+                              : message.isAssistantActionOnly
+                                ? "border border-dashed border-primary/40 bg-primary/5 text-muted-foreground"
+                                : "bg-agent-bubble text-foreground"
                           }`}
                         >
-                          {message.role === "user"
-                            ? t("chat.messageMeta.sentAt", {
-                                timestamp: formattedTimestamp,
-                              })
-                            : t("chat.messageMeta.receivedAt", {
-                                timestamp: formattedTimestamp,
-                              })}
+                          {message.content &&
+                            (message.role === "agent" ? (
+                              <WorkspaceMarkdown content={message.content} />
+                            ) : (
+                              <div className="whitespace-pre-wrap">
+                                {message.content}
+                              </div>
+                            ))}
+                          {message.statusBlocks?.map((statusBlock, index) => {
+                            const statusKey = `${message.id}:status:${index}`;
+                            const isExpanded =
+                              expandedStatusKeys.has(statusKey);
+                            return (
+                              <div
+                                key={statusKey}
+                                className={`${
+                                  message.content ? "mt-3" : ""
+                                } rounded-lg border border-border bg-(--background-lightest)`}
+                              >
+                                <button
+                                  className="w-full flex items-center justify-between px-3 py-2 text-left cursor-pointer"
+                                  onClick={() => toggleStatusKey(statusKey)}
+                                >
+                                  <span className="font-medium text-xs">
+                                    {statusBlock.title}
+                                  </span>
+                                  {isExpanded ? (
+                                    <ChevronUp
+                                      size={16}
+                                      className="text-muted-foreground"
+                                    />
+                                  ) : (
+                                    <ChevronDown
+                                      size={16}
+                                      className="text-muted-foreground"
+                                    />
+                                  )}
+                                </button>
+                                {isExpanded && (
+                                  <pre className="px-3 pb-3 text-xs whitespace-pre-wrap break-words text-muted-foreground font-mono overflow-auto max-h-60">
+                                    {statusBlock.body}
+                                  </pre>
+                                )}
+                              </div>
+                            );
+                          })}
+                          {message.role === "agent" &&
+                            message.sourceCommitHash && (
+                              <div className="mt-3 border-t border-border/60 pt-2">
+                                <button
+                                  type="button"
+                                  data-testid={`rollback-button-${message.id}`}
+                                  onClick={() => {
+                                    void handleRollbackMessage(
+                                      message.id,
+                                      absoluteMessageIndex,
+                                    );
+                                  }}
+                                  disabled={
+                                    Boolean(revertingMessageId) || isTyping
+                                  }
+                                  className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  <RotateCcw size={12} />
+                                  {revertingMessageId === message.id
+                                    ? t("chat.rollback.button.reverting")
+                                    : t("chat.rollback.button")}
+                                </button>
+                              </div>
+                            )}
+                          {formattedTimestamp && (
+                            <div
+                              className={`mt-2 text-[11px] ${
+                                message.role === "user"
+                                  ? "text-right text-primary-foreground/80"
+                                  : "text-muted-foreground"
+                              }`}
+                            >
+                              {message.role === "user"
+                                ? t("chat.messageMeta.sentAt", {
+                                    timestamp: formattedTimestamp,
+                                  })
+                                : t("chat.messageMeta.receivedAt", {
+                                    timestamp: formattedTimestamp,
+                                  })}
+                            </div>
+                          )}
                         </div>
-                      )}
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
+
+                {isTyping && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="mb-4 flex justify-start"
+                  >
+                    <div className="rounded-2xl bg-agent-bubble px-4 py-3">
+                      <div className="flex items-center gap-1.5">
+                        <span className="h-2 w-2 animate-pulse-dot rounded-full bg-muted-foreground" />
+                        <span className="h-2 w-2 animate-pulse-dot rounded-full bg-muted-foreground [animation-delay:0.2s]" />
+                        <span className="h-2 w-2 animate-pulse-dot rounded-full bg-muted-foreground [animation-delay:0.4s]" />
+                      </div>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {isHiddenAgentActivity
+                          ? t("chat.typing.thinking")
+                          : t("chat.typing.drafting")}
+                      </p>
                     </div>
                   </motion.div>
-                );
-              })}
-            </AnimatePresence>
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+            )}
+          </div>
 
-            {isTyping && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="mb-4 flex justify-start"
-              >
-                <div className="rounded-2xl bg-agent-bubble px-4 py-3">
-                  <div className="flex items-center gap-1.5">
-                    <span className="h-2 w-2 animate-pulse-dot rounded-full bg-muted-foreground" />
-                    <span className="h-2 w-2 animate-pulse-dot rounded-full bg-muted-foreground [animation-delay:0.2s]" />
-                    <span className="h-2 w-2 animate-pulse-dot rounded-full bg-muted-foreground [animation-delay:0.4s]" />
-                  </div>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {isHiddenAgentActivity
-                      ? t("chat.typing.thinking")
-                      : t("chat.typing.drafting")}
+          <div className="border-t border-border bg-card px-4 py-4">
+            {hasPendingManualProposal && pendingCodeProposal && (
+              <div className="mx-auto mb-3 flex max-w-2xl items-center justify-between gap-3 rounded-xl border border-primary/30 bg-primary/5 px-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {t("chat.manualApply.title")}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {t("chat.manualApply.summary", {
+                      files: pendingCodeProposal.filesCount,
+                      packages: pendingCodeProposal.packagesCount,
+                      sqlQueries: pendingCodeProposal.sqlQueriesCount,
+                    })}
                   </p>
                 </div>
-              </motion.div>
+                <button
+                  type="button"
+                  data-testid="manual-approve-button"
+                  onClick={() => {
+                    void handleApprovePendingChanges();
+                  }}
+                  disabled={isApproving || isTyping}
+                  className="flex-shrink-0 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition-all hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isApproving
+                    ? t("chat.manualApply.button.approving")
+                    : t("chat.manualApply.button.approve")}
+                </button>
+              </div>
             )}
-            <div ref={messagesEndRef} />
-          </div>
-        )}
-      </div>
-
-      <div className="border-t border-border bg-card px-4 py-4">
-        {hasPendingManualProposal && pendingCodeProposal && (
-          <div className="mx-auto mb-3 flex max-w-2xl items-center justify-between gap-3 rounded-xl border border-primary/30 bg-primary/5 px-3 py-2.5">
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-foreground">
-                {t("chat.manualApply.title")}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {t("chat.manualApply.summary", {
-                  files: pendingCodeProposal.filesCount,
-                  packages: pendingCodeProposal.packagesCount,
-                  sqlQueries: pendingCodeProposal.sqlQueriesCount,
-                })}
-              </p>
+            <div className="mx-auto max-w-2xl">
+              <SelectedComponentsDisplay />
             </div>
-            <button
-              type="button"
-              data-testid="manual-approve-button"
-              onClick={() => {
-                void handleApprovePendingChanges();
-              }}
-              disabled={isApproving || isTyping}
-              className="flex-shrink-0 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition-all hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isApproving
-                ? t("chat.manualApply.button.approving")
-                : t("chat.manualApply.button.approve")}
-            </button>
+            <div className="mx-auto flex max-w-2xl items-end gap-3">
+              <div className="flex-1 rounded-xl border border-border bg-surface px-4 py-3 transition-colors focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20">
+                <textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={(event) => setInput(event.target.value)}
+                  onKeyDown={onInputKeyDown}
+                  placeholder={t("chat.input.placeholder")}
+                  rows={1}
+                  className="w-full resize-none bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+                />
+              </div>
+              {isTyping ? (
+                <button
+                  type="button"
+                  data-testid="chat-cancel-button"
+                  onClick={handleCancelCurrentAction}
+                  className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border border-border bg-surface text-muted-foreground transition-all hover:border-destructive/50 hover:text-destructive active:scale-95"
+                  title={t("chat.input.cancel")}
+                  aria-label={t("chat.input.cancel")}
+                >
+                  <StopCircle size={18} />
+                </button>
+              ) : (
+                <button
+                  onClick={sendMessage}
+                  disabled={
+                    !input.trim() || isTyping || hasPendingManualProposal
+                  }
+                  className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-all hover:brightness-105 active:scale-95 disabled:opacity-40 disabled:hover:brightness-100"
+                  title={t("chat.input.send")}
+                  aria-label={t("chat.input.send")}
+                >
+                  <Send size={18} />
+                </button>
+              )}
+            </div>
+            {error && (
+              <p className="mx-auto mt-2 max-w-2xl text-center text-xs text-destructive">
+                {error}
+              </p>
+            )}
+            <p className="mx-auto mt-2 max-w-2xl text-center text-xs text-muted-foreground">
+              {t("chat.footer.hint")}
+            </p>
           </div>
-        )}
-        <div className="mx-auto max-w-2xl">
-          <SelectedComponentsDisplay />
-        </div>
-        <div className="mx-auto flex max-w-2xl items-end gap-3">
-          <div className="flex-1 rounded-xl border border-border bg-surface px-4 py-3 transition-colors focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20">
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              onKeyDown={onInputKeyDown}
-              placeholder={t("chat.input.placeholder")}
-              rows={1}
-              className="w-full resize-none bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
-            />
+        </>
+      ) : (
+        <>
+          <div
+            data-testid="workspace-chat-history-scroll"
+            className="scrollbar-thin flex-1 overflow-y-auto"
+          >
+            <div className="mx-auto max-w-2xl px-6 py-6">
+              {appId === null ? (
+                <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
+                  {t("chat.history.empty.noApp")}
+                </div>
+              ) : isLoadingVersionHistory ? (
+                <div className="flex items-center gap-2 rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
+                  <Loader2 size={16} className="animate-spin" />
+                  {t("chat.history.loading")}
+                </div>
+              ) : versionHistoryError ? (
+                <div className="rounded-xl border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+                  {versionHistoryError}
+                </div>
+              ) : versionHistory.length === 0 ? (
+                <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
+                  {t("chat.history.empty.noVersions")}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {versionHistory.map((version, index) => {
+                    const isRestoring =
+                      revertingHistoryVersionId === version.oid;
+                    return (
+                      <div
+                        key={version.oid}
+                        className="rounded-xl border border-border bg-card p-4"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-foreground">
+                              {t("chat.history.versionLabel", {
+                                index: versionHistory.length - index,
+                                hash: version.oid.slice(0, 7),
+                              })}
+                            </p>
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              {formatVersionTimestamp(version.timestamp)}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            data-testid={`history-restore-${version.oid}`}
+                            onClick={() => {
+                              void handleRestoreVersionFromHistory(version.oid);
+                            }}
+                            disabled={
+                              Boolean(revertingMessageId) ||
+                              Boolean(revertingHistoryVersionId) ||
+                              isTyping
+                            }
+                            className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {isRestoring ? (
+                              <Loader2 size={12} className="animate-spin" />
+                            ) : (
+                              <RotateCcw size={12} />
+                            )}
+                            {isRestoring
+                              ? t("chat.history.restoreInProgress")
+                              : t("chat.history.restore")}
+                          </button>
+                        </div>
+                        {version.message ? (
+                          <p className="mt-2 whitespace-pre-wrap break-words text-sm text-foreground">
+                            {version.message}
+                          </p>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
-          {isTyping ? (
-            <button
-              type="button"
-              data-testid="chat-cancel-button"
-              onClick={handleCancelCurrentAction}
-              className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border border-border bg-surface text-muted-foreground transition-all hover:border-destructive/50 hover:text-destructive active:scale-95"
-              title={t("chat.input.cancel")}
-              aria-label={t("chat.input.cancel")}
-            >
-              <StopCircle size={18} />
-            </button>
-          ) : (
-            <button
-              onClick={sendMessage}
-              disabled={!input.trim() || isTyping || hasPendingManualProposal}
-              className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-all hover:brightness-105 active:scale-95 disabled:opacity-40 disabled:hover:brightness-100"
-              title={t("chat.input.send")}
-              aria-label={t("chat.input.send")}
-            >
-              <Send size={18} />
-            </button>
-          )}
-        </div>
-        {error && (
-          <p className="mx-auto mt-2 max-w-2xl text-center text-xs text-destructive">
-            {error}
-          </p>
-        )}
-        <p className="mx-auto mt-2 max-w-2xl text-center text-xs text-muted-foreground">
-          {t("chat.footer.hint")}
-        </p>
-      </div>
+
+          <div className="border-t border-border bg-card px-4 py-3">
+            {error && (
+              <p className="mx-auto max-w-2xl text-center text-xs text-destructive">
+                {error}
+              </p>
+            )}
+            <p className="mx-auto mt-1 max-w-2xl text-center text-xs text-muted-foreground">
+              {t("chat.history.hint")}
+            </p>
+          </div>
+        </>
+      )}
     </div>
   );
 }

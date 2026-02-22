@@ -144,6 +144,19 @@ export const ru = {
   "chat.input.cancel": "Остановить генерацию",
   "chat.messageMeta.sentAt": "Отправлено: {timestamp}",
   "chat.messageMeta.receivedAt": "Получено: {timestamp}",
+  "chat.tab.chat": "Чат",
+  "chat.tab.history": "История",
+  "chat.history.loading": "Загружаем историю изменений...",
+  "chat.history.error.load":
+    "Не удалось загрузить историю изменений. Попробуйте еще раз.",
+  "chat.history.empty.noApp":
+    "Выберите проект или отправьте первое сообщение, чтобы создать его.",
+  "chat.history.empty.noVersions": "Сохраненных изменений пока нет.",
+  "chat.history.versionLabel": "Версия {index} ({hash})",
+  "chat.history.restore": "Восстановить",
+  "chat.history.restoreInProgress": "Восстанавливаем...",
+  "chat.history.hint":
+    "Во вкладке можно посмотреть и откатить сохраненные версии проекта.",
   "chat.footer.hint": "Агент создает страницы по вашей дизайн-системе.",
   "chat.autofix.started":
     "Автофикс запущен. Собираем диагностику и готовим изменения.",
