@@ -238,7 +238,7 @@ vi.mock("@/ipc/utils/mcp_manager", () => ({
   },
 }));
 
-vi.mock("@/pro/main/ipc/handlers/local_agent/tool_definitions", () => ({
+vi.mock("@/core/main/ipc/handlers/local_agent/tool_definitions", () => ({
   TOOL_DEFINITIONS: [],
   buildAgentToolSet: vi.fn(() => ({})),
   requireAgentToolConsent: vi.fn(async () => true),
@@ -246,7 +246,7 @@ vi.mock("@/pro/main/ipc/handlers/local_agent/tool_definitions", () => ({
 }));
 
 vi.mock(
-  "@/pro/main/ipc/handlers/local_agent/processors/file_operations",
+  "@/core/main/ipc/handlers/local_agent/processors/file_operations",
   () => ({
     deployAllFunctionsIfNeeded: vi.fn(async () => {}),
     commitAllChanges: vi.fn(async () => ({ commitHash: "abc123" })),
@@ -257,7 +257,7 @@ vi.mock(
 // Import the function under test AFTER mocks are set up
 // ============================================================================
 
-import { handleLocalAgentStream } from "@/pro/main/ipc/handlers/local_agent/local_agent_handler";
+import { handleLocalAgentStream } from "@/core/main/ipc/handlers/local_agent/local_agent_handler";
 
 // ============================================================================
 // Tests

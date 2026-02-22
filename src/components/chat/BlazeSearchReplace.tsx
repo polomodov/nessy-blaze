@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { CodeHighlight } from "./CodeHighlight";
 import { CustomTagState } from "./stateTypes";
-import { parseSearchReplaceBlocks } from "@/pro/shared/search_replace_parser";
+import { parseSearchReplaceBlocks } from "@/core/shared/search_replace_parser";
 
 interface BlazeSearchReplaceProps {
   children?: ReactNode;

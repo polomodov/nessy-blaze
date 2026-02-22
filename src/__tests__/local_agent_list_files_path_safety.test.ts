@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveDirectoryWithinAppPath } from "@/pro/main/ipc/handlers/local_agent/tools/path_safety";
+import { resolveDirectoryWithinAppPath } from "@/core/main/ipc/handlers/local_agent/tools/path_safety";
 
 describe("resolveDirectoryWithinAppPath", () => {
   it("allows valid subdirectories even if appPath uses forward slashes (Windows)", () => {

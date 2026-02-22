@@ -22,7 +22,7 @@ Legacy desktop compatibility paths are being removed from active runtime flow.
 - `src/ipc/backend_client.ts`: frontend transport layer to backend HTTP routes
 - `src/ipc/ipc_client.ts`: app client facade used by UI hooks/components
 - `src/db`: schema, DB setup, and migrations
-- `src/pro`: extended internal/pro feature modules
+- `src/core`: extended internal core feature modules
 
 ## Development
 
@@ -43,8 +43,3 @@ npm run db:generate
 ```sh
 npm test
 ```
-
-## Contributing
-
-Contributions inside the company are welcome.
-Contribution rules and process are described in `CONTRIBUTING.md`.

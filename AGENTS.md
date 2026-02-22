@@ -1,7 +1,5 @@
 # Repository Agent Guide
 
-Please read `CONTRIBUTING.md` which includes information for human code contributors. Much of the information is applicable to you as well.
-
 ## Project setup and lints
 
 Make sure you run this once after doing `npm install` because it will make sure whenever you commit something, it will run pre-commit hooks like linting and formatting.

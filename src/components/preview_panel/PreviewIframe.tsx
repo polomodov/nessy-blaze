@@ -68,7 +68,7 @@ import { AnnotatorOnlyForPro } from "./AnnotatorOnlyForPro";
 import { useAttachments } from "@/hooks/useAttachments";
 import { useUserBudgetInfo } from "@/hooks/useUserBudgetInfo";
 import { useSettings } from "@/hooks/useSettings";
-import { Annotator } from "@/pro/ui/components/Annotator/Annotator";
+import { Annotator } from "@/core/ui/components/Annotator/Annotator";
 import { VisualEditingToolbar } from "./VisualEditingToolbar";
 import type { AutoFixIncident } from "./error_autofix_prompt";
 import { useErrorAutofix } from "./use_error_autofix";

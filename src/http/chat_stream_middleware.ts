@@ -6,7 +6,7 @@ import {
   NOOP_SERVER_EVENT_SINK,
   type ServerEventSink,
 } from "../ipc/utils/server_event_sink";
-import { resolveAgentToolConsent } from "../pro/main/ipc/handlers/local_agent/agent_tool_consent";
+import { resolveAgentToolConsent } from "../core/main/ipc/handlers/local_agent/agent_tool_consent";
 import { isMultitenantEnforced } from "./feature_flags";
 import { isHttpError } from "./http_errors";
 import { enforceAndRecordUsage, writeAuditEvent } from "./quota_audit";

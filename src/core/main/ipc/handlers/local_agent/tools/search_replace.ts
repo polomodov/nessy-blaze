@@ -9,7 +9,7 @@ import {
   isServerFunction,
   isSharedServerModule,
 } from "../../../../../../supabase_admin/supabase_utils";
-import { applySearchReplace } from "../../../../../../pro/main/ipc/processors/search_replace_processor";
+import { applySearchReplace } from "../../../processors/search_replace_processor";
 
 const readFile = fs.promises.readFile;
 const logger = log.scope("search_replace");

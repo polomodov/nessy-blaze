@@ -5,7 +5,7 @@ import { initializeDatabase } from "../db";
 import type { ChatResponseEnd, ChatStreamParams } from "../ipc/ipc_types";
 import { resolveConsent } from "../ipc/utils/mcp_consent";
 import type { ServerEventSink } from "../ipc/utils/server_event_sink";
-import { resolveAgentToolConsent } from "../pro/main/ipc/handlers/local_agent/agent_tool_consent";
+import { resolveAgentToolConsent } from "../core/main/ipc/handlers/local_agent/agent_tool_consent";
 import { isWebSocketStreamingEnabled } from "./feature_flags";
 import { isHttpError } from "./http_errors";
 import { enforceAndRecordUsage, writeAuditEvent } from "./quota_audit";

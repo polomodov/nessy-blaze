@@ -51,7 +51,7 @@ vi.mock("drizzle-orm", () => ({
 import {
   AI_MESSAGES_TTL_DAYS,
   cleanupOldAiMessagesJson,
-} from "@/pro/main/ipc/handlers/local_agent/ai_messages_cleanup";
+} from "@/core/main/ipc/handlers/local_agent/ai_messages_cleanup";
 
 describe("cleanupOldAiMessagesJson", () => {
   beforeEach(() => {
