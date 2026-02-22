@@ -1,13 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  BarChart3,
+  Cloud,
+  Code,
   Download,
   ExternalLink,
   Eye,
   Loader2,
   Monitor,
   MousePointerClick,
+  Palette,
+  RefreshCw,
+  Shield,
   Smartphone,
   Tablet,
+  Zap,
   Sparkles,
 } from "lucide-react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
@@ -41,6 +48,35 @@ import {
 } from "./autofix_events";
 
 type Device = "desktop" | "tablet" | "mobile";
+type RightPanelTabId =
+  | "preview"
+  | "cloud"
+  | "design"
+  | "code"
+  | "analytics"
+  | "security"
+  | "speed";
+
+const RIGHT_PANEL_TABS: ReadonlyArray<{
+  id: RightPanelTabId;
+  labelKey:
+    | "preview.tab.preview"
+    | "preview.tab.cloud"
+    | "preview.tab.design"
+    | "preview.tab.code"
+    | "preview.tab.analytics"
+    | "preview.tab.security"
+    | "preview.tab.speed";
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+}> = [
+  { id: "preview", labelKey: "preview.tab.preview", icon: Eye },
+  { id: "cloud", labelKey: "preview.tab.cloud", icon: Cloud },
+  { id: "design", labelKey: "preview.tab.design", icon: Palette },
+  { id: "code", labelKey: "preview.tab.code", icon: Code },
+  { id: "analytics", labelKey: "preview.tab.analytics", icon: BarChart3 },
+  { id: "security", labelKey: "preview.tab.security", icon: Shield },
+  { id: "speed", labelKey: "preview.tab.speed", icon: Zap },
+];
 
 const previewWidthByDevice: Record<Device, string> = {
   desktop: "100%",
@@ -172,7 +208,9 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
   const [autoFixInFlightChatId, setAutoFixInFlightChatId] = useState<
     number | null
   >(null);
+  const [activeTab, setActiveTab] = useState<RightPanelTabId>("preview");
   const [previewRefreshToken, setPreviewRefreshToken] = useState(0);
+  const [iframeRefreshToken, setIframeRefreshToken] = useState(0);
   const [isPickingComponent, setIsPickingComponent] = useState(false);
   const [selectableCount, setSelectableCount] = useState<number | null>(null);
   const [selectedComponents, setSelectedComponents] = useAtom(
@@ -318,6 +356,22 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
     }
     return buildPreviewUrl(appUrl, selectedPath);
   }, [appUrl, selectedPath]);
+
+  const iframeUrl = useMemo(() => {
+    if (!resolvedPreviewUrl) {
+      return null;
+    }
+    if (iframeRefreshToken <= 0) {
+      return resolvedPreviewUrl;
+    }
+
+    const refreshedUrl = new URL(resolvedPreviewUrl, window.location.origin);
+    refreshedUrl.searchParams.set(
+      "__blaze_iframe_refresh",
+      String(iframeRefreshToken),
+    );
+    return refreshedUrl.toString();
+  }, [resolvedPreviewUrl, iframeRefreshToken]);
 
   useEffect(() => {
     setSelectedComponents([]);
@@ -491,6 +545,17 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
       return next;
     });
   }, []);
+
+  const refreshIframe = useCallback(() => {
+    if (!resolvedPreviewUrl) {
+      return;
+    }
+    setIframeRefreshToken((previous) => previous + 1);
+  }, [resolvedPreviewUrl]);
+
+  const activeTabDefinition =
+    RIGHT_PANEL_TABS.find((tab) => tab.id === activeTab) ?? RIGHT_PANEL_TABS[0];
+  const ActiveTabIcon = activeTabDefinition.icon;
 
   useEffect(() => {
     let cancelled = false;
@@ -694,216 +759,216 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
 
   return (
     <div className="flex h-full w-full flex-col bg-muted/50">
-      <div className="flex items-center justify-between border-b border-border bg-card px-4 py-2.5">
-        <div className="flex items-center gap-1">
-          {(["desktop", "tablet", "mobile"] as Device[]).map((item) => {
-            const Icon =
-              item === "desktop"
-                ? Monitor
-                : item === "tablet"
-                  ? Tablet
-                  : Smartphone;
-            return (
-              <button
-                key={item}
-                onClick={() => setDevice(item)}
-                className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
-                  device === item
-                    ? "bg-muted text-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-                title={t(`preview.device.${item}`)}
-                aria-label={t(`preview.device.${item}`)}
-              >
-                <Icon size={16} />
-              </button>
-            );
-          })}
-          {activeAppId !== null && (
-            <div className="ml-3 border-l border-border pl-3 text-xs text-muted-foreground">
-              {t("preview.label.appId", { id: activeAppId })}
-            </div>
-          )}
-          {activeAppId !== null && (
-            <label className="ml-2 flex items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-1">
-              <span className="text-[11px] text-muted-foreground">
-                {t("preview.label.page")}
-              </span>
-              <select
-                value={selectedPath}
-                onChange={(event) => {
-                  setSelectedPath(event.target.value);
-                }}
-                onFocus={() => {
-                  if (activeAppId === null) {
-                    return;
-                  }
-                  void loadPreviewPaths(activeAppId)
-                    .then((paths) => {
-                      setPreviewPaths(paths);
-                      setSelectedPath((previousPath) =>
-                        paths.includes(previousPath)
-                          ? previousPath
-                          : (paths[0] ?? "/"),
-                      );
-                    })
-                    .catch(() => {});
-                }}
-                aria-label={t("preview.aria.pageSelect")}
-                className="max-w-[180px] rounded bg-transparent text-xs text-foreground outline-none"
-              >
-                {previewPaths.map((pathValue) => (
-                  <option key={pathValue} value={pathValue}>
-                    {getPreviewPathLabel(pathValue, t("preview.route.home"))}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-        </div>
-        <div className="flex items-center gap-1">
-          <button className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-            <Eye size={14} />
-            {t("preview.button.preview")}
-          </button>
-          <button className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-            <Download size={14} />
-            {t("preview.button.export")}
-          </button>
-          <button
-            onClick={toggleComponentPicker}
-            disabled={!resolvedPreviewUrl}
-            data-testid="toggle-component-picker-button"
-            className={`flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-              isPickingComponent
-                ? "bg-primary/10 text-primary hover:bg-primary/15"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground"
-            }`}
-            aria-label={t("preview.aria.toggleComponentPicker")}
-          >
-            <MousePointerClick size={14} />
-            {t(
-              isPickingComponent
-                ? "preview.button.selectComponent.active"
-                : "preview.button.selectComponent",
-            )}
-            {selectedComponents.length > 0 && (
-              <span
-                data-testid="preview-selected-components-count"
-                className="ml-0.5 rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold"
-              >
-                {selectedComponents.length}
-              </span>
-            )}
-            {isPickingComponent && selectableCount !== null && (
-              <span
-                data-testid="preview-selectable-components-count"
-                className="ml-0.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground"
-              >
-                {selectableCount}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => {
-              if (resolvedPreviewUrl) {
-                window.open(
-                  resolvedPreviewUrl,
-                  "_blank",
-                  "noopener,noreferrer",
-                );
-              }
-            }}
-            className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-            aria-label={t("preview.aria.openNewTab")}
-            disabled={!resolvedPreviewUrl}
-          >
-            <ExternalLink size={14} />
-          </button>
-        </div>
+      <div className="flex items-center gap-0 border-b border-border bg-card px-2">
+        {RIGHT_PANEL_TABS.map((tab) => {
+          const TabIcon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              data-testid={`preview-tab-${tab.id}`}
+              onClick={() => setActiveTab(tab.id)}
+              className={`relative flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-colors ${
+                isActive
+                  ? "text-foreground"
+                  : "text-muted-foreground hover:text-foreground/70"
+              }`}
+            >
+              <TabIcon size={14} />
+              {t(tab.labelKey)}
+              {isActive && (
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full bg-primary" />
+              )}
+            </button>
+          );
+        })}
       </div>
-
-      <div className="flex flex-1 items-start justify-center overflow-auto p-6">
-        <div
-          className="h-full min-h-[520px] max-w-full overflow-hidden rounded-xl border border-border bg-card shadow-sm"
-          style={{ width: previewWidthByDevice[device] }}
-        >
-          {activeAppId === null ? (
-            <div className="flex h-full min-h-[520px] flex-col items-center justify-center p-8 text-center">
-              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-muted">
-                <Monitor size={20} className="text-muted-foreground" />
-              </div>
-              <h3 className="mb-1 text-sm font-medium text-foreground">
-                {t("preview.empty.title")}
-              </h3>
-              <p className="max-w-xs text-xs text-muted-foreground">
-                {t("preview.empty.subtitle")}
-              </p>
+      {activeTab === "preview" ? (
+        <>
+          <div className="flex items-center justify-between border-b border-border bg-card px-4 py-2.5">
+            <div className="flex items-center gap-1">
+              {(["desktop", "tablet", "mobile"] as Device[]).map((item) => {
+                const Icon =
+                  item === "desktop"
+                    ? Monitor
+                    : item === "tablet"
+                      ? Tablet
+                      : Smartphone;
+                return (
+                  <button
+                    key={item}
+                    onClick={() => setDevice(item)}
+                    className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
+                      device === item
+                        ? "bg-muted text-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                    title={t(`preview.device.${item}`)}
+                    aria-label={t(`preview.device.${item}`)}
+                  >
+                    <Icon size={16} />
+                  </button>
+                );
+              })}
+              {activeAppId !== null && (
+                <div className="ml-3 border-l border-border pl-3 text-xs text-muted-foreground">
+                  {t("preview.label.appId", { id: activeAppId })}
+                </div>
+              )}
+              {activeAppId !== null && (
+                <label className="ml-2 flex items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-1">
+                  <span className="text-[11px] text-muted-foreground">
+                    {t("preview.label.page")}
+                  </span>
+                  <select
+                    value={selectedPath}
+                    onChange={(event) => {
+                      setSelectedPath(event.target.value);
+                    }}
+                    onFocus={() => {
+                      if (activeAppId === null) {
+                        return;
+                      }
+                      void loadPreviewPaths(activeAppId)
+                        .then((paths) => {
+                          setPreviewPaths(paths);
+                          setSelectedPath((previousPath) =>
+                            paths.includes(previousPath)
+                              ? previousPath
+                              : (paths[0] ?? "/"),
+                          );
+                        })
+                        .catch(() => {});
+                    }}
+                    aria-label={t("preview.aria.pageSelect")}
+                    className="max-w-[180px] rounded bg-transparent text-xs text-foreground outline-none"
+                  >
+                    {previewPaths.map((pathValue) => (
+                      <option key={pathValue} value={pathValue}>
+                        {getPreviewPathLabel(
+                          pathValue,
+                          t("preview.route.home"),
+                        )}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
             </div>
-          ) : error ? (
-            <div className="flex h-full min-h-[520px] flex-col items-center justify-center p-8 text-center">
-              <p className="text-sm font-medium text-destructive">
-                {t("preview.error.title")}
-              </p>
-              <p className="mt-2 max-w-md text-xs text-muted-foreground">
-                {error}
-              </p>
-              <div className="mt-4 w-full max-w-md rounded-lg border border-border bg-background p-3 text-left">
-                <p className="text-xs text-muted-foreground">
-                  {t("preview.error.autofixSuggestion")}
-                </p>
-                <button
-                  type="button"
-                  data-testid="preview-autofix-button"
-                  onClick={() => {
-                    void onManualAutoFixAttempt();
-                  }}
-                  disabled={
-                    isStreaming ||
-                    isPreparingAutoFixChat ||
-                    autoFixInFlightChatId !== null
+            <div className="flex items-center gap-1">
+              <button className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+                <Eye size={14} />
+                {t("preview.button.preview")}
+              </button>
+              <button
+                onClick={refreshIframe}
+                data-testid="preview-refresh-iframe-button"
+                className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label={t("preview.aria.refreshIframe")}
+                disabled={!resolvedPreviewUrl}
+              >
+                <RefreshCw size={14} />
+                {t("preview.button.refresh")}
+              </button>
+              <button className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+                <Download size={14} />
+                {t("preview.button.export")}
+              </button>
+              <button
+                onClick={toggleComponentPicker}
+                disabled={!resolvedPreviewUrl}
+                data-testid="toggle-component-picker-button"
+                className={`flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                  isPickingComponent
+                    ? "bg-primary/10 text-primary hover:bg-primary/15"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`}
+                aria-label={t("preview.aria.toggleComponentPicker")}
+              >
+                <MousePointerClick size={14} />
+                {t(
+                  isPickingComponent
+                    ? "preview.button.selectComponent.active"
+                    : "preview.button.selectComponent",
+                )}
+                {selectedComponents.length > 0 && (
+                  <span
+                    data-testid="preview-selected-components-count"
+                    className="ml-0.5 rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold"
+                  >
+                    {selectedComponents.length}
+                  </span>
+                )}
+                {isPickingComponent && selectableCount !== null && (
+                  <span
+                    data-testid="preview-selectable-components-count"
+                    className="ml-0.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground"
+                  >
+                    {selectableCount}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => {
+                  if (resolvedPreviewUrl) {
+                    window.open(
+                      resolvedPreviewUrl,
+                      "_blank",
+                      "noopener,noreferrer",
+                    );
                   }
-                  className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-all hover:opacity-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <Sparkles size={14} />
-                  {isStreaming ||
-                  isPreparingAutoFixChat ||
-                  autoFixInFlightChatId !== null
-                    ? t("preview.error.autofixButtonLoading")
-                    : t("preview.error.autofixButton")}
-                </button>
-              </div>
+                }}
+                className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label={t("preview.aria.openNewTab")}
+                disabled={!resolvedPreviewUrl}
+              >
+                <ExternalLink size={14} />
+              </button>
             </div>
-          ) : isStarting || !resolvedPreviewUrl ? (
-            <div className="flex h-full min-h-[520px] flex-col items-center justify-center gap-3 text-center">
-              <Loader2
-                size={20}
-                className="animate-spin text-muted-foreground"
-              />
-              <p className="text-sm text-muted-foreground">
-                {t("preview.loading")}
-              </p>
-            </div>
-          ) : (
-            <div className="relative h-full min-h-[520px] w-full">
-              {runtimeErrorIncident && (
-                <div className="absolute left-3 top-3 z-20 max-w-[420px] rounded-lg border border-border bg-background/95 p-3 shadow">
-                  <p className="text-xs text-muted-foreground">
-                    {t("preview.error.autofixSuggestion")}
+          </div>
+
+          <div className="flex flex-1 items-start justify-center overflow-auto p-6">
+            <div
+              className="h-full min-h-[520px] max-w-full overflow-hidden rounded-xl border border-border bg-card shadow-sm"
+              style={{ width: previewWidthByDevice[device] }}
+            >
+              {activeAppId === null ? (
+                <div className="flex h-full min-h-[520px] flex-col items-center justify-center p-8 text-center">
+                  <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-muted">
+                    <Monitor size={20} className="text-muted-foreground" />
+                  </div>
+                  <h3 className="mb-1 text-sm font-medium text-foreground">
+                    {t("preview.empty.title")}
+                  </h3>
+                  <p className="max-w-xs text-xs text-muted-foreground">
+                    {t("preview.empty.subtitle")}
                   </p>
-                  <div className="mt-2 flex items-center gap-2">
+                </div>
+              ) : error ? (
+                <div className="flex h-full min-h-[520px] flex-col items-center justify-center p-8 text-center">
+                  <p className="text-sm font-medium text-destructive">
+                    {t("preview.error.title")}
+                  </p>
+                  <p className="mt-2 max-w-md text-xs text-muted-foreground">
+                    {error}
+                  </p>
+                  <div className="mt-4 w-full max-w-md rounded-lg border border-border bg-background p-3 text-left">
+                    <p className="text-xs text-muted-foreground">
+                      {t("preview.error.autofixSuggestion")}
+                    </p>
                     <button
                       type="button"
-                      data-testid="preview-runtime-autofix-button"
+                      data-testid="preview-autofix-button"
                       onClick={() => {
-                        void onRuntimeAutoFixAttempt();
+                        void onManualAutoFixAttempt();
                       }}
                       disabled={
                         isStreaming ||
                         isPreparingAutoFixChat ||
                         autoFixInFlightChatId !== null
                       }
-                      className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-all hover:opacity-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+                      className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-all hover:opacity-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <Sparkles size={14} />
                       {isStreaming ||
@@ -912,35 +977,95 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
                         ? t("preview.error.autofixButtonLoading")
                         : t("preview.error.autofixButton")}
                     </button>
-                    <button
-                      type="button"
-                      data-testid="preview-runtime-autofix-dismiss"
-                      onClick={() => setRuntimeErrorIncident(null)}
-                      className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground"
-                    >
-                      {t("preview.error.autofixDismiss")}
-                    </button>
                   </div>
                 </div>
+              ) : isStarting || !resolvedPreviewUrl ? (
+                <div className="flex h-full min-h-[520px] flex-col items-center justify-center gap-3 text-center">
+                  <Loader2
+                    size={20}
+                    className="animate-spin text-muted-foreground"
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    {t("preview.loading")}
+                  </p>
+                </div>
+              ) : (
+                <div className="relative h-full min-h-[520px] w-full">
+                  {runtimeErrorIncident && (
+                    <div className="absolute left-3 top-3 z-20 max-w-[420px] rounded-lg border border-border bg-background/95 p-3 shadow">
+                      <p className="text-xs text-muted-foreground">
+                        {t("preview.error.autofixSuggestion")}
+                      </p>
+                      <div className="mt-2 flex items-center gap-2">
+                        <button
+                          type="button"
+                          data-testid="preview-runtime-autofix-button"
+                          onClick={() => {
+                            void onRuntimeAutoFixAttempt();
+                          }}
+                          disabled={
+                            isStreaming ||
+                            isPreparingAutoFixChat ||
+                            autoFixInFlightChatId !== null
+                          }
+                          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-all hover:opacity-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <Sparkles size={14} />
+                          {isStreaming ||
+                          isPreparingAutoFixChat ||
+                          autoFixInFlightChatId !== null
+                            ? t("preview.error.autofixButtonLoading")
+                            : t("preview.error.autofixButton")}
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="preview-runtime-autofix-dismiss"
+                          onClick={() => setRuntimeErrorIncident(null)}
+                          className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground"
+                        >
+                          {t("preview.error.autofixDismiss")}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  <iframe
+                    title={t("preview.iframe.title")}
+                    src={iframeUrl ?? undefined}
+                    className="h-full min-h-[520px] w-full border-0"
+                    ref={handleIframeRef}
+                    onLoad={() => {
+                      if (
+                        isPickingComponent &&
+                        iframeRef.current?.contentWindow
+                      ) {
+                        iframeRef.current.contentWindow.postMessage(
+                          { type: "activate-blaze-component-selector" },
+                          "*",
+                        );
+                      }
+                    }}
+                  />
+                </div>
               )}
-              <iframe
-                title={t("preview.iframe.title")}
-                src={resolvedPreviewUrl}
-                className="h-full min-h-[520px] w-full border-0"
-                ref={handleIframeRef}
-                onLoad={() => {
-                  if (isPickingComponent && iframeRef.current?.contentWindow) {
-                    iframeRef.current.contentWindow.postMessage(
-                      { type: "activate-blaze-component-selector" },
-                      "*",
-                    );
-                  }
-                }}
-              />
             </div>
-          )}
+          </div>
+        </>
+      ) : (
+        <div
+          data-testid="preview-tab-placeholder"
+          className="flex flex-1 flex-col items-center justify-center p-8 text-center"
+        >
+          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-muted">
+            <ActiveTabIcon size={20} className="text-muted-foreground" />
+          </div>
+          <h3 className="mb-1 text-sm font-medium text-foreground">
+            {t(activeTabDefinition.labelKey)}
+          </h3>
+          <p className="max-w-xs text-xs text-muted-foreground">
+            {t("preview.tab.comingSoon")}
+          </p>
         </div>
-      </div>
+      )}
     </div>
   );
 }

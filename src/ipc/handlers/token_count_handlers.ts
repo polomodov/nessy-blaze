@@ -6,17 +6,9 @@ import {
   readAiRules,
 } from "../../prompts/system_prompt";
 import { getThemePrompt } from "../../shared/themes";
-import {
-  getSupabaseAvailableSystemPrompt,
-  SUPABASE_NOT_AVAILABLE_SYSTEM_PROMPT,
-} from "../../prompts/supabase_prompt";
 import { getBlazeAppPath } from "../../paths/paths";
 import log from "electron-log";
 import { extractCodebase } from "../../utils/codebase";
-import {
-  getSupabaseContext,
-  getSupabaseClientCode,
-} from "../../supabase_admin/supabase_context";
 
 import { TokenCountParams } from "../ipc_types";
 import { TokenCountResult } from "../ipc_types";
@@ -75,28 +67,9 @@ export function registerTokenCountHandlers() {
         enableTurboEditsV2: isTurboEditsV2Enabled(settings),
         themePrompt,
       });
-      let supabaseContext = "";
-
-      if (chat.app?.supabaseProjectId) {
-        const supabaseClientCode = await getSupabaseClientCode({
-          projectId: chat.app.supabaseProjectId,
-          organizationSlug: chat.app.supabaseOrganizationSlug ?? null,
-        });
-        systemPrompt +=
-          "\n\n" + getSupabaseAvailableSystemPrompt(supabaseClientCode);
-        supabaseContext = await getSupabaseContext({
-          supabaseProjectId: chat.app.supabaseProjectId,
-          organizationSlug: chat.app.supabaseOrganizationSlug ?? null,
-        });
-      } else if (
-        // Neon projects don't need Supabase.
-        !chat.app?.neonProjectId
-      ) {
-        systemPrompt += "\n\n" + SUPABASE_NOT_AVAILABLE_SYSTEM_PROMPT;
-      }
 
       const localizedSystemPrompt = appendResponseLanguageInstruction(
-        systemPrompt + supabaseContext,
+        systemPrompt,
         settings.uiLanguage,
       );
       const systemPromptTokens = estimateTokens(localizedSystemPrompt);

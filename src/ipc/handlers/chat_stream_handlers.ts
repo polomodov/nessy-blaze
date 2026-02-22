@@ -19,10 +19,6 @@ import {
   readAiRules,
 } from "../../prompts/system_prompt";
 import { getThemePrompt } from "../../shared/themes";
-import {
-  getSupabaseAvailableSystemPrompt,
-  SUPABASE_NOT_AVAILABLE_SYSTEM_PROMPT,
-} from "../../prompts/supabase_prompt";
 import { getBlazeAppPath } from "../../paths/paths";
 import { readSettings } from "../../main/settings";
 import type { ChatResponseEnd, ChatStreamParams } from "../ipc_types";
@@ -40,10 +36,6 @@ import { getTestResponse } from "./testing_chat_handlers";
 import { getModelClient, ModelClient } from "../utils/get_model_client";
 import log from "electron-log";
 import { sendTelemetryEvent } from "../utils/telemetry";
-import {
-  getSupabaseContext,
-  getSupabaseClientCode,
-} from "../../supabase_admin/supabase_context";
 import { SUMMARIZE_CHAT_SYSTEM_PROMPT } from "../../prompts/summarize_chat_system_prompt";
 import { CHANGE_SUMMARY_SYSTEM_PROMPT } from "../../prompts/change_summary_system_prompt";
 import { SECURITY_REVIEW_SYSTEM_PROMPT } from "../../prompts/security_review_prompt";
@@ -76,7 +68,7 @@ import { parseAppMentions } from "../../shared/parse_mention_apps";
 import { prompts as promptsTable } from "../../db/schema";
 import { inArray } from "drizzle-orm";
 import { replacePromptReference } from "../utils/replacePromptReference";
-import { isSupabaseConnected, isTurboEditsV2Enabled } from "../../lib/schemas";
+import { isTurboEditsV2Enabled } from "../../lib/schemas";
 import { AI_STREAMING_ERROR_MESSAGE_PREFIX } from "../../shared/texts";
 import { getCurrentCommitHash } from "../utils/git_utils";
 import {
@@ -1094,27 +1086,6 @@ export async function handleChatStreamRequest(
         }
       }
 
-      if (chatApp?.supabaseProjectId && isSupabaseConnected(settings)) {
-        const supabaseClientCode = await getSupabaseClientCode({
-          projectId: chatApp.supabaseProjectId,
-          organizationSlug: chatApp.supabaseOrganizationSlug ?? null,
-        });
-        systemPrompt +=
-          "\n\n" +
-          getSupabaseAvailableSystemPrompt(supabaseClientCode) +
-          "\n\n" +
-          (await getSupabaseContext({
-            supabaseProjectId: chatApp.supabaseProjectId,
-            organizationSlug: chatApp.supabaseOrganizationSlug ?? null,
-          }));
-      } else if (
-        // Neon projects don't need Supabase.
-        !chatApp?.neonProjectId &&
-        // If in security review mode, we don't need to mention supabase is available.
-        !isSecurityReviewIntent
-      ) {
-        systemPrompt += "\n\n" + SUPABASE_NOT_AVAILABLE_SYSTEM_PROMPT;
-      }
       const isSummarizeIntent = req.prompt.startsWith(
         "Summarize from chat-id=",
       );

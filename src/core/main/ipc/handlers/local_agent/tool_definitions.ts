@@ -9,14 +9,10 @@ import { writeFileTool } from "./tools/write_file";
 import { deleteFileTool } from "./tools/delete_file";
 import { renameFileTool } from "./tools/rename_file";
 import { addDependencyTool } from "./tools/add_dependency";
-import { executeSqlTool } from "./tools/execute_sql";
 
 import { readFileTool } from "./tools/read_file";
 import { listFilesTool } from "./tools/list_files";
-import { getSupabaseProjectInfoTool } from "./tools/get_supabase_project_info";
-import { getSupabaseTableSchemaTool } from "./tools/get_supabase_table_schema";
 import { setChatSummaryTool } from "./tools/set_chat_summary";
-import { addIntegrationTool } from "./tools/add_integration";
 import { readLogsTool } from "./tools/read_logs";
 import { editFileTool } from "./tools/edit_file";
 import { webSearchTool } from "./tools/web_search";
@@ -34,7 +30,6 @@ import {
   type ToolResult,
 } from "./tools/types";
 import { AgentToolConsent } from "@/lib/schemas";
-import { getSupabaseClientCode } from "@/supabase_admin/supabase_context";
 import { waitForAgentToolConsent } from "./agent_tool_consent";
 import { safeSend } from "@/ipc/utils/safe_sender";
 import type { ServerEventSink } from "@/ipc/utils/server_event_sink";
@@ -49,17 +44,13 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   deleteFileTool,
   renameFileTool,
   addDependencyTool,
-  executeSqlTool,
   // Do not enable search-replace tool for now due to concerns around reliability
   // searchReplaceTool,
   readFileTool,
   listFilesTool,
   grepTool,
   codeSearchTool,
-  getSupabaseProjectInfoTool,
-  getSupabaseTableSchemaTool,
   setChatSummaryTool,
-  addIntegrationTool,
   readLogsTool,
   webSearchTool,
   webCrawlTool,
@@ -159,51 +150,6 @@ export async function requireAgentToolConsent(
 // ============================================================================
 
 /**
- * Process placeholders in tool args (e.g. $$SUPABASE_CLIENT_CODE$$)
- * Recursively processes all string values in the args object.
- */
-async function processArgPlaceholders<T extends Record<string, any>>(
-  args: T,
-  ctx: AgentContext,
-): Promise<T> {
-  if (!ctx.supabaseProjectId) {
-    return args;
-  }
-
-  // Check if any string values contain the placeholder
-  const argsStr = JSON.stringify(args);
-  if (!argsStr.includes("$$SUPABASE_CLIENT_CODE$$")) {
-    return args;
-  }
-
-  // Fetch the replacement value once
-  const supabaseClientCode = await getSupabaseClientCode({
-    projectId: ctx.supabaseProjectId,
-    organizationSlug: ctx.supabaseOrganizationSlug ?? null,
-  });
-
-  // Process all string values in args
-  const processValue = (value: any): any => {
-    if (typeof value === "string") {
-      return value.replace(/\$\$SUPABASE_CLIENT_CODE\$\$/g, supabaseClientCode);
-    }
-    if (Array.isArray(value)) {
-      return value.map(processValue);
-    }
-    if (value && typeof value === "object") {
-      const result: Record<string, any> = {};
-      for (const [k, v] of Object.entries(value)) {
-        result[k] = processValue(v);
-      }
-      return result;
-    }
-    return value;
-  };
-
-  return processValue(args) as T;
-}
-
-/**
  * Convert our ToolResult to AI SDK format
  */
 function convertToolResultForAiSdk(
@@ -252,19 +198,17 @@ export function buildAgentToolSet(
       inputSchema: tool.inputSchema,
       execute: async (args: any) => {
         try {
-          const processedArgs = await processArgPlaceholders(args, ctx);
-
           // Check consent before executing the tool
           const allowed = await ctx.requireConsent({
             toolName: tool.name,
             toolDescription: tool.description,
-            inputPreview: tool.getConsentPreview?.(processedArgs) ?? null,
+            inputPreview: tool.getConsentPreview?.(args) ?? null,
           });
           if (!allowed) {
             throw new Error(`User denied permission for ${tool.name}`);
           }
 
-          const result = await tool.execute(processedArgs, ctx);
+          const result = await tool.execute(args, ctx);
           return convertToolResultForAiSdk(result);
         } catch (error) {
           const errorMessage =

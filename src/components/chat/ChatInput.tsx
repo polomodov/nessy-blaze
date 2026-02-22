@@ -77,6 +77,7 @@ import { VisualEditingChangesDialog } from "@/components/preview_panel/VisualEdi
 import { useUserBudgetInfo } from "@/hooks/useUserBudgetInfo";
 import { useQueryClient } from "@tanstack/react-query";
 import { TOKEN_COUNT_QUERY_KEY } from "@/hooks/useCountTokens";
+import { isBuildLikeChatMode } from "./chat_mode_utils";
 
 const showTokenBarAtom = atom(false);
 
@@ -135,10 +136,11 @@ export function ChatInput({ chatId }: { chatId?: number }) {
   } = useProposal(chatId);
   const { proposal, messageId } = proposalResult ?? {};
   useChatModeToggle();
+  const isBuildLikeMode = isBuildLikeChatMode(settings?.selectedChatMode);
 
   const lastMessage = (chatId ? (messagesById.get(chatId) ?? []) : []).at(-1);
   const disableSendButton =
-    settings?.selectedChatMode === "build" &&
+    isBuildLikeMode &&
     lastMessage?.role === "assistant" &&
     !lastMessage.approvalState &&
     !!proposal &&
@@ -309,27 +311,24 @@ export function ChatInput({ chatId }: { chatId?: number }) {
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
-          {/* Only render ChatInputActions for build-mode code proposals */}
-          {proposal &&
-            proposalResult?.chatId === chatId &&
-            settings.selectedChatMode !== "ask" &&
-            settings.selectedChatMode === "build" && (
-              <ChatInputActions
-                proposal={proposal}
-                onApprove={handleApprove}
-                onReject={handleReject}
-                isApprovable={
-                  !isProposalLoading &&
-                  !!proposal &&
-                  !!messageId &&
-                  !isApproving &&
-                  !isRejecting &&
-                  !isStreaming
-                }
-                isApproving={isApproving}
-                isRejecting={isRejecting}
-              />
-            )}
+          {/* Only render ChatInputActions for non-ask code proposals */}
+          {proposal && proposalResult?.chatId === chatId && isBuildLikeMode && (
+            <ChatInputActions
+              proposal={proposal}
+              onApprove={handleApprove}
+              onReject={handleReject}
+              isApprovable={
+                !isProposalLoading &&
+                !!proposal &&
+                !!messageId &&
+                !isApproving &&
+                !isRejecting &&
+                !isStreaming
+              }
+              isApproving={isApproving}
+              isRejecting={isRejecting}
+            />
+          )}
 
           {userBudget ? (
             <VisualEditingChangesDialog

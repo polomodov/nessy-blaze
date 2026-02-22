@@ -7,7 +7,6 @@ const CUSTOM_TAG_NAMES = [
   "blaze-delete",
   "blaze-add-dependency",
   "blaze-execute-sql",
-  "blaze-add-integration",
   "blaze-output",
   "blaze-problem-report",
   "blaze-chat-summary",
@@ -134,11 +133,6 @@ export const useCopyToClipboard = () => {
         }
         sqlResult += `\`\`\`sql\n${content}\n\`\`\`\n\n`;
         return sqlResult;
-      }
-
-      case "blaze-add-integration": {
-        const provider = attributes.provider || "";
-        return `### Add Integration: ${provider}\n\n`;
       }
 
       case "blaze-codebase-context": {
