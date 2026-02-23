@@ -123,20 +123,6 @@ const DEFAULT_USER_SETTINGS: UserSettings = UserSettingsSchema.parse({
   enableNativeGit: true,
 });
 
-const REMOVED_USER_SETTINGS_KEYS = [
-  "githubUser",
-  "githubAccessToken",
-  "vercelAccessToken",
-  "supabase",
-  "neon",
-  "agentToolConsents",
-  "experiments",
-  "isRunning",
-  "lastKnownPerformance",
-] as const;
-
-type RemovedUserSettingsKey = (typeof REMOVED_USER_SETTINGS_KEYS)[number];
-
 function normalizeChatModeForHttpOnly(value: unknown): "build" | "ask" {
   return value === "ask" ? "ask" : "build";
 }
@@ -161,24 +147,37 @@ function normalizeLegacyUserSettingsModes(
   return normalized;
 }
 
-function stripLegacyUserSettings(settings: UserSettings): UserSettings {
-  const sanitized: UserSettings & Record<string, unknown> = { ...settings };
-  for (const key of REMOVED_USER_SETTINGS_KEYS) {
-    delete sanitized[key as RemovedUserSettingsKey];
-  }
-  return UserSettingsSchema.parse(normalizeLegacyUserSettingsModes(sanitized));
+function stripLegacyUserSettings(
+  settings: Record<string, unknown>,
+): UserSettings {
+  return UserSettingsSchema.parse(normalizeLegacyUserSettingsModes(settings));
 }
 
-function sanitizeUserSettingsPatch(
-  patch: Partial<UserSettings>,
-): Partial<UserSettings> {
-  const sanitized: Partial<UserSettings> & Record<string, unknown> = {
-    ...patch,
-  };
-  for (const key of REMOVED_USER_SETTINGS_KEYS) {
-    delete sanitized[key as RemovedUserSettingsKey];
+const UserSettingsPatchSchema = UserSettingsSchema.partial().strict();
+
+function parseUserSettingsPatch(patch: unknown): Partial<UserSettings> {
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
+    throw new Error("Invalid settings payload");
   }
-  return normalizeLegacyUserSettingsModes(sanitized) as Partial<UserSettings>;
+
+  const parsedPatch = UserSettingsPatchSchema.safeParse(
+    patch as Record<string, unknown>,
+  );
+  if (parsedPatch.success) {
+    return parsedPatch.data;
+  }
+
+  const unsupportedKeys = parsedPatch.error.issues
+    .filter((issue) => issue.code === "unrecognized_keys")
+    .flatMap((issue) => (issue.code === "unrecognized_keys" ? issue.keys : []));
+
+  if (unsupportedKeys.length > 0) {
+    throw new Error(
+      `Unsupported user settings keys: ${unsupportedKeys.join(", ")}`,
+    );
+  }
+
+  throw new Error("Invalid settings payload");
 }
 
 function readRuntimeEnv(name: string): string | undefined {
@@ -484,10 +483,8 @@ function readUserSettings(): UserSettings {
 
 function writeUserSettings(settings: Partial<UserSettings>): UserSettings {
   const mergedSettings = UserSettingsSchema.parse({
-    ...normalizeLegacyUserSettingsModes({
-      ...readUserSettings(),
-      ...sanitizeUserSettingsPatch(settings),
-    }),
+    ...readUserSettings(),
+    ...settings,
   });
   fs.writeFileSync(
     getSettingsFilePath(),
@@ -1099,10 +1096,8 @@ const handlers: Record<string, InvokeHandler> = {
   },
 
   async "set-user-settings"(args) {
-    const [nextSettings] = args as [Partial<UserSettings>];
-    if (!nextSettings || typeof nextSettings !== "object") {
-      throw new Error("Invalid settings payload");
-    }
+    const [nextSettingsRaw] = args as [unknown];
+    const nextSettings = parseUserSettingsPatch(nextSettingsRaw);
     return writeUserSettings(nextSettings);
   },
 

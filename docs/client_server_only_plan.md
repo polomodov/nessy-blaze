@@ -40,12 +40,13 @@ This document locks the runtime scope for the HTTP-only migration.
 
 - Renderer transport path is HTTP-only via `BackendClient`.
 - Unsupported legacy channels are blocked in browser runtime (`FeatureDisabledError`).
-- User settings payload is sanitized from v1-removed integration keys:
+- User settings read payload is sanitized from v1-removed integration keys:
   - `githubUser`
   - `githubAccessToken`
   - `vercelAccessToken`
   - `supabase`
   - `neon`
+- User settings write contract now rejects legacy/unsupported top-level fields instead of silently accepting them.
 - User settings HTTP contract strips agent-only fields (`agentToolConsents`) and drops legacy `experiments` payload keys.
 - User settings HTTP contract strips desktop diagnostics fields (`isRunning`, `lastKnownPerformance`) from active v1 payloads.
 - Shared user settings schema no longer includes `agentToolConsents` in active client-server contracts.
@@ -69,7 +70,7 @@ This document locks the runtime scope for the HTTP-only migration.
   - `neon*`
   - `vercel*`
   - legacy `files`
-- User settings chat mode contract is restricted to HTTP v1 modes (`build|ask`) with legacy values (`agent|local-agent`) normalized on read/write.
+- User settings chat mode contract is restricted to HTTP v1 modes (`build|ask`): legacy values (`agent|local-agent`) are normalized on read and rejected on write.
 - Runtime system prompt selection is restricted to active v1 chat modes (`build|ask`) with legacy `agent/local-agent` prompt branches removed from the shared selector.
 - Legacy unscoped chat stream routes are disabled; active runtime chat streaming is scoped-only:
   - `/api/v1/orgs/:orgId/workspaces/:workspaceId/chats/:chatId/stream`

@@ -69,7 +69,7 @@ describe("invokeIpcChannelOverHttp", () => {
     ]);
   });
 
-  it("normalizes legacy chat mode payloads to HTTP-only modes", async () => {
+  it("rejects legacy chat mode payloads outside HTTP-only contract", async () => {
     const initialSettings = (await invokeIpcChannelOverHttp(
       "get-user-settings",
       [],
@@ -78,44 +78,32 @@ describe("invokeIpcChannelOverHttp", () => {
       defaultChatMode?: "build" | "ask";
     };
 
-    try {
-      const updatedSettings = (await invokeIpcChannelOverHttp(
-        "set-user-settings",
-        [
-          {
-            selectedChatMode: "local-agent",
-            defaultChatMode: "agent",
-          } as Record<string, unknown>,
-        ],
-      )) as {
-        selectedChatMode?: "build" | "ask";
-        defaultChatMode?: "build" | "ask";
-      };
-
-      expect(updatedSettings.selectedChatMode).toBe("build");
-      expect(updatedSettings.defaultChatMode).toBe("build");
-
-      const persistedSettings = (await invokeIpcChannelOverHttp(
-        "get-user-settings",
-        [],
-      )) as {
-        selectedChatMode?: "build" | "ask";
-        defaultChatMode?: "build" | "ask";
-      };
-
-      expect(persistedSettings.selectedChatMode).toBe("build");
-      expect(persistedSettings.defaultChatMode).toBe("build");
-    } finally {
-      await invokeIpcChannelOverHttp("set-user-settings", [
+    await expect(
+      invokeIpcChannelOverHttp("set-user-settings", [
         {
-          selectedChatMode: initialSettings.selectedChatMode ?? "build",
-          defaultChatMode: initialSettings.defaultChatMode,
-        },
-      ]);
-    }
+          selectedChatMode: "local-agent",
+          defaultChatMode: "agent",
+        } as Record<string, unknown>,
+      ]),
+    ).rejects.toThrow("Invalid settings payload");
+
+    const persistedSettings = (await invokeIpcChannelOverHttp(
+      "get-user-settings",
+      [],
+    )) as {
+      selectedChatMode?: "build" | "ask";
+      defaultChatMode?: "build" | "ask";
+    };
+
+    expect(persistedSettings.selectedChatMode ?? "build").toBe(
+      initialSettings.selectedChatMode ?? "build",
+    );
+    expect(persistedSettings.defaultChatMode).toBe(
+      initialSettings.defaultChatMode,
+    );
   });
 
-  it("filters legacy integration and agent-only fields from user settings payloads", async () => {
+  it("rejects legacy and unsupported user settings fields on write", async () => {
     const initialSettings = (await invokeIpcChannelOverHttp(
       "get-user-settings",
       [],
@@ -125,91 +113,43 @@ describe("invokeIpcChannelOverHttp", () => {
     const initialLanguage = initialSettings.uiLanguage ?? "ru";
     const nextLanguage: "ru" | "en" = initialLanguage === "en" ? "ru" : "en";
 
-    try {
-      const updatedSettings = (await invokeIpcChannelOverHttp(
-        "set-user-settings",
-        [
-          {
-            uiLanguage: nextLanguage,
-            githubUser: { email: "legacy@example.com" },
-            githubAccessToken: "legacy-github-token",
-            vercelAccessToken: "legacy-vercel-token",
-            supabase: { organizations: {} },
-            neon: { accessToken: "legacy-neon-token" },
-            agentToolConsents: { "read-file": "always" },
-            experiments: {
-              enableLocalAgent: true,
-              enableFileEditing: true,
-            },
-            runtimeMode2: "docker",
-            hideLocalAgentNewChatToast: true,
-            lastShownReleaseNotesVersion: "0.34.0",
-            acceptedCommunityCode: true,
-            zoomLevel: "125",
-            customNodePath: "/usr/local/bin/node",
-            isRunning: true,
-            lastKnownPerformance: {
-              timestamp: Date.now(),
-              memoryUsageMB: 123,
-            },
-            enableSupabaseWriteSqlMigration: true,
-          } as Record<string, unknown>,
-        ],
-      )) as Record<string, unknown>;
+    await expect(
+      invokeIpcChannelOverHttp("set-user-settings", [
+        {
+          uiLanguage: nextLanguage,
+          githubUser: { email: "legacy@example.com" },
+          githubAccessToken: "legacy-github-token",
+          vercelAccessToken: "legacy-vercel-token",
+          supabase: { organizations: {} },
+          neon: { accessToken: "legacy-neon-token" },
+          agentToolConsents: { "read-file": "always" },
+          experiments: {
+            enableLocalAgent: true,
+            enableFileEditing: true,
+          },
+          runtimeMode2: "docker",
+          hideLocalAgentNewChatToast: true,
+          lastShownReleaseNotesVersion: "0.34.0",
+          acceptedCommunityCode: true,
+          zoomLevel: "125",
+          customNodePath: "/usr/local/bin/node",
+          isRunning: true,
+          lastKnownPerformance: {
+            timestamp: Date.now(),
+            memoryUsageMB: 123,
+          },
+          enableSupabaseWriteSqlMigration: true,
+        } as Record<string, unknown>,
+      ]),
+    ).rejects.toThrow("Unsupported user settings keys");
 
-      expect(updatedSettings.uiLanguage).toBe(nextLanguage);
-      expect(updatedSettings).not.toHaveProperty("githubUser");
-      expect(updatedSettings).not.toHaveProperty("githubAccessToken");
-      expect(updatedSettings).not.toHaveProperty("vercelAccessToken");
-      expect(updatedSettings).not.toHaveProperty("supabase");
-      expect(updatedSettings).not.toHaveProperty("neon");
-      expect(updatedSettings).not.toHaveProperty("agentToolConsents");
-      expect(updatedSettings).not.toHaveProperty(
-        "enableSupabaseWriteSqlMigration",
-      );
-      expect(updatedSettings).not.toHaveProperty("experiments");
-      expect(updatedSettings).not.toHaveProperty("runtimeMode2");
-      expect(updatedSettings).not.toHaveProperty("hideLocalAgentNewChatToast");
-      expect(updatedSettings).not.toHaveProperty(
-        "lastShownReleaseNotesVersion",
-      );
-      expect(updatedSettings).not.toHaveProperty("acceptedCommunityCode");
-      expect(updatedSettings).not.toHaveProperty("zoomLevel");
-      expect(updatedSettings).not.toHaveProperty("customNodePath");
-      expect(updatedSettings).not.toHaveProperty("isRunning");
-      expect(updatedSettings).not.toHaveProperty("lastKnownPerformance");
-
-      const persistedSettings = (await invokeIpcChannelOverHttp(
-        "get-user-settings",
-        [],
-      )) as Record<string, unknown>;
-      expect(persistedSettings).not.toHaveProperty("githubUser");
-      expect(persistedSettings).not.toHaveProperty("githubAccessToken");
-      expect(persistedSettings).not.toHaveProperty("vercelAccessToken");
-      expect(persistedSettings).not.toHaveProperty("supabase");
-      expect(persistedSettings).not.toHaveProperty("neon");
-      expect(persistedSettings).not.toHaveProperty("agentToolConsents");
-      expect(persistedSettings).not.toHaveProperty(
-        "enableSupabaseWriteSqlMigration",
-      );
-      expect(persistedSettings).not.toHaveProperty("experiments");
-      expect(persistedSettings).not.toHaveProperty("runtimeMode2");
-      expect(persistedSettings).not.toHaveProperty(
-        "hideLocalAgentNewChatToast",
-      );
-      expect(persistedSettings).not.toHaveProperty(
-        "lastShownReleaseNotesVersion",
-      );
-      expect(persistedSettings).not.toHaveProperty("acceptedCommunityCode");
-      expect(persistedSettings).not.toHaveProperty("zoomLevel");
-      expect(persistedSettings).not.toHaveProperty("customNodePath");
-      expect(persistedSettings).not.toHaveProperty("isRunning");
-      expect(persistedSettings).not.toHaveProperty("lastKnownPerformance");
-    } finally {
-      await invokeIpcChannelOverHttp("set-user-settings", [
-        { uiLanguage: initialLanguage },
-      ]);
-    }
+    const persistedSettings = (await invokeIpcChannelOverHttp(
+      "get-user-settings",
+      [],
+    )) as {
+      uiLanguage?: "ru" | "en";
+    };
+    expect(persistedSettings.uiLanguage ?? "ru").toBe(initialLanguage);
   });
 
   it("returns disabled OAuth2 config when not configured", async () => {
