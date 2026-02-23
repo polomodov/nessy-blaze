@@ -238,7 +238,8 @@ describe("createChatStreamMiddleware", () => {
     await middleware(reqAttachments, responseAttachments.response, vi.fn());
     expect(responseAttachments.response.statusCode).toBe(400);
     expect(JSON.parse(responseAttachments.getBody())).toEqual({
-      error: 'Invalid payload: "attachments" must be an array',
+      error:
+        'Invalid payload: "attachments" must be an array of valid attachment objects',
     });
 
     const reqSelectedComponents = createMockRequest({
@@ -257,8 +258,51 @@ describe("createChatStreamMiddleware", () => {
     );
     expect(responseSelectedComponents.response.statusCode).toBe(400);
     expect(JSON.parse(responseSelectedComponents.getBody())).toEqual({
-      error: 'Invalid payload: "selectedComponents" must be an array',
+      error:
+        'Invalid payload: "selectedComponents" must be an array of valid component selections',
     });
+
+    const reqInvalidAttachmentShape = createMockRequest({
+      method: "POST",
+      url: "/api/v1/orgs/org-1/workspaces/ws-1/chats/22/stream",
+      body: JSON.stringify({
+        prompt: "Build a landing page",
+        attachments: [{ name: "README.md" }],
+      }),
+    });
+    const responseInvalidAttachmentShape = createMockResponse();
+    await middleware(
+      reqInvalidAttachmentShape,
+      responseInvalidAttachmentShape.response,
+      vi.fn(),
+    );
+    expect(responseInvalidAttachmentShape.response.statusCode).toBe(400);
+    expect(JSON.parse(responseInvalidAttachmentShape.getBody())).toEqual({
+      error:
+        'Invalid payload: "attachments" must be an array of valid attachment objects',
+    });
+
+    const reqInvalidSelectedComponentShape = createMockRequest({
+      method: "POST",
+      url: "/api/v1/orgs/org-1/workspaces/ws-1/chats/22/stream",
+      body: JSON.stringify({
+        prompt: "Build a landing page",
+        selectedComponents: [{ id: "component-1" }],
+      }),
+    });
+    const responseInvalidSelectedComponentShape = createMockResponse();
+    await middleware(
+      reqInvalidSelectedComponentShape,
+      responseInvalidSelectedComponentShape.response,
+      vi.fn(),
+    );
+    expect(responseInvalidSelectedComponentShape.response.statusCode).toBe(400);
+    expect(JSON.parse(responseInvalidSelectedComponentShape.getBody())).toEqual(
+      {
+        error:
+          'Invalid payload: "selectedComponents" must be an array of valid component selections',
+      },
+    );
   });
 
   it("streams chat updates over SSE", async () => {

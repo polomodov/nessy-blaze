@@ -2,6 +2,10 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { initializeDatabase } from "/src/db/index.ts";
 import type { ChatResponseEnd, ChatStreamParams } from "/src/ipc/ipc_types.ts";
 import {
+  parseOptionalAttachments,
+  parseOptionalSelectedComponents,
+} from "/src/http/chat_stream_payload_validation.ts";
+import {
   NOOP_SERVER_EVENT_SINK,
   type ServerEventSink,
 } from "/src/ipc/utils/server_event_sink.ts";
@@ -100,30 +104,26 @@ function parseChatStreamPayload(rawPayload: unknown): {
   if (payload.redo !== undefined && typeof payload.redo !== "boolean") {
     throw new Error('Invalid payload: "redo" must be a boolean');
   }
-  if (
-    payload.attachments !== undefined &&
-    !Array.isArray(payload.attachments)
-  ) {
-    throw new Error('Invalid payload: "attachments" must be an array');
+  const attachments = parseOptionalAttachments(payload.attachments);
+  if (attachments === null) {
+    throw new Error(
+      'Invalid payload: "attachments" must be an array of valid attachment objects',
+    );
   }
-  if (
-    payload.selectedComponents !== undefined &&
-    !Array.isArray(payload.selectedComponents)
-  ) {
-    throw new Error('Invalid payload: "selectedComponents" must be an array');
+  const selectedComponents = parseOptionalSelectedComponents(
+    payload.selectedComponents,
+  );
+  if (selectedComponents === null) {
+    throw new Error(
+      'Invalid payload: "selectedComponents" must be an array of valid component selections',
+    );
   }
 
   return {
     prompt,
     redo: payload.redo === true ? true : undefined,
-    attachments:
-      payload.attachments !== undefined
-        ? (payload.attachments as ChatStreamParams["attachments"])
-        : undefined,
-    selectedComponents:
-      payload.selectedComponents !== undefined
-        ? (payload.selectedComponents as ChatStreamParams["selectedComponents"])
-        : undefined,
+    attachments,
+    selectedComponents,
   };
 }
 

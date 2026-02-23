@@ -1,4 +1,8 @@
 import type { ChatStreamParams } from "../ipc/ipc_types";
+import {
+  parseOptionalAttachments,
+  parseOptionalSelectedComponents,
+} from "/src/http/chat_stream_payload_validation.ts";
 
 export interface WsStartChatStreamMessage
   extends Omit<ChatStreamParams, "chatId" | "prompt"> {
@@ -63,30 +67,6 @@ function assertAllowedKeys(
       `Invalid ${messageType} payload: unsupported keys (${unknownKeys.join(", ")})`,
     );
   }
-}
-
-function parseOptionalAttachments(
-  value: unknown,
-): ChatStreamParams["attachments"] | undefined | null {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (!Array.isArray(value)) {
-    return null;
-  }
-  return value as ChatStreamParams["attachments"];
-}
-
-function parseOptionalSelectedComponents(
-  value: unknown,
-): ChatStreamParams["selectedComponents"] | undefined | null {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (!Array.isArray(value)) {
-    return null;
-  }
-  return value as ChatStreamParams["selectedComponents"];
 }
 
 export function parseWsClientMessage(raw: string): WsClientMessage {
