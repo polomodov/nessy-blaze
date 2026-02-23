@@ -86,6 +86,17 @@ describe("IpcClient HTTP stream", () => {
         method: "POST",
       }),
     );
+    const firstCall = fetchMock.mock.calls[0];
+    const requestInit = firstCall?.[1] as RequestInit | undefined;
+    const requestBody =
+      typeof requestInit?.body === "string"
+        ? JSON.parse(requestInit.body)
+        : null;
+    expect(requestBody).toMatchObject({
+      prompt: "Build a page",
+      attachments: [],
+    });
+    expect(requestBody).not.toHaveProperty("chatId");
     expect(onUpdate).toHaveBeenCalledWith([
       { id: 1, role: "user", content: "Build a page" },
       { id: 2, role: "assistant", content: "Drafting..." },

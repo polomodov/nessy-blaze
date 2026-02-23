@@ -548,7 +548,6 @@ export class IpcClient {
               headers: getDefaultRequestHeaders("chat:stream"),
               body: JSON.stringify({
                 prompt,
-                chatId,
                 redo,
                 selectedComponents,
                 attachments: encodedAttachments,
