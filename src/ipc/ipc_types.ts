@@ -96,7 +96,6 @@ export interface Message {
   approvalState?: "approved" | "rejected" | null;
   commitHash?: string | null;
   sourceCommitHash?: string | null;
-  dbTimestamp?: string | null;
   createdAt?: Date | string;
   requestId?: string | null;
   totalTokens?: number | null;
@@ -112,7 +111,6 @@ export interface Chat {
   title: string;
   messages: Message[];
   initialCommitHash?: string | null;
-  dbTimestamp?: string | null;
 }
 
 export interface App {
@@ -148,7 +146,6 @@ export interface Version {
   createdByUserId?: string | null;
   message: string;
   timestamp: number;
-  dbTimestamp?: string | null;
 }
 
 export type BranchResult = { branch: string };

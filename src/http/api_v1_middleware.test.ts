@@ -272,9 +272,7 @@ describe("createApiV1Middleware", () => {
   it("routes scoped app versions list endpoint", async () => {
     const invoke = vi
       .fn()
-      .mockResolvedValue([
-        { oid: "abc", message: "Init", timestamp: 1, dbTimestamp: null },
-      ]);
+      .mockResolvedValue([{ oid: "abc", message: "Init", timestamp: 1 }]);
     const middleware = createApiV1Middleware(invoke, {
       resolveRequestContext: resolveRequestContextMock as any,
     });
@@ -292,7 +290,7 @@ describe("createApiV1Middleware", () => {
     });
     expect(response.statusCode).toBe(200);
     expect(JSON.parse(getBody())).toEqual({
-      data: [{ oid: "abc", message: "Init", timestamp: 1, dbTimestamp: null }],
+      data: [{ oid: "abc", message: "Init", timestamp: 1 }],
     });
     expect(next).not.toHaveBeenCalled();
   });

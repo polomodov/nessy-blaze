@@ -66,6 +66,7 @@ This document locks the runtime scope for the HTTP-only migration.
 - Proposal payload contract no longer carries Supabase-specific `isServerFunction` file metadata.
 - Proposal payload contract no longer carries legacy SQL migration metadata (`sqlQueries`).
 - Removed unused `local_agent_prompt` module from active runtime prompt surface.
+- Version history HTTP payload no longer carries legacy integration timestamp metadata (`dbTimestamp`).
 
 ### In progress
 

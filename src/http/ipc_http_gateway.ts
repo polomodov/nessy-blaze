@@ -14,7 +14,6 @@ import {
   messages,
   organizationMemberships,
   organizations,
-  versions,
   workspaceModelSettings,
   workspaceMemberships,
   workspaces,
@@ -2069,25 +2068,11 @@ const handlers: Record<string, InvokeHandler> = {
       dir: appPath,
       depth: 100_000,
     });
-    const snapshots = await db.query.versions.findMany({
-      where: eq(versions.appId, appId),
-      columns: {
-        commitHash: true,
-        neonDbTimestamp: true,
-      },
-    });
-    const snapshotMap = new Map(
-      snapshots.map((snapshot) => [
-        snapshot.commitHash,
-        snapshot.neonDbTimestamp,
-      ]),
-    );
 
     return commits.map((commit) => ({
       oid: commit.oid,
       message: commit.commit.message,
       timestamp: commit.commit.author.timestamp,
-      dbTimestamp: snapshotMap.get(commit.oid) ?? null,
     }));
   },
 
