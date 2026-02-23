@@ -60,6 +60,9 @@ This document locks the runtime scope for the HTTP-only migration.
   - legacy `files`
 - User settings chat mode contract is restricted to HTTP v1 modes (`build|ask`) with legacy values (`agent|local-agent`) normalized on read/write.
 - Runtime system prompt selection is restricted to active v1 chat modes (`build|ask`) with legacy `agent/local-agent` prompt branches removed from the shared selector.
+- Legacy unscoped chat stream routes are disabled; active runtime chat streaming is scoped-only:
+  - `/api/v1/orgs/:orgId/workspaces/:workspaceId/chats/:chatId/stream`
+  - `/api/v1/orgs/:orgId/workspaces/:workspaceId/chats/:chatId/stream/cancel`
 
 ### In progress
 
