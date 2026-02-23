@@ -141,6 +141,7 @@ describe("invokeIpcChannelOverHttp", () => {
               enableLocalAgent: true,
               enableFileEditing: true,
             },
+            runtimeMode2: "docker",
             enableSupabaseWriteSqlMigration: true,
           } as Record<string, unknown>,
         ],
@@ -157,6 +158,7 @@ describe("invokeIpcChannelOverHttp", () => {
         "enableSupabaseWriteSqlMigration",
       );
       expect(updatedSettings).not.toHaveProperty("experiments");
+      expect(updatedSettings).not.toHaveProperty("runtimeMode2");
 
       const persistedSettings = (await invokeIpcChannelOverHttp(
         "get-user-settings",
@@ -172,6 +174,7 @@ describe("invokeIpcChannelOverHttp", () => {
         "enableSupabaseWriteSqlMigration",
       );
       expect(persistedSettings).not.toHaveProperty("experiments");
+      expect(persistedSettings).not.toHaveProperty("runtimeMode2");
     } finally {
       await invokeIpcChannelOverHttp("set-user-settings", [
         { uiLanguage: initialLanguage },

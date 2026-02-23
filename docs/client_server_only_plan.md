@@ -47,7 +47,7 @@ This document locks the runtime scope for the HTTP-only migration.
   - `supabase`
   - `neon`
 - User settings HTTP contract strips agent-only fields (`agentToolConsents`) and drops legacy `experiments` payload keys.
-- Shared user settings schema drops unused deprecated keys (`enableProSaverMode`, `blazeProBudget`, `runtimeMode`) from active contracts.
+- Shared user settings schema drops unused deprecated keys (`enableProSaverMode`, `blazeProBudget`, `runtimeMode`) and unused `runtimeMode2` from active contracts.
 - Shared IPC type surface drops unused agent-tool consent DTOs from active client-server contracts.
 - Legacy Supabase settings flags are removed from active runtime schema.
 - `blaze-execute-sql` integration branch is disabled in response processing for client-server-only mode.

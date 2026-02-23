@@ -145,9 +145,6 @@ export type RegularProviderSetting = z.infer<
 export type AzureProviderSetting = z.infer<typeof AzureProviderSettingSchema>;
 export type VertexProviderSetting = z.infer<typeof VertexProviderSettingSchema>;
 
-export const RuntimeMode2Schema = z.enum(["host", "docker"]);
-export type RuntimeMode2 = z.infer<typeof RuntimeMode2Schema>;
-
 export const ChatModeSchema = z.enum(["build", "ask"]);
 export type ChatMode = z.infer<typeof ChatModeSchema>;
 
@@ -231,7 +228,6 @@ export const UserSettingsSchema = z.object({
   enableNativeGit: z.boolean().optional(),
   enableAutoUpdate: z.boolean(),
   releaseChannel: ReleaseChannelSchema,
-  runtimeMode2: RuntimeMode2Schema.optional(),
   customNodePath: z.string().optional().nullable(),
   isRunning: z.boolean().optional(),
   lastKnownPerformance: z
