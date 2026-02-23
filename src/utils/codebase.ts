@@ -1,7 +1,7 @@
 import fsAsync from "node:fs/promises";
 import path from "node:path";
 import { gitIsIgnored } from "../ipc/utils/git_utils";
-import log from "electron-log";
+import { log } from "@/lib/logger";
 import { IS_TEST_BUILD } from "../ipc/utils/test_utils";
 import { glob } from "glob";
 import { AppChatContext } from "../lib/schemas";

@@ -1,8 +1,8 @@
-import { db } from "../../db";
+import { db } from "/src/db/index.ts";
 import { getBlazeAppPath } from "../../paths/paths";
 import { CodebaseFile, extractCodebase } from "../../utils/codebase";
 import { validateChatContext } from "../utils/context_paths_utils";
-import log from "electron-log";
+import { log } from "@/lib/logger";
 
 const logger = log.scope("mention_apps");
 

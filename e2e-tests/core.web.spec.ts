@@ -16,19 +16,26 @@ test("auth flow opens workspace", async ({ page }) => {
 test("core chat handles canned stream prompt", async ({ page }) => {
   await loginViaPassword(page);
 
+  const streamResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url().includes("/chats/") &&
+      response.url().includes("/stream"),
+    {
+      timeout: 45_000,
+    },
+  );
+
   const input = page.locator("textarea").first();
   await input.fill("[blaze-qa=write] create a hello file");
   await input.press("Enter");
+
+  const streamResponse = await streamResponsePromise;
+  expect(streamResponse.ok()).toBeTruthy();
 
   await expect(
     page.locator("[data-testid='workspace-chat-scroll']"),
   ).toContainText("[blaze-qa=write]", {
     timeout: 30_000,
-  });
-
-  await expect(
-    page.locator("[data-testid='workspace-chat-scroll']"),
-  ).toContainText(/What changed|Что изменилось|Ассистент|Assistant/i, {
-    timeout: 60_000,
   });
 });

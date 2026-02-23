@@ -1,13 +1,13 @@
 import { and, eq, gte, sql } from "drizzle-orm";
-import { db, initializeDatabase } from "../db";
+import { db, initializeDatabase } from "/src/db/index.ts";
 import {
   auditEvents,
   organizationQuotas,
   usageEvents,
   userSoftQuotas,
-} from "../db/schema";
-import { HttpError } from "./http_errors";
-import type { RequestContext } from "./request_context";
+} from "/src/db/schema.ts";
+import { HttpError } from "/src/http/http_errors.ts";
+import type { RequestContext } from "/src/http/request_context.ts";
 
 export type UsageMetric = "requests" | "tokens" | "concurrent_preview_jobs";
 

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import log from "electron-log";
+import { log } from "@/lib/logger";
 import { ToolDefinition, escapeXmlContent, AgentContext } from "./types";
 import { engineFetch } from "./engine_fetch";
 

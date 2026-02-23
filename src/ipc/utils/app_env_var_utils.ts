@@ -7,7 +7,7 @@ import { getBlazeAppPath } from "@/paths/paths";
 import { EnvVar } from "../ipc_types";
 import path from "path";
 import fs from "fs";
-import log from "electron-log";
+import { log } from "@/lib/logger";
 
 const logger = log.scope("app_env_var_utils");
 

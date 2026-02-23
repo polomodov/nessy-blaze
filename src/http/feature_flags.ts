@@ -1,4 +1,4 @@
-import { getEnvVar } from "../ipc/utils/read_env";
+import { getEnvVar } from "/src/ipc/utils/read_env.ts";
 
 export type MultitenantMode = "shadow" | "enforce";
 

@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import { z } from "zod";
-import log from "electron-log";
+import { log } from "@/lib/logger";
 import { ToolDefinition, AgentContext, escapeXmlAttr } from "./types";
 import { safeJoin } from "@/ipc/utils/path_utils";
 import { gitRemove } from "@/ipc/utils/git_utils";

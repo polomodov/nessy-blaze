@@ -11,6 +11,7 @@ import {
   chatStreamCountByIdAtom,
   isStreamingByIdAtom,
   recentStreamChatIdsAtom,
+  selectedChatIdAtom,
 } from "@/atoms/chatAtoms";
 import { IpcClient } from "@/ipc/ipc_client";
 import { isPreviewOpenAtom } from "@/atoms/viewAtoms";
@@ -20,14 +21,9 @@ import { useLoadApp } from "./useLoadApp";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
 import { useVersions } from "./useVersions";
 import { showExtraFilesToast } from "@/lib/toast";
-import { useSearch } from "@tanstack/react-router";
-import { useRunApp } from "./useRunApp";
-import { useCountTokens } from "./useCountTokens";
-import { useUserBudgetInfo } from "./useUserBudgetInfo";
 import { usePostHog } from "posthog-js/react";
-import { useCheckProblems } from "./useCheckProblems";
-import { useSettings } from "./useSettings";
 import { useQueryClient } from "@tanstack/react-query";
+import { WORKSPACE_PREVIEW_REFRESH_EVENT } from "@/components/workspace/autofix_events";
 
 export function getRandomNumberId() {
   return Math.floor(Math.random() * 1_000_000_000_000_000);
@@ -52,20 +48,11 @@ export function useStreamChat({
 
   const setStreamCountById = useSetAtom(chatStreamCountByIdAtom);
   const { refreshVersions } = useVersions(selectedAppId);
-  const { refreshAppIframe } = useRunApp();
-  const { refetchUserBudget } = useUserBudgetInfo();
-  const { checkProblems } = useCheckProblems(selectedAppId);
-  const { settings } = useSettings();
   const setRecentStreamChatIds = useSetAtom(recentStreamChatIdsAtom);
+  const selectedChatId = useAtomValue(selectedChatIdAtom);
   const posthog = usePostHog();
   const queryClient = useQueryClient();
-  let chatId: number | undefined;
-
-  if (hasChatId) {
-    const { id } = useSearch({ from: "/chat" });
-    chatId = id;
-  }
-  const { invalidateTokenCount } = useCountTokens(chatId ?? null, "");
+  const chatId = hasChatId ? (selectedChatId ?? undefined) : undefined;
 
   const streamMessage = useCallback(
     async ({
@@ -149,9 +136,15 @@ export function useStreamChat({
 
             if (response.updatedFiles) {
               setIsPreviewOpen(true);
-              refreshAppIframe();
-              if (settings?.enableAutoFixProblems) {
-                checkProblems();
+              if (selectedAppId != null) {
+                window.dispatchEvent(
+                  new CustomEvent(WORKSPACE_PREVIEW_REFRESH_EVENT, {
+                    detail: {
+                      appId: selectedAppId,
+                      reason: "manual-approve",
+                    },
+                  }),
+                );
               }
             }
             if (response.extraFiles) {
@@ -164,8 +157,6 @@ export function useStreamChat({
             // Use queryClient directly with the chatId parameter to avoid stale closure issues
             queryClient.invalidateQueries({ queryKey: ["proposal", chatId] });
 
-            refetchUserBudget();
-
             // Keep the same as below
             setIsStreamingById((prev) => {
               const next = new Map(prev);
@@ -175,7 +166,6 @@ export function useStreamChat({
             invalidateChats();
             refreshApp();
             refreshVersions();
-            invalidateTokenCount();
             onSettled?.();
           },
           onError: (errorMessage: string) => {
@@ -198,7 +188,6 @@ export function useStreamChat({
             invalidateChats();
             refreshApp();
             refreshVersions();
-            invalidateTokenCount();
             onSettled?.();
           },
         });
@@ -228,10 +217,7 @@ export function useStreamChat({
       setMessagesById,
       setIsStreamingById,
       setIsPreviewOpen,
-      checkProblems,
       selectedAppId,
-      refetchUserBudget,
-      settings,
       queryClient,
     ],
   );

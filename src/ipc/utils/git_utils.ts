@@ -1,4 +1,4 @@
-import { getGitAuthor } from "./git_author";
+import { getGitAuthor } from "/src/ipc/utils/git_author.ts";
 import git from "isomorphic-git";
 import http from "isomorphic-git/http/node";
 import {
@@ -13,10 +13,13 @@ import {
 import fs from "node:fs";
 import { promises as fsPromises } from "node:fs";
 import pathModule from "node:path";
-import { readSettings } from "../../main/settings";
-import log from "electron-log";
-import { normalizePath } from "../../../shared/normalizePath";
-import type { UncommittedFile, UncommittedFileStatus } from "../ipc_types";
+import { readSettings } from "/src/main/settings.ts";
+import { log } from "/src/lib/logger.ts";
+import { normalizePath } from "/shared/normalizePath.ts";
+import type {
+  UncommittedFile,
+  UncommittedFileStatus,
+} from "/src/ipc/ipc_types.ts";
 const logger = log.scope("git_utils");
 import type {
   GitBaseParams,
@@ -37,7 +40,7 @@ import type {
   GitMergeParams,
   GitCreateBranchParams,
   GitDeleteBranchParams,
-} from "../git_types";
+} from "/src/ipc/git_types.ts";
 
 const GIT_WORKDIR_MISSING_MESSAGE =
   "The project may have been moved or deleted.";

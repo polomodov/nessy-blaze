@@ -1,8 +1,8 @@
-import { db } from "../../db";
+import { db } from "/src/db/index.ts";
 import {
   language_model_providers as languageModelProvidersSchema,
   language_models as languageModelsSchema,
-} from "../../db/schema";
+} from "/src/db/schema.ts";
 import type { LanguageModelProvider, LanguageModel } from "../ipc_types";
 import { eq } from "drizzle-orm";
 import {

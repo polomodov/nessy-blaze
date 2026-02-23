@@ -6,7 +6,7 @@
  */
 
 import fs from "node:fs";
-import log from "electron-log";
+import { log } from "@/lib/logger";
 import {
   FileUploadsState,
   FileUploadInfo,

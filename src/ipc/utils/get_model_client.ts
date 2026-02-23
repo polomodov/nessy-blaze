@@ -14,7 +14,7 @@ import type {
   AzureProviderSetting,
 } from "../../lib/schemas";
 import { getEnvVar } from "./read_env";
-import log from "electron-log";
+import { log } from "@/lib/logger";
 import { FREE_OPENROUTER_MODEL_NAMES } from "../shared/language_model_constants";
 import { getLanguageModelProviders } from "../shared/language_model_helpers";
 import { LanguageModelProvider } from "../ipc_types";
@@ -28,7 +28,7 @@ import {
   LM_STUDIO_BASE_URL,
 } from "./lm_studio_utils";
 import { createOllamaProvider } from "./ollama_provider";
-import { getOllamaApiUrl } from "../handlers/local_model_ollama_handler";
+import { getOllamaApiUrl } from "./ollama_host";
 import { createFallback } from "./fallback_ai_model";
 import { createSelfSignedFetch } from "./self_signed_fetch";
 

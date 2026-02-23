@@ -1,4 +1,4 @@
-import { parseOllamaHost } from "@/ipc/handlers/local_model_ollama_handler";
+import { parseOllamaHost } from "@/ipc/utils/ollama_host";
 import { describe, it, expect } from "vitest";
 
 describe("parseOllamaHost", () => {

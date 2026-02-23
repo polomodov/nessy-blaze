@@ -1,6 +1,9 @@
 import { test as base, Page, expect } from "@playwright/test";
 import * as eph from "electron-playwright-helpers";
-import { ElectronApplication, _electron as electron } from "playwright";
+import {
+  ElectronApplication,
+  _electron as playwrightElectron,
+} from "playwright";
 import fs from "fs";
 import path from "path";
 import os from "os";
@@ -10,6 +13,8 @@ import {
   BUILD_SYSTEM_POSTFIX,
   BUILD_SYSTEM_PREFIX,
 } from "@/prompts/system_prompt";
+
+const electron = playwrightElectron;
 
 const showDebugLogs = process.env.DEBUG_LOGS === "true";
 

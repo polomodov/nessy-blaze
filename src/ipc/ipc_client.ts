@@ -2,110 +2,40 @@ import {
   type ChatSummary,
   ChatSummariesSchema,
   type UserSettings,
-  type ContextPathResults,
-  ChatSearchResultsSchema,
-  AppSearchResultsSchema,
-} from "../lib/schemas";
+  type ProposalResult,
+} from "@/lib/schemas";
 import type {
+  App,
   AppOutput,
+  ApproveProposalResult,
   Chat,
   ChatResponseEnd,
-  ChatProblemsEvent,
+  ComponentSelection,
   CreateAppParams,
   CreateAppResult,
-  ListAppsResponse,
-  NodeSystemInfo,
-  Message,
-  Version,
-  SystemDebugInfo,
-  LocalModel,
-  TokenCountParams,
-  TokenCountResult,
-  ChatLogsData,
-  BranchResult,
-  LanguageModelProvider,
-  LanguageModel,
-  CreateCustomLanguageModelProviderParams,
-  CreateCustomLanguageModelParams,
-  ApproveProposalResult,
-  RenameBranchParams,
-  GitBranchAppIdParams,
-  CreateGitBranchParams,
-  GitBranchParams,
-  RenameGitBranchParams,
-  ListRemoteGitBranchesParams,
-  CommitChangesParams,
-  UserBudgetInfo,
-  CopyAppParams,
-  App,
-  AppFileSearchResult,
-  ComponentSelection,
-  AppUpgrade,
-  ProblemReport,
-  EditAppFileReturnType,
-  GetAppEnvVarsParams,
-  SetAppEnvVarsParams,
-  ConnectToExistingVercelProjectParams,
-  IsVercelProjectAvailableResponse,
-  CreateVercelProjectParams,
-  VercelDeployment,
-  GetVercelDeploymentsParams,
-  DisconnectVercelProjectParams,
-  SecurityReviewResult,
-  IsVercelProjectAvailableParams,
-  SaveVercelAccessTokenParams,
-  VercelProject,
-  UpdateChatParams,
+  CreateWorkspaceParams,
   FileAttachment,
-  CreateNeonProjectParams,
-  NeonProject,
-  GetNeonProjectParams,
-  GetNeonProjectResponse,
-  RevertVersionResponse,
+  Message,
   RevertVersionParams,
-  RespondToAppInputParams,
-  PromptDto,
-  CreatePromptParamsDto,
-  UpdatePromptParamsDto,
-  CloneRepoParams,
-  SupabaseBranch,
-  SetSupabaseAppProjectParams,
-  SupabaseOrganizationInfo,
-  SupabaseProject,
-  DeleteSupabaseOrganizationParams,
-  ApplyVisualEditingChangesParams,
-  AnalyseComponentParams,
-  TelemetryEventPayload,
-  GithubSyncOptions,
-  ConsoleEntry,
-  SetAppThemeParams,
-  GetAppThemeParams,
-  UncommittedFile,
+  RevertVersionResponse,
   TenantOrganization,
   TenantWorkspace,
-  CreateWorkspaceParams,
+  Version,
 } from "./ipc_types";
-import type { Template } from "../shared/templates";
-import type { Theme } from "../shared/themes";
-import type {
-  AppChatContext,
-  AppSearchResult,
-  ChatSearchResult,
-  ProposalResult,
-} from "@/lib/schemas";
-import { showError } from "@/lib/toast";
 import {
   createBackendClientTransport,
   getConfiguredTenantScope,
-  getDefaultRequestHeaders,
   getConfiguredBackendBaseUrl,
+  getDefaultRequestHeaders,
   type BackendClient as BackendClientTransport,
 } from "./backend_client";
+import { showError } from "@/lib/toast";
 
-export interface ChatStreamCallbacks {
-  onUpdate: (messages: Message[]) => void;
-  onEnd: (response: ChatResponseEnd) => void;
-  onError: (error: string) => void;
+interface EncodedStreamAttachment {
+  name: string;
+  type: string;
+  data: string;
+  attachmentType: "upload-to-codebase" | "chat-context";
 }
 
 interface StreamMessageOptions {
@@ -116,52 +46,19 @@ interface StreamMessageOptions {
   onUpdate: (messages: Message[]) => void;
   onEnd: (response: ChatResponseEnd) => void;
   onError: (error: string) => void;
-  onProblems?: (problems: ChatProblemsEvent) => void;
-}
-
-export interface AppStreamCallbacks {
-  onOutput: (output: AppOutput) => void;
-}
-
-export interface GitHubDeviceFlowUpdateData {
-  userCode?: string;
-  verificationUri?: string;
-  message?: string;
-}
-
-export interface GitHubDeviceFlowSuccessData {
-  message?: string;
-}
-
-export interface GitHubDeviceFlowErrorData {
-  error: string;
-}
-
-interface DeleteCustomModelParams {
-  providerId: string;
-  modelApiName: string;
-}
-
-interface EncodedStreamAttachment {
-  name: string;
-  type: string;
-  data: string;
-  attachmentType: "upload-to-codebase" | "chat-context";
 }
 
 function normalizeDate(value: unknown): Date {
   if (value instanceof Date) {
     return value;
   }
-
   if (typeof value === "string" || typeof value === "number") {
-    const date = new Date(value);
-    if (!Number.isNaN(date.getTime())) {
-      return date;
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed;
     }
   }
-
-  throw new Error(`Invalid date value: ${value}`);
+  return new Date(0);
 }
 
 function parseSseEvent(
@@ -175,7 +72,6 @@ function parseSseEvent(
       eventName = line.slice(6).trim();
       continue;
     }
-
     if (line.startsWith("data:")) {
       dataLines.push(line.slice(5).trimStart());
     }
@@ -199,9 +95,9 @@ function getBackendBaseUrlCandidates(): string[] {
   }
 
   if (typeof window !== "undefined" && window.location?.origin) {
-    const originBaseUrl = window.location.origin.replace(/\/+$/, "");
-    if (!candidates.includes(originBaseUrl)) {
-      candidates.push(originBaseUrl);
+    const origin = window.location.origin.replace(/\/+$/, "");
+    if (!candidates.includes(origin)) {
+      candidates.push(origin);
     }
   }
 
@@ -229,47 +125,28 @@ function extractPreviewUrls(value: unknown): {
     return null;
   }
 
+  const record = value as Record<string, unknown>;
   const previewUrl =
-    "previewUrl" in value && typeof value.previewUrl === "string"
-      ? value.previewUrl
-      : null;
-
+    typeof record.previewUrl === "string" ? record.previewUrl : null;
   if (!previewUrl) {
     return null;
   }
 
   const originalUrl =
-    "originalUrl" in value && typeof value.originalUrl === "string"
-      ? value.originalUrl
-      : previewUrl;
-
+    typeof record.originalUrl === "string" ? record.originalUrl : previewUrl;
   return { previewUrl, originalUrl };
 }
 
-function normalizeCollectionResponse<T>(
-  value: unknown,
-  collectionKey: string,
-): T[] {
-  if (Array.isArray(value)) {
-    return value as T[];
-  }
+function normalizeChat(rawChat: Chat): Chat {
+  const normalizedMessages = rawChat.messages.map((message) => ({
+    ...message,
+    createdAt: normalizeDate(message.createdAt),
+  }));
 
-  if (!value || typeof value !== "object") {
-    return [];
-  }
-
-  const record = value as Record<string, unknown>;
-  const keyedValue = record[collectionKey];
-  if (Array.isArray(keyedValue)) {
-    return keyedValue as T[];
-  }
-
-  const dataValue = record.data;
-  if (Array.isArray(dataValue)) {
-    return dataValue as T[];
-  }
-
-  return [];
+  return {
+    ...rawChat,
+    messages: normalizedMessages,
+  };
 }
 
 async function encodeAttachmentsForStream(
@@ -279,197 +156,50 @@ async function encodeAttachmentsForStream(
     return [];
   }
 
-  return Promise.all(
+  const encoded = await Promise.all(
     attachments.map(async (attachment) => {
-      return new Promise<EncodedStreamAttachment>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          resolve({
-            name: attachment.file.name,
-            type: attachment.file.type,
-            data: reader.result as string,
-            attachmentType: attachment.type,
-          });
-        };
-        reader.onerror = () =>
-          reject(new Error(`Failed to read file: ${attachment.file.name}`));
-        reader.readAsDataURL(attachment.file);
-      });
+      const bytes = await attachment.file.arrayBuffer();
+      const chunk = new Uint8Array(bytes);
+      let binary = "";
+      for (let index = 0; index < chunk.length; index += 1) {
+        binary += String.fromCharCode(chunk[index]);
+      }
+
+      return {
+        name: attachment.file.name,
+        type: attachment.file.type,
+        data: btoa(binary),
+        attachmentType: attachment.type,
+      } satisfies EncodedStreamAttachment;
     }),
   );
+
+  return encoded;
 }
 
 export class IpcClient {
   private static instance: IpcClient;
-  private ipcRenderer: BackendClientTransport;
-  private chatStreams: Map<number, ChatStreamCallbacks>;
-  private httpChatAbortControllers: Map<number, AbortController>;
-  private appStreams: Map<number, AppStreamCallbacks>;
-  private helpStreams: Map<
-    string,
-    {
-      onChunk: (delta: string) => void;
-      onEnd: () => void;
-      onError: (error: string) => void;
-    }
-  >;
-  private telemetryEventHandlers: Set<(payload: TelemetryEventPayload) => void>;
-  // Global handlers called for any chat stream start (used for cleanup)
-  private globalChatStreamStartHandlers: Set<(chatId: number) => void>;
-  // Global handlers called for any chat stream completion (used for cleanup)
-  private globalChatStreamEndHandlers: Set<(chatId: number) => void>;
-  private constructor() {
-    this.ipcRenderer = createBackendClientTransport();
-    this.chatStreams = new Map();
-    this.httpChatAbortControllers = new Map();
-    this.appStreams = new Map();
-    this.helpStreams = new Map();
-    this.telemetryEventHandlers = new Set();
-    this.globalChatStreamStartHandlers = new Set();
-    this.globalChatStreamEndHandlers = new Set();
-    // Set up listeners for stream events
-    this.ipcRenderer.on("chat:response:chunk", (data) => {
-      if (
-        data &&
-        typeof data === "object" &&
-        "chatId" in data &&
-        "messages" in data
-      ) {
-        const { chatId, messages } = data as {
-          chatId: number;
-          messages: Message[];
-        };
 
-        const callbacks = this.chatStreams.get(chatId);
-        if (callbacks) {
-          callbacks.onUpdate(messages);
-        } else {
-          console.warn(
-            `[IPC] No callbacks found for chat ${chatId}`,
-            this.chatStreams,
-          );
-        }
-      } else {
-        showError(new Error(`[IPC] Invalid chunk data received: ${data}`));
-      }
-    });
+  private readonly backend: BackendClientTransport;
+  private readonly httpChatAbortControllers = new Map<
+    number,
+    AbortController
+  >();
+  private readonly globalChatStreamStartHandlers = new Set<
+    (chatId: number) => void
+  >();
+  private readonly globalChatStreamEndHandlers = new Set<
+    (chatId: number) => void
+  >();
+  private readonly telemetryEventHandlers = new Set<
+    (payload: {
+      eventName: string;
+      properties?: Record<string, unknown>;
+    }) => void
+  >();
 
-    this.ipcRenderer.on("app:output", (data) => {
-      if (
-        data &&
-        typeof data === "object" &&
-        "type" in data &&
-        "message" in data &&
-        "appId" in data
-      ) {
-        const { type, message, appId } = data as unknown as AppOutput;
-        const callbacks = this.appStreams.get(appId);
-        if (callbacks) {
-          callbacks.onOutput({ type, message, appId, timestamp: Date.now() });
-        }
-      } else {
-        showError(new Error(`[IPC] Invalid app output data received: ${data}`));
-      }
-    });
-
-    this.ipcRenderer.on("chat:response:end", (payload) => {
-      const { chatId } = payload as unknown as ChatResponseEnd;
-      const callbacks = this.chatStreams.get(chatId);
-      if (callbacks) {
-        callbacks.onEnd(payload as unknown as ChatResponseEnd);
-        console.debug("chat:response:end");
-        this.chatStreams.delete(chatId);
-      } else {
-        console.error(
-          new Error(
-            `[IPC] No callbacks found for chat ${chatId} on stream end`,
-          ),
-        );
-      }
-      // Notify global handlers (used for cleanup like clearing pending consents)
-      for (const handler of this.globalChatStreamEndHandlers) {
-        handler(chatId);
-      }
-    });
-
-    this.ipcRenderer.on("chat:response:error", (payload) => {
-      console.debug("chat:response:error");
-      if (
-        payload &&
-        typeof payload === "object" &&
-        "chatId" in payload &&
-        "error" in payload
-      ) {
-        const { chatId, error } = payload as { chatId: number; error: string };
-        const callbacks = this.chatStreams.get(chatId);
-        if (callbacks) {
-          callbacks.onError(error);
-          this.chatStreams.delete(chatId);
-        } else {
-          console.warn(
-            `[IPC] No callbacks found for chat ${chatId} on error`,
-            this.chatStreams,
-          );
-        }
-        // Notify global handlers (used for cleanup like clearing pending consents)
-        for (const handler of this.globalChatStreamEndHandlers) {
-          handler(chatId);
-        }
-      } else {
-        console.error("[IPC] Invalid error data received:", payload);
-      }
-    });
-
-    // Help bot events
-    this.ipcRenderer.on("help:chat:response:chunk", (data) => {
-      if (
-        data &&
-        typeof data === "object" &&
-        "sessionId" in data &&
-        "delta" in data
-      ) {
-        const { sessionId, delta } = data as {
-          sessionId: string;
-          delta: string;
-        };
-        const callbacks = this.helpStreams.get(sessionId);
-        if (callbacks) callbacks.onChunk(delta);
-      }
-    });
-
-    this.ipcRenderer.on("help:chat:response:end", (data) => {
-      if (data && typeof data === "object" && "sessionId" in data) {
-        const { sessionId } = data as { sessionId: string };
-        const callbacks = this.helpStreams.get(sessionId);
-        if (callbacks) callbacks.onEnd();
-        this.helpStreams.delete(sessionId);
-      }
-    });
-    this.ipcRenderer.on("help:chat:response:error", (data) => {
-      if (
-        data &&
-        typeof data === "object" &&
-        "sessionId" in data &&
-        "error" in data
-      ) {
-        const { sessionId, error } = data as {
-          sessionId: string;
-          error: string;
-        };
-        const callbacks = this.helpStreams.get(sessionId);
-        if (callbacks) callbacks.onError(error);
-        this.helpStreams.delete(sessionId);
-      }
-    });
-
-    // Telemetry events from main to renderer
-    this.ipcRenderer.on("telemetry:event", (payload) => {
-      if (payload && typeof payload === "object" && "eventName" in payload) {
-        for (const handler of this.telemetryEventHandlers) {
-          handler(payload as TelemetryEventPayload);
-        }
-      }
-    });
+  private constructor(backend?: BackendClientTransport) {
+    this.backend = backend ?? createBackendClientTransport();
   }
 
   public static getInstance(): IpcClient {
@@ -479,166 +209,269 @@ export class IpcClient {
     return IpcClient.instance;
   }
 
-  public async reloadEnvPath(): Promise<void> {
-    await this.ipcRenderer.invoke("reload-env-path");
-  }
-
-  // Create a new app with an initial chat
-  public async createApp(params: CreateAppParams): Promise<CreateAppResult> {
-    return this.ipcRenderer.invoke("create-app", params);
-  }
-
-  public async getApp(appId: number): Promise<App> {
-    return this.ipcRenderer.invoke("get-app", appId);
-  }
-
-  public async addAppToFavorite(
-    appId: number,
-  ): Promise<{ isFavorite: boolean }> {
-    try {
-      const result = await this.ipcRenderer.invoke("add-to-favorite", {
-        appId,
-      });
-      return result;
-    } catch (error) {
-      showError(error);
-      throw error;
-    }
-  }
-
-  public async getAppEnvVars(
-    params: GetAppEnvVarsParams,
-  ): Promise<{ key: string; value: string }[]> {
-    return this.ipcRenderer.invoke("get-app-env-vars", params);
-  }
-
-  public async setAppEnvVars(params: SetAppEnvVarsParams): Promise<void> {
-    return this.ipcRenderer.invoke("set-app-env-vars", params);
-  }
-
-  public async getChat(chatId: number): Promise<Chat> {
-    try {
-      const data = await this.ipcRenderer.invoke("get-chat", chatId);
-      return data;
-    } catch (error) {
-      showError(error);
-      throw error;
-    }
-  }
-
-  // Get all chats
-  public async getChats(appId?: number): Promise<ChatSummary[]> {
-    try {
-      const data = await this.ipcRenderer.invoke("get-chats", appId);
-      const normalizedData = (data as ChatSummary[]).map((chat) => ({
-        ...chat,
-        createdAt: normalizeDate(chat.createdAt),
-      }));
-      return ChatSummariesSchema.parse(normalizedData);
-    } catch (error) {
-      showError(error);
-      throw error;
-    }
-  }
-
-  // search for chats
-  public async searchChats(
-    appId: number,
-    query: string,
-  ): Promise<ChatSearchResult[]> {
-    try {
-      const data = await this.ipcRenderer.invoke("search-chats", appId, query);
-      const normalizedData = (data as ChatSearchResult[]).map((chat) => ({
-        ...chat,
-        createdAt: normalizeDate(chat.createdAt),
-      }));
-      return ChatSearchResultsSchema.parse(normalizedData);
-    } catch (error) {
-      showError(error);
-      throw error;
-    }
-  }
-
-  // Get all apps
-  public async listApps(): Promise<ListAppsResponse> {
-    return this.ipcRenderer.invoke("list-apps");
-  }
-
   public async listOrganizations(): Promise<TenantOrganization[]> {
-    const data = await this.ipcRenderer.invoke("list-orgs");
-    return normalizeCollectionResponse<TenantOrganization>(
-      data,
-      "organizations",
-    );
+    const data = await this.backend.invoke<unknown>("list-orgs");
+    if (Array.isArray(data)) {
+      return data as TenantOrganization[];
+    }
+    if (data && typeof data === "object") {
+      const organizations = (data as { organizations?: unknown }).organizations;
+      if (Array.isArray(organizations)) {
+        return organizations as TenantOrganization[];
+      }
+    }
+    return [];
   }
 
   public async listWorkspaces(params?: {
     orgId?: string;
   }): Promise<TenantWorkspace[]> {
-    const data = await this.ipcRenderer.invoke("list-workspaces", params);
-    return normalizeCollectionResponse<TenantWorkspace>(data, "workspaces");
+    const data = await this.backend.invoke<unknown>(
+      "list-workspaces",
+      params ?? {},
+    );
+    if (Array.isArray(data)) {
+      return data as TenantWorkspace[];
+    }
+    if (data && typeof data === "object") {
+      const workspaces = (data as { workspaces?: unknown }).workspaces;
+      if (Array.isArray(workspaces)) {
+        return workspaces as TenantWorkspace[];
+      }
+    }
+    return [];
   }
 
   public async createWorkspace(
     params: CreateWorkspaceParams,
   ): Promise<TenantWorkspace> {
-    return this.ipcRenderer.invoke("create-workspace", params);
+    return this.backend.invoke("create-workspace", params);
   }
 
-  // Search apps by name
-  public async searchApps(searchQuery: string): Promise<AppSearchResult[]> {
-    try {
-      const data = await this.ipcRenderer.invoke("search-app", searchQuery);
-      const normalizedData = (data as AppSearchResult[]).map((app) => ({
+  public async listApps(): Promise<{ apps: App[] }> {
+    const response = await this.backend.invoke<{ apps: App[] }>("list-apps");
+    return {
+      apps: (response.apps ?? []).map((app) => ({
         ...app,
         createdAt: normalizeDate(app.createdAt),
-      }));
-      return AppSearchResultsSchema.parse(normalizedData);
-    } catch (error) {
-      showError(error);
-      throw error;
-    }
+        updatedAt: normalizeDate(app.updatedAt),
+      })),
+    };
   }
 
-  public async searchAppFiles(
-    appId: number,
-    query: string,
-  ): Promise<AppFileSearchResult[]> {
-    try {
-      const results = await this.ipcRenderer.invoke("search-app-files", {
-        appId,
-        query,
-      });
-      return results as AppFileSearchResult[];
-    } catch (error) {
-      showError(error);
-      throw error;
+  public async getApp(appId: number): Promise<App | null> {
+    const app = await this.backend.invoke<App | null>("get-app", appId);
+    if (!app) {
+      return null;
     }
+    return {
+      ...app,
+      createdAt: normalizeDate(app.createdAt),
+      updatedAt: normalizeDate(app.updatedAt),
+    };
+  }
+
+  public async createApp(params: CreateAppParams): Promise<CreateAppResult> {
+    return this.backend.invoke("create-app", params);
+  }
+
+  public async getChats(appId?: number): Promise<ChatSummary[]> {
+    const data = await this.backend.invoke<unknown>(
+      "get-chats",
+      typeof appId === "number" ? appId : undefined,
+    );
+    const chatArray = Array.isArray(data)
+      ? data
+      : data && typeof data === "object"
+        ? ((data as { chats?: unknown[] }).chats ?? [])
+        : [];
+
+    const normalizedChats = chatArray.map((chat) => {
+      if (!chat || typeof chat !== "object") {
+        return chat;
+      }
+      const record = chat as Record<string, unknown>;
+      return {
+        ...record,
+        createdAt: normalizeDate(record.createdAt),
+      };
+    });
+
+    return ChatSummariesSchema.parse(normalizedChats).map((chat) => ({
+      ...chat,
+      createdAt: normalizeDate(chat.createdAt),
+    }));
+  }
+
+  public async createChat(appId: number): Promise<number> {
+    return this.backend.invoke("create-chat", appId);
+  }
+
+  public async getChat(chatId: number): Promise<Chat> {
+    const chat = await this.backend.invoke<Chat>("get-chat", chatId);
+    return normalizeChat(chat);
+  }
+
+  public async listVersions(params: { appId: number }): Promise<Version[]> {
+    return this.backend.invoke("list-versions", params);
+  }
+
+  public async revertVersion(
+    params: RevertVersionParams,
+  ): Promise<RevertVersionResponse> {
+    return this.backend.invoke("revert-version", params);
   }
 
   public async readAppFile(appId: number, filePath: string): Promise<string> {
-    return this.ipcRenderer.invoke("read-app-file", {
+    return this.backend.invoke("read-app-file", {
       appId,
       filePath,
     });
   }
 
-  // Edit a file in an app directory
-  public async editAppFile(
+  public async getProposal(chatId: number): Promise<ProposalResult | null> {
+    return this.backend.invoke("get-proposal", { chatId });
+  }
+
+  public async approveProposal(params: {
+    chatId: number;
+    messageId: number;
+  }): Promise<ApproveProposalResult> {
+    return this.backend.invoke("approve-proposal", params);
+  }
+
+  public async rejectProposal(params: {
+    chatId: number;
+    messageId: number;
+  }): Promise<void> {
+    await this.backend.invoke("reject-proposal", params);
+  }
+
+  public async runApp(
     appId: number,
-    filePath: string,
-    content: string,
-  ): Promise<EditAppFileReturnType> {
-    return this.ipcRenderer.invoke("edit-app-file", {
+    onOutput: (output: AppOutput) => void,
+  ): Promise<void> {
+    const result = await this.backend.invoke("run-app", { appId });
+    const previewUrls = extractPreviewUrls(result);
+    if (!previewUrls) {
+      return;
+    }
+    onOutput({
+      type: "stdout",
+      message: `[blaze-proxy-server]started=[${previewUrls.previewUrl}] original=[${previewUrls.originalUrl}]`,
       appId,
-      filePath,
-      content,
+      timestamp: Date.now(),
     });
   }
 
-  // New method for streaming responses
+  public async stopApp(appId: number): Promise<void> {
+    await this.backend.invoke("stop-app", { appId });
+  }
+
+  public async restartApp(
+    appId: number,
+    onOutput: (output: AppOutput) => void,
+  ): Promise<void> {
+    const result = await this.backend.invoke("restart-app", { appId });
+    const previewUrls = extractPreviewUrls(result);
+    if (!previewUrls) {
+      return;
+    }
+    onOutput({
+      type: "stdout",
+      message: `[blaze-proxy-server]started=[${previewUrls.previewUrl}] original=[${previewUrls.originalUrl}]`,
+      appId,
+      timestamp: Date.now(),
+    });
+  }
+
+  public async getUserSettings(): Promise<UserSettings> {
+    return this.backend.invoke("get-user-settings");
+  }
+
+  public async setUserSettings(
+    settings: Partial<UserSettings>,
+  ): Promise<UserSettings> {
+    return this.backend.invoke("set-user-settings", settings);
+  }
+
+  public async getEnvVars(): Promise<Record<string, string | undefined>> {
+    return this.backend.invoke("get-env-vars");
+  }
+
+  public async getAppVersion(): Promise<string> {
+    const response = await this.backend.invoke<{ version: string }>(
+      "get-app-version",
+    );
+    return response.version;
+  }
+
   public streamMessage(prompt: string, options: StreamMessageOptions): void {
     this.streamMessageOverHttp(prompt, options);
+  }
+
+  public cancelChatStream(chatId: number): void {
+    const controller = this.httpChatAbortControllers.get(chatId);
+    if (controller) {
+      controller.abort();
+      this.httpChatAbortControllers.delete(chatId);
+    }
+
+    const baseUrls = getBackendBaseUrlCandidates();
+    if (baseUrls.length === 0) {
+      return;
+    }
+
+    void (async () => {
+      const scope = getConfiguredTenantScope();
+      const path = `/api/v1/orgs/${encodeURIComponent(
+        scope.orgId,
+      )}/workspaces/${encodeURIComponent(
+        scope.workspaceId,
+      )}/chats/${chatId}/stream/cancel`;
+
+      for (let index = 0; index < baseUrls.length; index += 1) {
+        const baseUrl = baseUrls[index];
+        const hasNextBaseUrl = index < baseUrls.length - 1;
+        try {
+          await fetch(`${baseUrl}${path}`, {
+            method: "POST",
+            headers: getDefaultRequestHeaders("chat:cancel"),
+          });
+          return;
+        } catch (error) {
+          if (!hasNextBaseUrl || !isLikelyFetchFailure(error)) {
+            return;
+          }
+        }
+      }
+    })();
+  }
+
+  public onChatStreamStart(handler: (chatId: number) => void): () => void {
+    this.globalChatStreamStartHandlers.add(handler);
+    return () => {
+      this.globalChatStreamStartHandlers.delete(handler);
+    };
+  }
+
+  public onChatStreamEnd(handler: (chatId: number) => void): () => void {
+    this.globalChatStreamEndHandlers.add(handler);
+    return () => {
+      this.globalChatStreamEndHandlers.delete(handler);
+    };
+  }
+
+  public onTelemetryEvent(
+    handler: (payload: {
+      eventName: string;
+      properties?: Record<string, unknown>;
+    }) => void,
+  ): () => void {
+    this.telemetryEventHandlers.add(handler);
+    return () => {
+      this.telemetryEventHandlers.delete(handler);
+    };
   }
 
   private streamMessageOverHttp(
@@ -655,8 +488,6 @@ export class IpcClient {
       onError,
     } = options;
 
-    this.chatStreams.set(chatId, { onUpdate, onEnd, onError });
-
     for (const handler of this.globalChatStreamStartHandlers) {
       handler(chatId);
     }
@@ -668,7 +499,6 @@ export class IpcClient {
     const settleWithEnd = (response: ChatResponseEnd) => {
       if (settled) return;
       settled = true;
-      this.chatStreams.delete(chatId);
       this.httpChatAbortControllers.delete(chatId);
       onEnd(response);
       for (const handler of this.globalChatStreamEndHandlers) {
@@ -679,7 +509,6 @@ export class IpcClient {
     const settleWithError = (errorMessage: string) => {
       if (settled) return;
       settled = true;
-      this.chatStreams.delete(chatId);
       this.httpChatAbortControllers.delete(chatId);
       onError(errorMessage);
       for (const handler of this.globalChatStreamEndHandlers) {
@@ -696,18 +525,19 @@ export class IpcClient {
           throw new Error("Backend base URL is not configured.");
         }
 
-        let response: Response | null = null;
         const scope = getConfiguredTenantScope();
-        const streamPath = `/api/v1/orgs/${encodeURIComponent(
+        const path = `/api/v1/orgs/${encodeURIComponent(
           scope.orgId,
         )}/workspaces/${encodeURIComponent(
           scope.workspaceId,
         )}/chats/${chatId}/stream`;
+
+        let response: Response | null = null;
         for (let index = 0; index < baseUrls.length; index += 1) {
           const baseUrl = baseUrls[index];
           const hasNextBaseUrl = index < baseUrls.length - 1;
           try {
-            response = await fetch(`${baseUrl}${streamPath}`, {
+            response = await fetch(`${baseUrl}${path}`, {
               method: "POST",
               headers: getDefaultRequestHeaders("chat:stream"),
               body: JSON.stringify({
@@ -720,15 +550,10 @@ export class IpcClient {
               signal: abortController.signal,
             });
             break;
-          } catch (fetchError) {
-            if (!hasNextBaseUrl || !isLikelyFetchFailure(fetchError)) {
-              throw fetchError;
+          } catch (error) {
+            if (!hasNextBaseUrl || !isLikelyFetchFailure(error)) {
+              throw error;
             }
-
-            console.warn(
-              `[IpcClient] Stream request failed against "${baseUrl}". Retrying with "${baseUrls[index + 1]}".`,
-              fetchError,
-            );
           }
         }
 
@@ -778,7 +603,7 @@ export class IpcClient {
               continue;
             }
 
-            let payload: any;
+            let payload: unknown;
             try {
               payload = JSON.parse(parsedEvent.data);
             } catch {
@@ -786,16 +611,22 @@ export class IpcClient {
             }
 
             if (parsedEvent.event === "chat:response:chunk") {
-              if (payload && Array.isArray(payload.messages)) {
-                onUpdate(payload.messages as Message[]);
+              if (
+                payload &&
+                typeof payload === "object" &&
+                Array.isArray((payload as { messages?: unknown[] }).messages)
+              ) {
+                onUpdate((payload as { messages: Message[] }).messages);
               }
               continue;
             }
 
             if (parsedEvent.event === "chat:response:error") {
               const errorMessage =
-                typeof payload?.error === "string"
-                  ? payload.error
+                payload &&
+                typeof payload === "object" &&
+                typeof (payload as { error?: unknown }).error === "string"
+                  ? ((payload as { error: string }).error ?? "Unknown error")
                   : "Unknown streaming error.";
               settleWithError(errorMessage);
               return;
@@ -827,1020 +658,5 @@ export class IpcClient {
         settleWithError(errorMessage);
       }
     })();
-  }
-
-  // Method to cancel an ongoing stream
-  public cancelChatStream(chatId: number): void {
-    const controller = this.httpChatAbortControllers.get(chatId);
-    if (controller) {
-      controller.abort();
-      this.httpChatAbortControllers.delete(chatId);
-    }
-
-    const baseUrls = getBackendBaseUrlCandidates();
-    if (baseUrls.length === 0) {
-      console.error(
-        "Error cancelling HTTP chat stream:",
-        new Error("Backend base URL is not configured."),
-      );
-      return;
-    }
-
-    void (async () => {
-      const scope = getConfiguredTenantScope();
-      const cancelPath = `/api/v1/orgs/${encodeURIComponent(
-        scope.orgId,
-      )}/workspaces/${encodeURIComponent(
-        scope.workspaceId,
-      )}/chats/${chatId}/stream/cancel`;
-      for (let index = 0; index < baseUrls.length; index += 1) {
-        const baseUrl = baseUrls[index];
-        const hasNextBaseUrl = index < baseUrls.length - 1;
-        try {
-          await fetch(`${baseUrl}${cancelPath}`, {
-            method: "POST",
-            headers: getDefaultRequestHeaders("chat:cancel"),
-          });
-          return;
-        } catch (error) {
-          if (!hasNextBaseUrl || !isLikelyFetchFailure(error)) {
-            console.error("Error cancelling HTTP chat stream:", error);
-            return;
-          }
-
-          console.warn(
-            `[IpcClient] Stream cancel failed against "${baseUrl}". Retrying with "${baseUrls[index + 1]}".`,
-            error,
-          );
-        }
-      }
-    })();
-  }
-
-  // Create a new chat for an app
-  public async createChat(appId: number): Promise<number> {
-    return this.ipcRenderer.invoke("create-chat", appId);
-  }
-
-  public async updateChat(params: UpdateChatParams): Promise<void> {
-    return this.ipcRenderer.invoke("update-chat", params);
-  }
-
-  public async deleteChat(chatId: number): Promise<void> {
-    await this.ipcRenderer.invoke("delete-chat", chatId);
-  }
-
-  public async deleteMessages(chatId: number): Promise<void> {
-    await this.ipcRenderer.invoke("delete-messages", chatId);
-  }
-
-  // Open an external URL using the default browser
-  public async openExternalUrl(url: string): Promise<void> {
-    if (!url) {
-      return;
-    }
-    window.open(url, "_blank", "noopener,noreferrer");
-  }
-
-  public async showItemInFolder(fullPath: string): Promise<void> {
-    await this.ipcRenderer.invoke("show-item-in-folder", fullPath);
-  }
-
-  // Run an app
-  public async runApp(
-    appId: number,
-    onOutput: (output: AppOutput) => void,
-  ): Promise<void> {
-    this.appStreams.set(appId, { onOutput });
-    const result = await this.ipcRenderer.invoke("run-app", { appId });
-    const previewUrls = extractPreviewUrls(result);
-    if (previewUrls) {
-      onOutput({
-        type: "stdout",
-        message: `[blaze-proxy-server]started=[${previewUrls.previewUrl}] original=[${previewUrls.originalUrl}]`,
-        appId,
-        timestamp: Date.now(),
-      });
-    }
-  }
-
-  // Stop a running app
-  public async stopApp(appId: number): Promise<void> {
-    await this.ipcRenderer.invoke("stop-app", { appId });
-  }
-
-  // Restart a running app
-  public async restartApp(
-    appId: number,
-    onOutput: (output: AppOutput) => void,
-    removeNodeModules?: boolean,
-  ): Promise<{ success: boolean }> {
-    try {
-      const result = await this.ipcRenderer.invoke("restart-app", {
-        appId,
-        removeNodeModules,
-      });
-      this.appStreams.set(appId, { onOutput });
-      const previewUrls = extractPreviewUrls(result);
-      if (previewUrls) {
-        onOutput({
-          type: "stdout",
-          message: `[blaze-proxy-server]started=[${previewUrls.previewUrl}] original=[${previewUrls.originalUrl}]`,
-          appId,
-          timestamp: Date.now(),
-        });
-      }
-      return result;
-    } catch (error) {
-      showError(error);
-      throw error;
-    }
-  }
-
-  // Respond to an app input request (y/n prompts)
-  public async respondToAppInput(
-    params: RespondToAppInputParams,
-  ): Promise<void> {
-    try {
-      await this.ipcRenderer.invoke("respond-to-app-input", params);
-    } catch (error) {
-      showError(error);
-      throw error;
-    }
-  }
-
-  // Get allow-listed environment variables
-  public async getEnvVars(): Promise<Record<string, string | undefined>> {
-    const envVars = await this.ipcRenderer.invoke("get-env-vars");
-    return envVars as Record<string, string | undefined>;
-  }
-
-  // List all versions (commits) of an app
-  public async listVersions({ appId }: { appId: number }): Promise<Version[]> {
-    try {
-      const versions = await this.ipcRenderer.invoke("list-versions", {
-        appId,
-      });
-      return versions;
-    } catch (error) {
-      showError(error);
-      throw error;
-    }
-  }
-
-  // Revert to a specific version
-  public async revertVersion(
-    params: RevertVersionParams,
-  ): Promise<RevertVersionResponse> {
-    return this.ipcRenderer.invoke("revert-version", params);
-  }
-
-  // Checkout a specific version without creating a revert commit
-  public async checkoutVersion({
-    appId,
-    versionId,
-  }: {
-    appId: number;
-    versionId: string;
-  }): Promise<void> {
-    await this.ipcRenderer.invoke("checkout-version", {
-      appId,
-      versionId,
-    });
-  }
-
-  // Get the current branch of an app
-  public async getCurrentBranch(appId: number): Promise<BranchResult> {
-    return this.ipcRenderer.invoke("get-current-branch", {
-      appId,
-    });
-  }
-
-  // Get user settings
-  public async getUserSettings(): Promise<UserSettings> {
-    const settings = await this.ipcRenderer.invoke("get-user-settings");
-    return settings;
-  }
-
-  // Update user settings
-  public async setUserSettings(
-    settings: Partial<UserSettings>,
-  ): Promise<UserSettings> {
-    try {
-      const updatedSettings = await this.ipcRenderer.invoke(
-        "set-user-settings",
-        settings,
-      );
-      return updatedSettings;
-    } catch (error) {
-      showError(error);
-      throw error;
-    }
-  }
-
-  // Delete an app and all its files
-  public async deleteApp(appId: number): Promise<void> {
-    await this.ipcRenderer.invoke("delete-app", { appId });
-  }
-
-  // Rename an app (update name and path)
-  public async renameApp({
-    appId,
-    appName,
-    appPath,
-  }: {
-    appId: number;
-    appName: string;
-    appPath: string;
-  }): Promise<void> {
-    await this.ipcRenderer.invoke("rename-app", {
-      appId,
-      appName,
-      appPath,
-    });
-  }
-
-  public async copyApp(params: CopyAppParams): Promise<{ app: App }> {
-    return this.ipcRenderer.invoke("copy-app", params);
-  }
-
-  // Reset all - removes all app files, settings, and drops the database
-  public async resetAll(): Promise<void> {
-    await this.ipcRenderer.invoke("reset-all");
-  }
-
-  public async addDependency({
-    chatId,
-    packages,
-  }: {
-    chatId: number;
-    packages: string[];
-  }): Promise<void> {
-    await this.ipcRenderer.invoke("chat:add-dep", {
-      chatId,
-      packages,
-    });
-  }
-
-  // Check Node.js and npm status
-  public async getNodejsStatus(): Promise<NodeSystemInfo> {
-    return this.ipcRenderer.invoke("nodejs-status");
-  }
-
-  // --- GitHub Device Flow ---
-  public startGithubDeviceFlow(appId: number | null): void {
-    this.ipcRenderer.invoke("github:start-flow", { appId });
-  }
-
-  public onGithubDeviceFlowUpdate(
-    callback: (data: GitHubDeviceFlowUpdateData) => void,
-  ): () => void {
-    const listener = (data: any) => {
-      console.log("github:flow-update", data);
-      callback(data as GitHubDeviceFlowUpdateData);
-    };
-    this.ipcRenderer.on("github:flow-update", listener);
-    // Return a function to remove the listener
-    return () => {
-      this.ipcRenderer.removeListener("github:flow-update", listener);
-    };
-  }
-
-  public onGithubDeviceFlowSuccess(
-    callback: (data: GitHubDeviceFlowSuccessData) => void,
-  ): () => void {
-    const listener = (data: any) => {
-      console.log("github:flow-success", data);
-      callback(data as GitHubDeviceFlowSuccessData);
-    };
-    this.ipcRenderer.on("github:flow-success", listener);
-    return () => {
-      this.ipcRenderer.removeListener("github:flow-success", listener);
-    };
-  }
-
-  public onGithubDeviceFlowError(
-    callback: (data: GitHubDeviceFlowErrorData) => void,
-  ): () => void {
-    const listener = (data: any) => {
-      console.log("github:flow-error", data);
-      callback(data as GitHubDeviceFlowErrorData);
-    };
-    this.ipcRenderer.on("github:flow-error", listener);
-    return () => {
-      this.ipcRenderer.removeListener("github:flow-error", listener);
-    };
-  }
-  // --- End GitHub Device Flow ---
-
-  // --- GitHub Repo Management ---
-  public async listGithubRepos(): Promise<
-    { name: string; full_name: string; private: boolean }[]
-  > {
-    return this.ipcRenderer.invoke("github:list-repos");
-  }
-
-  public async getGithubRepoBranches(
-    owner: string,
-    repo: string,
-  ): Promise<{ name: string; commit: { sha: string } }[]> {
-    return this.ipcRenderer.invoke("github:get-repo-branches", {
-      owner,
-      repo,
-    });
-  }
-
-  public async connectToExistingGithubRepo(
-    owner: string,
-    repo: string,
-    branch: string,
-    appId: number,
-  ): Promise<void> {
-    await this.ipcRenderer.invoke("github:connect-existing-repo", {
-      owner,
-      repo,
-      branch,
-      appId,
-    });
-  }
-
-  public async checkGithubRepoAvailable(
-    org: string,
-    repo: string,
-  ): Promise<{ available: boolean; error?: string }> {
-    return this.ipcRenderer.invoke("github:is-repo-available", {
-      org,
-      repo,
-    });
-  }
-
-  public async createGithubRepo(
-    org: string,
-    repo: string,
-    appId: number,
-    branch?: string,
-  ): Promise<void> {
-    await this.ipcRenderer.invoke("github:create-repo", {
-      org,
-      repo,
-      appId,
-      branch,
-    });
-  }
-
-  // Sync (push) local repo to GitHub
-  public async syncGithubRepo(
-    appId: number,
-    options: GithubSyncOptions = {},
-  ): Promise<void> {
-    const { force, forceWithLease } = options;
-    await this.ipcRenderer.invoke("github:push", {
-      appId,
-      force,
-      forceWithLease,
-    });
-  }
-
-  public async abortGithubRebase(appId: number): Promise<void> {
-    await this.ipcRenderer.invoke("github:rebase-abort", {
-      appId,
-    });
-  }
-
-  public async abortGithubMerge(appId: number): Promise<void> {
-    await this.ipcRenderer.invoke("github:merge-abort", {
-      appId,
-    } satisfies GitBranchAppIdParams);
-  }
-
-  public async continueGithubRebase(appId: number): Promise<void> {
-    await this.ipcRenderer.invoke("github:rebase-continue", {
-      appId,
-    });
-  }
-
-  public async rebaseGithubRepo(appId: number): Promise<void> {
-    await this.ipcRenderer.invoke("github:rebase", { appId });
-  }
-
-  public async disconnectGithubRepo(appId: number): Promise<void> {
-    await this.ipcRenderer.invoke("github:disconnect", {
-      appId,
-    });
-  }
-
-  public async fetchGithubRepo(appId: number): Promise<void> {
-    await this.ipcRenderer.invoke("github:fetch", {
-      appId,
-    } satisfies GitBranchAppIdParams);
-  }
-
-  public async createGithubBranch(
-    appId: number,
-    branch: string,
-    from?: string,
-  ): Promise<void> {
-    await this.ipcRenderer.invoke("github:create-branch", {
-      appId,
-      branch,
-      from,
-    } satisfies CreateGitBranchParams);
-  }
-
-  public async deleteGithubBranch(
-    appId: number,
-    branch: string,
-  ): Promise<void> {
-    await this.ipcRenderer.invoke("github:delete-branch", {
-      appId,
-      branch,
-    } satisfies GitBranchParams);
-  }
-
-  public async switchGithubBranch(
-    appId: number,
-    branch: string,
-  ): Promise<void> {
-    await this.ipcRenderer.invoke("github:switch-branch", {
-      appId,
-      branch,
-    } satisfies GitBranchParams);
-  }
-
-  public async renameGithubBranch(
-    appId: number,
-    oldBranch: string,
-    newBranch: string,
-  ): Promise<void> {
-    await this.ipcRenderer.invoke("github:rename-branch", {
-      appId,
-      oldBranch,
-      newBranch,
-    } satisfies RenameGitBranchParams);
-  }
-
-  public async mergeGithubBranch(appId: number, branch: string): Promise<void> {
-    await this.ipcRenderer.invoke("github:merge-branch", {
-      appId,
-      branch,
-    } satisfies GitBranchParams);
-  }
-
-  public async getGithubMergeConflicts(appId: number): Promise<string[]> {
-    return this.ipcRenderer.invoke("github:get-conflicts", { appId });
-  }
-
-  public async listLocalGithubBranches(
-    appId: number,
-  ): Promise<{ branches: string[]; current: string | null }> {
-    return this.ipcRenderer.invoke("github:list-local-branches", {
-      appId,
-    } satisfies GitBranchAppIdParams);
-  }
-
-  public async listRemoteGithubBranches(
-    appId: number,
-    remote = "origin",
-  ): Promise<string[]> {
-    return this.ipcRenderer.invoke("github:list-remote-branches", {
-      appId,
-      remote,
-    } satisfies ListRemoteGitBranchesParams);
-  }
-
-  public async getGithubState(appId: number): Promise<{
-    mergeInProgress: boolean;
-    rebaseInProgress: boolean;
-  }> {
-    return this.ipcRenderer.invoke("github:get-git-state", { appId });
-  }
-
-  public async getUncommittedFiles(appId: number): Promise<UncommittedFile[]> {
-    return this.ipcRenderer.invoke("git:get-uncommitted-files", {
-      appId,
-    } satisfies GitBranchAppIdParams);
-  }
-
-  public async commitChanges(params: CommitChangesParams): Promise<string> {
-    return this.ipcRenderer.invoke("git:commit-changes", params);
-  }
-
-  public async listCollaborators(
-    appId: number,
-  ): Promise<{ login: string; avatar_url: string; permissions: any }[]> {
-    return this.ipcRenderer.invoke("github:list-collaborators", { appId });
-  }
-
-  public async inviteCollaborator(
-    appId: number,
-    username: string,
-  ): Promise<void> {
-    await this.ipcRenderer.invoke("github:invite-collaborator", {
-      appId,
-      username,
-    });
-  }
-
-  public async removeCollaborator(
-    appId: number,
-    username: string,
-  ): Promise<void> {
-    await this.ipcRenderer.invoke("github:remove-collaborator", {
-      appId,
-      username,
-    });
-  }
-
-  // --- End GitHub Repo Management ---
-
-  // --- Vercel Token Management ---
-  public async saveVercelAccessToken(
-    params: SaveVercelAccessTokenParams,
-  ): Promise<void> {
-    await this.ipcRenderer.invoke("vercel:save-token", params);
-  }
-  // --- End Vercel Token Management ---
-
-  // --- Vercel Project Management ---
-  public async listVercelProjects(): Promise<VercelProject[]> {
-    return this.ipcRenderer.invoke("vercel:list-projects", undefined);
-  }
-
-  public async connectToExistingVercelProject(
-    params: ConnectToExistingVercelProjectParams,
-  ): Promise<void> {
-    await this.ipcRenderer.invoke("vercel:connect-existing-project", params);
-  }
-
-  public async isVercelProjectAvailable(
-    params: IsVercelProjectAvailableParams,
-  ): Promise<IsVercelProjectAvailableResponse> {
-    return this.ipcRenderer.invoke("vercel:is-project-available", params);
-  }
-
-  public async createVercelProject(
-    params: CreateVercelProjectParams,
-  ): Promise<void> {
-    await this.ipcRenderer.invoke("vercel:create-project", params);
-  }
-
-  // Get Vercel Deployments
-  public async getVercelDeployments(
-    params: GetVercelDeploymentsParams,
-  ): Promise<VercelDeployment[]> {
-    return this.ipcRenderer.invoke("vercel:get-deployments", params);
-  }
-
-  public async disconnectVercelProject(
-    params: DisconnectVercelProjectParams,
-  ): Promise<void> {
-    await this.ipcRenderer.invoke("vercel:disconnect", params);
-  }
-  // --- End Vercel Project Management ---
-
-  // Get the main app version
-  public async getAppVersion(): Promise<string> {
-    const result = await this.ipcRenderer.invoke("get-app-version");
-    return result.version as string;
-  }
-
-  /**
-   * Subscribe to be notified when any chat stream starts.
-   * Useful for global cleanup tasks tied to stream lifecycle.
-   * @returns Unsubscribe function
-   */
-  public onChatStreamStart(handler: (chatId: number) => void): () => void {
-    this.globalChatStreamStartHandlers.add(handler);
-    return () => {
-      this.globalChatStreamStartHandlers.delete(handler);
-    };
-  }
-
-  /**
-   * Subscribe to be notified when any chat stream ends (either successfully or with an error).
-   * Useful for global cleanup tasks tied to stream lifecycle.
-   * @returns Unsubscribe function
-   */
-  public onChatStreamEnd(handler: (chatId: number) => void): () => void {
-    this.globalChatStreamEndHandlers.add(handler);
-    return () => {
-      this.globalChatStreamEndHandlers.delete(handler);
-    };
-  }
-
-  /**
-   * Subscribe to telemetry events from the main process.
-   * Used to forward events to PostHog in the renderer.
-   * @returns Unsubscribe function
-   */
-  public onTelemetryEvent(
-    handler: (payload: TelemetryEventPayload) => void,
-  ): () => void {
-    this.telemetryEventHandlers.add(handler);
-    return () => {
-      this.telemetryEventHandlers.delete(handler);
-    };
-  }
-
-  // Get proposal details
-  public async getProposal(chatId: number): Promise<ProposalResult | null> {
-    try {
-      const data = await this.ipcRenderer.invoke("get-proposal", { chatId });
-      // Assuming the main process returns data matching the ProposalResult interface
-      // Add a type check/guard if necessary for robustness
-      return data as ProposalResult | null;
-    } catch (error) {
-      showError(error);
-      throw error;
-    }
-  }
-
-  // Example methods for listening to events (if needed)
-  // public on(channel: string, func: (...args: any[]) => void): void {
-
-  // --- Proposal Management ---
-  public async approveProposal({
-    chatId,
-    messageId,
-  }: {
-    chatId: number;
-    messageId: number;
-  }): Promise<ApproveProposalResult> {
-    return this.ipcRenderer.invoke("approve-proposal", {
-      chatId,
-      messageId,
-    });
-  }
-
-  public async rejectProposal({
-    chatId,
-    messageId,
-  }: {
-    chatId: number;
-    messageId: number;
-  }): Promise<void> {
-    await this.ipcRenderer.invoke("reject-proposal", {
-      chatId,
-      messageId,
-    });
-  }
-  // --- End Proposal Management ---
-
-  // --- Supabase Management ---
-
-  // List all connected Supabase organizations
-  public async listSupabaseOrganizations(): Promise<
-    SupabaseOrganizationInfo[]
-  > {
-    return this.ipcRenderer.invoke("supabase:list-organizations");
-  }
-
-  // Delete a Supabase organization connection
-  public async deleteSupabaseOrganization(
-    params: DeleteSupabaseOrganizationParams,
-  ): Promise<void> {
-    await this.ipcRenderer.invoke("supabase:delete-organization", params);
-  }
-
-  // List all projects from all connected organizations
-  public async listAllSupabaseProjects(): Promise<SupabaseProject[]> {
-    return this.ipcRenderer.invoke("supabase:list-all-projects");
-  }
-
-  public async listSupabaseBranches(params: {
-    projectId: string;
-    organizationSlug: string | null;
-  }): Promise<SupabaseBranch[]> {
-    return this.ipcRenderer.invoke("supabase:list-branches", params);
-  }
-
-  public async getSupabaseEdgeLogs(params: {
-    projectId: string;
-    timestampStart?: number;
-    appId: number;
-    organizationSlug: string | null;
-  }): Promise<Array<ConsoleEntry>> {
-    return this.ipcRenderer.invoke("supabase:get-edge-logs", params);
-  }
-
-  public async setSupabaseAppProject(
-    params: SetSupabaseAppProjectParams,
-  ): Promise<void> {
-    await this.ipcRenderer.invoke("supabase:set-app-project", params);
-  }
-
-  public async unsetSupabaseAppProject(app: number): Promise<void> {
-    await this.ipcRenderer.invoke("supabase:unset-app-project", {
-      app,
-    });
-  }
-
-  public async fakeHandleSupabaseConnect(params: {
-    appId: number;
-    fakeProjectId: string;
-  }): Promise<void> {
-    await this.ipcRenderer.invoke(
-      "supabase:fake-connect-and-set-project",
-      params,
-    );
-  }
-
-  // --- End Supabase Management ---
-
-  // --- Neon Management ---
-  public async fakeHandleNeonConnect(): Promise<void> {
-    await this.ipcRenderer.invoke("neon:fake-connect");
-  }
-
-  public async createNeonProject(
-    params: CreateNeonProjectParams,
-  ): Promise<NeonProject> {
-    return this.ipcRenderer.invoke("neon:create-project", params);
-  }
-
-  public async getNeonProject(
-    params: GetNeonProjectParams,
-  ): Promise<GetNeonProjectResponse> {
-    return this.ipcRenderer.invoke("neon:get-project", params);
-  }
-
-  // --- End Neon Management ---
-
-  // --- Portal Management ---
-  public async portalMigrateCreate(params: {
-    appId: number;
-  }): Promise<{ output: string }> {
-    return this.ipcRenderer.invoke("portal:migrate-create", params);
-  }
-
-  // --- End Portal Management ---
-
-  public async getSystemDebugInfo(): Promise<SystemDebugInfo> {
-    return this.ipcRenderer.invoke("get-system-debug-info");
-  }
-
-  public async getChatLogs(chatId: number): Promise<ChatLogsData> {
-    return this.ipcRenderer.invoke("get-chat-logs", chatId);
-  }
-
-  public async uploadToSignedUrl(
-    url: string,
-    contentType: string,
-    data: any,
-  ): Promise<void> {
-    await this.ipcRenderer.invoke("upload-to-signed-url", {
-      url,
-      contentType,
-      data,
-    });
-  }
-
-  public async listLocalOllamaModels(): Promise<LocalModel[]> {
-    const response = await this.ipcRenderer.invoke("local-models:list-ollama");
-    return response?.models || [];
-  }
-
-  public async listLocalLMStudioModels(): Promise<LocalModel[]> {
-    const response = await this.ipcRenderer.invoke(
-      "local-models:list-lmstudio",
-    );
-    return response?.models || [];
-  }
-
-  // Count tokens for a chat and input
-  public async countTokens(
-    params: TokenCountParams,
-  ): Promise<TokenCountResult> {
-    try {
-      const result = await this.ipcRenderer.invoke("chat:count-tokens", params);
-      return result as TokenCountResult;
-    } catch (error) {
-      showError(error);
-      throw error;
-    }
-  }
-
-  public async getLanguageModelProviders(): Promise<LanguageModelProvider[]> {
-    return this.ipcRenderer.invoke("get-language-model-providers");
-  }
-
-  public async getLanguageModels(params: {
-    providerId: string;
-  }): Promise<LanguageModel[]> {
-    return this.ipcRenderer.invoke("get-language-models", params);
-  }
-
-  public async getLanguageModelsByProviders(): Promise<
-    Record<string, LanguageModel[]>
-  > {
-    return this.ipcRenderer.invoke("get-language-models-by-providers");
-  }
-
-  public async createCustomLanguageModelProvider({
-    id,
-    name,
-    apiBaseUrl,
-    envVarName,
-    trustSelfSigned,
-  }: CreateCustomLanguageModelProviderParams): Promise<LanguageModelProvider> {
-    return this.ipcRenderer.invoke("create-custom-language-model-provider", {
-      id,
-      name,
-      apiBaseUrl,
-      envVarName,
-      trustSelfSigned,
-    });
-  }
-  public async editCustomLanguageModelProvider(
-    params: CreateCustomLanguageModelProviderParams,
-  ): Promise<LanguageModelProvider> {
-    return this.ipcRenderer.invoke(
-      "edit-custom-language-model-provider",
-      params,
-    );
-  }
-
-  public async createCustomLanguageModel(
-    params: CreateCustomLanguageModelParams,
-  ): Promise<void> {
-    await this.ipcRenderer.invoke("create-custom-language-model", params);
-  }
-
-  public async deleteCustomLanguageModel(modelId: string): Promise<void> {
-    return this.ipcRenderer.invoke("delete-custom-language-model", modelId);
-  }
-
-  async deleteCustomModel(params: DeleteCustomModelParams): Promise<void> {
-    return this.ipcRenderer.invoke("delete-custom-model", params);
-  }
-
-  async deleteCustomLanguageModelProvider(providerId: string): Promise<void> {
-    return this.ipcRenderer.invoke("delete-custom-language-model-provider", {
-      providerId,
-    });
-  }
-
-  public async getLatestSecurityReview(
-    appId: number,
-  ): Promise<SecurityReviewResult> {
-    return this.ipcRenderer.invoke("get-latest-security-review", appId);
-  }
-
-  async checkAppName(params: {
-    appName: string;
-    skipCopy?: boolean;
-  }): Promise<{ exists: boolean }> {
-    return this.ipcRenderer.invoke("check-app-name", params);
-  }
-
-  public async renameBranch(params: RenameBranchParams): Promise<void> {
-    await this.ipcRenderer.invoke("rename-branch", params);
-  }
-
-  async clearSessionData(): Promise<void> {
-    return this.ipcRenderer.invoke("clear-session-data");
-  }
-
-  // Method to get user budget information
-  public async getUserBudget(): Promise<UserBudgetInfo | null> {
-    return this.ipcRenderer.invoke("get-user-budget");
-  }
-
-  public async getChatContextResults(params: {
-    appId: number;
-  }): Promise<ContextPathResults> {
-    return this.ipcRenderer.invoke("get-context-paths", params);
-  }
-
-  public async setChatContext(params: {
-    appId: number;
-    chatContext: AppChatContext;
-  }): Promise<void> {
-    await this.ipcRenderer.invoke("set-context-paths", params);
-  }
-
-  public async getAppUpgrades(params: {
-    appId: number;
-  }): Promise<AppUpgrade[]> {
-    return this.ipcRenderer.invoke("get-app-upgrades", params);
-  }
-
-  public async executeAppUpgrade(params: {
-    appId: number;
-    upgradeId: string;
-  }): Promise<void> {
-    return this.ipcRenderer.invoke("execute-app-upgrade", params);
-  }
-
-  // Capacitor methods
-  public async isCapacitor(params: { appId: number }): Promise<boolean> {
-    return this.ipcRenderer.invoke("is-capacitor", params);
-  }
-
-  public async syncCapacitor(params: { appId: number }): Promise<void> {
-    return this.ipcRenderer.invoke("sync-capacitor", params);
-  }
-
-  public async openIos(params: { appId: number }): Promise<void> {
-    return this.ipcRenderer.invoke("open-ios", params);
-  }
-
-  public async openAndroid(params: { appId: number }): Promise<void> {
-    return this.ipcRenderer.invoke("open-android", params);
-  }
-
-  public async checkProblems(params: {
-    appId: number;
-  }): Promise<ProblemReport> {
-    return this.ipcRenderer.invoke("check-problems", params);
-  }
-
-  // Template methods
-  public async getTemplates(): Promise<Template[]> {
-    return this.ipcRenderer.invoke("get-templates");
-  }
-
-  // --- Themes ---
-  public async getThemes(): Promise<Theme[]> {
-    return this.ipcRenderer.invoke("get-themes");
-  }
-
-  public async setAppTheme(params: SetAppThemeParams): Promise<void> {
-    await this.ipcRenderer.invoke("set-app-theme", params);
-  }
-
-  public async getAppTheme(params: GetAppThemeParams): Promise<string | null> {
-    return this.ipcRenderer.invoke("get-app-theme", params);
-  }
-
-  // --- Prompts Library ---
-  public async listPrompts(): Promise<PromptDto[]> {
-    return this.ipcRenderer.invoke("prompts:list");
-  }
-
-  public async createPrompt(params: CreatePromptParamsDto): Promise<PromptDto> {
-    return this.ipcRenderer.invoke("prompts:create", params);
-  }
-
-  public async updatePrompt(params: UpdatePromptParamsDto): Promise<void> {
-    await this.ipcRenderer.invoke("prompts:update", params);
-  }
-
-  public async deletePrompt(id: number): Promise<void> {
-    await this.ipcRenderer.invoke("prompts:delete", id);
-  }
-  public async cloneRepoFromUrl(
-    params: CloneRepoParams,
-  ): Promise<{ app: App; hasAiRules: boolean } | { error: string }> {
-    return this.ipcRenderer.invoke("github:clone-repo-from-url", params);
-  }
-
-  // --- Help bot ---
-  public startHelpChat(
-    sessionId: string,
-    message: string,
-    options: {
-      onChunk: (delta: string) => void;
-      onEnd: () => void;
-      onError: (error: string) => void;
-    },
-  ): void {
-    this.helpStreams.set(sessionId, options);
-    this.ipcRenderer
-      .invoke("help:chat:start", { sessionId, message })
-      .catch((err) => {
-        this.helpStreams.delete(sessionId);
-        showError(err);
-        options.onError(String(err));
-      });
-  }
-
-  public cancelHelpChat(sessionId: string): void {
-    this.ipcRenderer.invoke("help:chat:cancel", sessionId).catch(() => {});
-  }
-
-  // --- Visual Editing ---
-  public async applyVisualEditingChanges(
-    changes: ApplyVisualEditingChangesParams,
-  ): Promise<void> {
-    await this.ipcRenderer.invoke("apply-visual-editing-changes", changes);
-  }
-
-  public async analyzeComponent(
-    params: AnalyseComponentParams,
-  ): Promise<{ isDynamic: boolean; hasStaticText: boolean }> {
-    return this.ipcRenderer.invoke("analyze-component", params);
-  }
-
-  // --- Console Logs ---
-  public addLog(entry: ConsoleEntry): void {
-    // Fire and forget - send log to central store
-    this.ipcRenderer.invoke("add-log", entry).catch((err) => {
-      console.error("Failed to add log to central store:", err);
-    });
-  }
-
-  public async clearLogs(appId: number): Promise<void> {
-    await this.ipcRenderer.invoke("clear-logs", { appId });
   }
 }

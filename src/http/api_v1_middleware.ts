@@ -1,7 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { isMultitenantEnforced } from "./feature_flags";
-import { isHttpError } from "./http_errors";
-import { resolveRequestContext } from "./request_context";
+import { isHttpError } from "/src/http/http_errors.ts";
+import { resolveRequestContext } from "/src/http/request_context.ts";
 
 type Next = (error?: unknown) => void;
 type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
@@ -583,6 +582,42 @@ const SCOPED_ROUTES: RouteDefinition[] = [
   },
   {
     method: "GET",
+    pattern: /^\/api\/v1\/settings\/user$/,
+    build: () => ({
+      channel: "get-user-settings",
+      args: [],
+      requiresAuth: true,
+    }),
+  },
+  {
+    method: "PATCH",
+    pattern: /^\/api\/v1\/settings\/user$/,
+    build: (_url, _match, body) => ({
+      channel: "set-user-settings",
+      args: [body],
+      requiresAuth: true,
+    }),
+  },
+  {
+    method: "GET",
+    pattern: /^\/api\/v1\/env-vars$/,
+    build: () => ({
+      channel: "get-env-vars",
+      args: [],
+      requiresAuth: true,
+    }),
+  },
+  {
+    method: "GET",
+    pattern: /^\/api\/v1\/language-model\/providers$/,
+    build: () => ({
+      channel: "get-language-model-providers",
+      args: [],
+      requiresAuth: true,
+    }),
+  },
+  {
+    method: "GET",
     pattern: /^\/api\/v1\/auth\/oauth\/config$/,
     build: () => ({
       channel: "get-oauth2-config",
@@ -610,247 +645,6 @@ const SCOPED_ROUTES: RouteDefinition[] = [
   },
 ];
 
-const LEGACY_ROUTES: RouteDefinition[] = [
-  {
-    method: "GET",
-    pattern: /^\/api\/v1\/user\/settings$/,
-    build: () => ({
-      channel: "get-user-settings",
-      args: [],
-      requiresAuth: true,
-    }),
-  },
-  {
-    method: "PATCH",
-    pattern: /^\/api\/v1\/user\/settings$/,
-    build: (_url, _match, body) => ({
-      channel: "set-user-settings",
-      args: [body],
-      requiresAuth: true,
-    }),
-  },
-  {
-    method: "GET",
-    pattern: /^\/api\/v1\/apps$/,
-    build: () => ({
-      channel: "list-apps",
-      args: [],
-      tenantPath: { orgId: "me", workspaceId: "me" },
-      requiresAuth: true,
-    }),
-  },
-  {
-    method: "POST",
-    pattern: /^\/api\/v1\/apps$/,
-    build: (_url, _match, body) => ({
-      channel: "create-app",
-      args: [body],
-      tenantPath: { orgId: "me", workspaceId: "me" },
-      requiresAuth: true,
-    }),
-  },
-  {
-    method: "GET",
-    pattern: /^\/api\/v1\/apps:search$/,
-    build: (url) => ({
-      channel: "search-app",
-      args: [url.searchParams.get("q") ?? ""],
-      tenantPath: { orgId: "me", workspaceId: "me" },
-      requiresAuth: true,
-    }),
-  },
-  {
-    method: "GET",
-    pattern: /^\/api\/v1\/apps\/(\d+)$/,
-    build: (_url, match) => {
-      const appId = parseNumber(match[1]);
-      if (appId == null) {
-        return null;
-      }
-      return {
-        channel: "get-app",
-        args: [appId],
-        tenantPath: { orgId: "me", workspaceId: "me" },
-        requiresAuth: true,
-      };
-    },
-  },
-  {
-    method: "POST",
-    pattern: /^\/api\/v1\/apps\/(\d+)\/favorite\/toggle$/,
-    build: (_url, match) => {
-      const appId = parseNumber(match[1]);
-      if (appId == null) {
-        return null;
-      }
-      return {
-        channel: "add-to-favorite",
-        args: [{ appId }],
-        tenantPath: { orgId: "me", workspaceId: "me" },
-        requiresAuth: true,
-      };
-    },
-  },
-  {
-    method: "GET",
-    pattern: /^\/api\/v1\/apps\/(\d+)\/versions$/,
-    build: (_url, match) => {
-      const appId = parseNumber(match[1]);
-      if (appId == null) {
-        return null;
-      }
-      return {
-        channel: "list-versions",
-        args: [{ appId }],
-        tenantPath: { orgId: "me", workspaceId: "me" },
-        requiresAuth: true,
-      };
-    },
-  },
-  {
-    method: "POST",
-    pattern: /^\/api\/v1\/apps\/(\d+)\/versions\/checkout$/,
-    build: (_url, match, body) => {
-      const appId = parseNumber(match[1]);
-      if (appId == null) {
-        return null;
-      }
-      const payload =
-        body && typeof body === "object"
-          ? (body as Record<string, unknown>)
-          : {};
-      return {
-        channel: "checkout-version",
-        args: [{ appId, ...payload }],
-        tenantPath: { orgId: "me", workspaceId: "me" },
-        requiresAuth: true,
-      };
-    },
-  },
-  {
-    method: "GET",
-    pattern: /^\/api\/v1\/apps\/(\d+)\/branch$/,
-    build: (_url, match) => {
-      const appId = parseNumber(match[1]);
-      if (appId == null) {
-        return null;
-      }
-      return {
-        channel: "get-current-branch",
-        args: [{ appId }],
-        tenantPath: { orgId: "me", workspaceId: "me" },
-        requiresAuth: true,
-      };
-    },
-  },
-  {
-    method: "POST",
-    pattern: /^\/api\/v1\/apps\/(\d+)\/versions\/revert$/,
-    build: (_url, match, body) => {
-      const appId = parseNumber(match[1]);
-      if (appId == null) {
-        return null;
-      }
-      const payload =
-        body && typeof body === "object"
-          ? (body as Record<string, unknown>)
-          : {};
-      return {
-        channel: "revert-version",
-        args: [{ appId, ...payload }],
-        tenantPath: { orgId: "me", workspaceId: "me" },
-        requiresAuth: true,
-      };
-    },
-  },
-  {
-    method: "GET",
-    pattern: /^\/api\/v1\/chats$/,
-    build: () => ({
-      channel: "get-chats",
-      args: [],
-      tenantPath: { orgId: "me", workspaceId: "me" },
-      requiresAuth: true,
-    }),
-  },
-  {
-    method: "GET",
-    pattern: /^\/api\/v1\/apps\/(\d+)\/chats$/,
-    build: (_url, match) => {
-      const appId = parseNumber(match[1]);
-      if (appId == null) {
-        return null;
-      }
-      return {
-        channel: "get-chats",
-        args: [appId],
-        tenantPath: { orgId: "me", workspaceId: "me" },
-        requiresAuth: true,
-      };
-    },
-  },
-  {
-    method: "POST",
-    pattern: /^\/api\/v1\/apps\/(\d+)\/chats$/,
-    build: (_url, match) => {
-      const appId = parseNumber(match[1]);
-      if (appId == null) {
-        return null;
-      }
-      return {
-        channel: "create-chat",
-        args: [appId],
-        tenantPath: { orgId: "me", workspaceId: "me" },
-        requiresAuth: true,
-      };
-    },
-  },
-  {
-    method: "GET",
-    pattern: /^\/api\/v1\/chats\/(\d+)$/,
-    build: (_url, match) => {
-      const chatId = parseNumber(match[1]);
-      if (chatId == null) {
-        return null;
-      }
-      return {
-        channel: "get-chat",
-        args: [chatId],
-        tenantPath: { orgId: "me", workspaceId: "me" },
-        requiresAuth: true,
-      };
-    },
-  },
-  {
-    method: "GET",
-    pattern: /^\/api\/v1\/env-vars$/,
-    build: () => ({
-      channel: "get-env-vars",
-      args: [],
-      tenantPath: { orgId: "me", workspaceId: "me" },
-      requiresAuth: true,
-    }),
-  },
-  {
-    method: "GET",
-    pattern: /^\/api\/v1\/language-model\/providers$/,
-    build: () => ({
-      channel: "get-language-model-providers",
-      args: [],
-      tenantPath: { orgId: "me", workspaceId: "me" },
-      requiresAuth: true,
-    }),
-  },
-];
-
-const LEGACY_CHANNELS_ALLOWED_IN_ENFORCE = new Set([
-  "get-user-settings",
-  "set-user-settings",
-  "get-app-version",
-  "get-env-vars",
-  "get-language-model-providers",
-]);
-
 function findRoute(
   routes: RouteDefinition[],
   method: HttpMethod,
@@ -876,14 +670,7 @@ export function createApiV1Middleware(
     const requestUrl = new URL(req.url || "/", "http://localhost");
     const pathName = requestUrl.pathname;
 
-    const scopedRoute = findRoute(SCOPED_ROUTES, method, pathName);
-    let route: RouteDefinition | null = scopedRoute;
-    let isLegacyRoute = false;
-
-    if (!route) {
-      route = findRoute(LEGACY_ROUTES, method, pathName);
-      isLegacyRoute = Boolean(route);
-    }
+    const route = findRoute(SCOPED_ROUTES, method, pathName);
 
     if (!route) {
       next();
@@ -901,18 +688,6 @@ export function createApiV1Middleware(
       const target = route.build(requestUrl, match, body);
       if (!target) {
         writeJson(res, 400, { error: "Invalid route parameters" });
-        return;
-      }
-
-      if (
-        isLegacyRoute &&
-        isMultitenantEnforced() &&
-        !LEGACY_CHANNELS_ALLOWED_IN_ENFORCE.has(target.channel)
-      ) {
-        writeJson(res, 410, {
-          error:
-            "Legacy unscoped endpoint is disabled in MULTITENANT_MODE=enforce",
-        });
         return;
       }
 

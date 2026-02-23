@@ -1,21 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
-import { getUserDataPath } from "../paths/paths";
+import { getUserDataPath } from "/src/paths/paths.ts";
 import {
   UserSettingsSchema,
   type UserSettings,
   type ChatMode,
   Secret,
   VertexProviderSetting,
-} from "../lib/schemas";
-import electron from "electron";
+} from "/src/lib/schemas.ts";
 import { v4 as uuidv4 } from "uuid";
-import log from "electron-log";
-import { DEFAULT_TEMPLATE_ID } from "../shared/templates";
-import { DEFAULT_THEME_ID } from "../shared/themes";
-import { IS_TEST_BUILD } from "../ipc/utils/test_utils";
-
-const { safeStorage } = electron;
+import { log } from "/src/lib/logger.ts";
+import { DEFAULT_TEMPLATE_ID } from "/src/shared/templates.ts";
+import { DEFAULT_THEME_ID } from "/src/shared/themes.ts";
 
 const logger = log.scope("settings");
 
@@ -265,12 +261,6 @@ export function writeSettings(settings: Partial<UserSettings>): void {
 }
 
 export function encrypt(data: string): Secret {
-  if (safeStorage.isEncryptionAvailable() && !IS_TEST_BUILD) {
-    return {
-      value: safeStorage.encryptString(data).toString("base64"),
-      encryptionType: "electron-safe-storage",
-    };
-  }
   return {
     value: data,
     encryptionType: "plaintext",
@@ -278,8 +268,5 @@ export function encrypt(data: string): Secret {
 }
 
 export function decrypt(data: Secret): string {
-  if (data.encryptionType === "electron-safe-storage") {
-    return safeStorage.decryptString(Buffer.from(data.value, "base64"));
-  }
   return data.value;
 }

@@ -1,4 +1,4 @@
-import log from "electron-log";
+import { log } from "/src/lib/logger.ts";
 
 const logger = log.scope("file_uploads_state");
 

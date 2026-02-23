@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import { and, asc, eq, isNull, or } from "drizzle-orm";
-import { db, initializeDatabase } from "../db";
+import { db, initializeDatabase } from "/src/db/index.ts";
 import {
   apps,
   chats,
@@ -20,10 +20,10 @@ import {
   versions,
   workspaceMemberships,
   workspaces,
-} from "../db/schema";
-import { isDevBypassEnabled } from "./feature_flags";
-import { HttpError } from "./http_errors";
-import { validateAndDecodeJwt } from "./jwt_utils";
+} from "/src/db/schema.ts";
+import { isDevBypassEnabled } from "/src/http/feature_flags.ts";
+import { HttpError } from "/src/http/http_errors.ts";
+import { validateAndDecodeJwt } from "/src/http/jwt_utils.ts";
 
 type MembershipRole = (typeof membershipRoleEnum.enumValues)[number];
 

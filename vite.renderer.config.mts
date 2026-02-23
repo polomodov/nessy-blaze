@@ -17,7 +17,9 @@ function ipcHttpGatewayPlugin(): Plugin {
       let ipcGatewayModule;
 
       try {
-        chatStreamModule = await import("./src/http/chat_stream_middleware");
+        chatStreamModule = await server.ssrLoadModule(
+          path.resolve(__dirname, "src/http/chat_stream_middleware.ts"),
+        );
       } catch (error) {
         console.error(
           "[blaze-ipc-http-gateway] failed importing chat_stream_middleware",
@@ -26,7 +28,9 @@ function ipcHttpGatewayPlugin(): Plugin {
         throw error;
       }
       try {
-        chatWsServerModule = await import("./src/http/chat_ws_server");
+        chatWsServerModule = await server.ssrLoadModule(
+          path.resolve(__dirname, "src/http/chat_ws_server.ts"),
+        );
       } catch (error) {
         console.error(
           "[blaze-ipc-http-gateway] failed importing chat_ws_server",
@@ -35,7 +39,9 @@ function ipcHttpGatewayPlugin(): Plugin {
         throw error;
       }
       try {
-        apiV1Module = await import("./src/http/api_v1_middleware");
+        apiV1Module = await server.ssrLoadModule(
+          path.resolve(__dirname, "src/http/api_v1_middleware.ts"),
+        );
       } catch (error) {
         console.error(
           "[blaze-ipc-http-gateway] failed importing api_v1_middleware",
@@ -44,7 +50,9 @@ function ipcHttpGatewayPlugin(): Plugin {
         throw error;
       }
       try {
-        ipcGatewayModule = await import("./src/http/ipc_http_gateway");
+        ipcGatewayModule = await server.ssrLoadModule(
+          path.resolve(__dirname, "src/http/ipc_http_gateway.ts"),
+        );
       } catch (error) {
         console.error(
           "[blaze-ipc-http-gateway] failed importing ipc_http_gateway",
@@ -59,13 +67,20 @@ function ipcHttpGatewayPlugin(): Plugin {
       const { invokeIpcChannelOverHttp } = ipcGatewayModule;
       const chatStreamMiddleware = createChatStreamMiddleware({
         loadChatStreamHandlers: () =>
-          server.ssrLoadModule("/src/ipc/handlers/chat_stream_handlers.ts"),
+          server.ssrLoadModule(
+            path.resolve(__dirname, "src/ipc/handlers/chat_stream_handlers.ts"),
+          ),
       });
       const wsServerHandle = server.httpServer
         ? attachChatWsServer({
             httpServer: server.httpServer,
             loadChatStreamHandlers: () =>
-              server.ssrLoadModule("/src/ipc/handlers/chat_stream_handlers.ts"),
+              server.ssrLoadModule(
+                path.resolve(
+                  __dirname,
+                  "src/ipc/handlers/chat_stream_handlers.ts",
+                ),
+              ),
           })
         : null;
       const apiMiddleware = createApiV1Middleware(invokeIpcChannelOverHttp);
@@ -93,6 +108,7 @@ export default defineConfig({
     tailwindcss(),
   ],
   resolve: {
+    extensions: [".mjs", ".js", ".mts", ".ts", ".jsx", ".tsx", ".json"],
     alias: [
       {
         find: /^@\//,

@@ -1,9 +1,9 @@
 /* eslint-disable no-irregular-whitespace */
 
-import { parseSearchReplaceBlocks } from "../../../shared/search_replace_parser";
+import { parseSearchReplaceBlocks } from "/src/core/shared/search_replace_parser.ts";
 import { distance } from "fastest-levenshtein";
-import { normalizeString } from "../../../../utils/text_normalization";
-import log from "electron-log";
+import { normalizeString } from "/src/utils/text_normalization.ts";
+import { log } from "/src/lib/logger.ts";
 
 const logger = log.scope("search_replace_processor");
 

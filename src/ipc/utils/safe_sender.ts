@@ -1,9 +1,11 @@
-import log from "electron-log";
+import { log } from "/src/lib/logger.ts";
 import {
   toServerEventSink,
   type EventSenderLike,
   type ServerEventSink,
-} from "./server_event_sink";
+} from "/src/ipc/utils/server_event_sink.ts";
+
+const logger = log.scope("safe_sender");
 
 /**
  * Sends a backend event only if the target transport is still alive.
@@ -21,7 +23,7 @@ export function safeSend(
   try {
     sink.send(channel, ...args);
   } catch (error) {
-    log.debug(
+    logger.debug(
       `safeSend: failed to send on channel "${channel}" because: ${(error as Error).message}`,
     );
   }

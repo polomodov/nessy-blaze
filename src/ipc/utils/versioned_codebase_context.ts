@@ -1,7 +1,7 @@
 import { CodebaseFile, CodebaseFileReference } from "../../utils/codebase";
 import { ModelMessage } from "@ai-sdk/provider-utils";
 import crypto from "node:crypto";
-import log from "electron-log";
+import { log } from "@/lib/logger";
 import {
   getCurrentCommitHash,
   getFileAtCommit,

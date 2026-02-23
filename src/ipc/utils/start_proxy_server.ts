@@ -3,19 +3,26 @@
 import { Worker } from "worker_threads";
 import fs from "node:fs";
 import path from "path";
-import { findAvailablePort } from "./port_utils";
-import log from "electron-log";
+import { fileURLToPath } from "node:url";
+import { findAvailablePort } from "/src/ipc/utils/port_utils.ts";
+import { log } from "/src/lib/logger.ts";
 
 const logger = log.scope("start_proxy_server");
+const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 
 function resolveProxyServerWorkerPath(): string {
   const candidates = [
     // client-server/dev mode
     path.resolve(process.cwd(), "worker", "proxy_server.js"),
-    // electron packaged/build mode (legacy behavior)
-    path.resolve(__dirname, "..", "..", "worker", "proxy_server.js"),
-    // ts/tsx source mode fallback
-    path.resolve(__dirname, "..", "..", "..", "worker", "proxy_server.js"),
+    // Relative to this module (src/ipc/utils -> project root/worker)
+    path.resolve(
+      moduleDirectory,
+      "..",
+      "..",
+      "..",
+      "worker",
+      "proxy_server.js",
+    ),
   ];
 
   for (const candidate of candidates) {

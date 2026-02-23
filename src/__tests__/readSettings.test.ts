@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { safeStorage } from "electron";
 import { readSettings, getSettingsFilePath } from "@/main/settings";
 import { getUserDataPath } from "@/paths/paths";
 import { UserSettings } from "@/lib/schemas";
@@ -9,24 +8,12 @@ import { UserSettings } from "@/lib/schemas";
 // Mock dependencies
 vi.mock("node:fs");
 vi.mock("node:path");
-vi.mock("electron", () => {
-  const safeStorage = {
-    isEncryptionAvailable: vi.fn(),
-    decryptString: vi.fn(),
-  };
-
-  return {
-    default: { safeStorage },
-    safeStorage,
-  };
-});
 vi.mock("@/paths/paths", () => ({
   getUserDataPath: vi.fn(),
 }));
 
 const mockFs = vi.mocked(fs);
 const mockPath = vi.mocked(path);
-const mockSafeStorage = vi.mocked(safeStorage);
 const mockGetUserDataPath = vi.mocked(getUserDataPath);
 
 describe("readSettings", () => {
@@ -37,7 +24,6 @@ describe("readSettings", () => {
     vi.clearAllMocks();
     mockGetUserDataPath.mockReturnValue(mockUserDataPath);
     mockPath.join.mockReturnValue(mockSettingsPath);
-    mockSafeStorage.isEncryptionAvailable.mockReturnValue(true);
   });
 
   afterEach(() => {
@@ -117,7 +103,7 @@ describe("readSettings", () => {
       expect(result.uiLanguage).toBe("ru");
     });
 
-    it("should decrypt encrypted provider API keys", () => {
+    it("preserves provider API keys when legacy encrypted settings are loaded", () => {
       const mockFileContent = {
         providerSettings: {
           openai: {
@@ -131,20 +117,16 @@ describe("readSettings", () => {
 
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(mockFileContent));
-      mockSafeStorage.decryptString.mockReturnValue("decrypted-api-key");
 
       const result = readSettings();
 
-      expect(mockSafeStorage.decryptString).toHaveBeenCalledWith(
-        Buffer.from("encrypted-api-key", "base64"),
-      );
       expect(result.providerSettings.openai.apiKey).toEqual({
-        value: "decrypted-api-key",
+        value: "encrypted-api-key",
         encryptionType: "electron-safe-storage",
       });
     });
 
-    it("should decrypt encrypted GitHub access token", () => {
+    it("preserves github access token when legacy encrypted settings are loaded", () => {
       const mockFileContent = {
         githubAccessToken: {
           value: "encrypted-github-token",
@@ -154,20 +136,16 @@ describe("readSettings", () => {
 
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(mockFileContent));
-      mockSafeStorage.decryptString.mockReturnValue("decrypted-github-token");
 
       const result = readSettings();
 
-      expect(mockSafeStorage.decryptString).toHaveBeenCalledWith(
-        Buffer.from("encrypted-github-token", "base64"),
-      );
       expect(result.githubAccessToken).toEqual({
-        value: "decrypted-github-token",
+        value: "encrypted-github-token",
         encryptionType: "electron-safe-storage",
       });
     });
 
-    it("should decrypt encrypted Supabase tokens", () => {
+    it("preserves supabase tokens when legacy encrypted settings are loaded", () => {
       const mockFileContent = {
         supabase: {
           accessToken: {
@@ -183,19 +161,15 @@ describe("readSettings", () => {
 
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(mockFileContent));
-      mockSafeStorage.decryptString
-        .mockReturnValueOnce("decrypted-refresh-token")
-        .mockReturnValueOnce("decrypted-access-token");
 
       const result = readSettings();
 
-      expect(mockSafeStorage.decryptString).toHaveBeenCalledTimes(2);
       expect(result.supabase?.refreshToken).toEqual({
-        value: "decrypted-refresh-token",
+        value: "encrypted-refresh-token",
         encryptionType: "electron-safe-storage",
       });
       expect(result.supabase?.accessToken).toEqual({
-        value: "decrypted-access-token",
+        value: "encrypted-access-token",
         encryptionType: "electron-safe-storage",
       });
     });
@@ -221,7 +195,6 @@ describe("readSettings", () => {
 
       const result = readSettings();
 
-      expect(mockSafeStorage.decryptString).not.toHaveBeenCalled();
       expect(result.githubAccessToken?.value).toBe("plaintext-token");
       expect(result.providerSettings.openai.apiKey?.value).toBe(
         "plaintext-api-key",
@@ -247,7 +220,6 @@ describe("readSettings", () => {
 
       const result = readSettings();
 
-      expect(mockSafeStorage.decryptString).not.toHaveBeenCalled();
       expect(result.githubAccessToken?.value).toBe(
         "token-without-encryption-type",
       );
@@ -380,7 +352,7 @@ describe("readSettings", () => {
       });
     });
 
-    it("should handle decryption errors gracefully", () => {
+    it("handles legacy encrypted payloads without electron decryption", () => {
       const mockFileContent = {
         githubAccessToken: {
           value: "corrupted-encrypted-data",
@@ -390,18 +362,12 @@ describe("readSettings", () => {
 
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(mockFileContent));
-      mockSafeStorage.decryptString.mockImplementation(() => {
-        throw new Error("Decryption failed");
-      });
 
       const result = readSettings();
 
-      expect(result).toMatchObject({
-        selectedModel: {
-          name: "auto",
-          provider: "auto",
-        },
-        releaseChannel: "stable",
+      expect(result.githubAccessToken).toEqual({
+        value: "corrupted-encrypted-data",
+        encryptionType: "electron-safe-storage",
       });
     });
   });

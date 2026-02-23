@@ -2,12 +2,12 @@ import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { sql } from "drizzle-orm";
 import { Pool } from "pg";
-import * as schema from "./schema";
+import * as schema from "/src/db/schema.ts";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import log from "electron-log";
-import { getEnvVar } from "../ipc/utils/read_env";
+import { log } from "/src/lib/logger.ts";
+import { getEnvVar } from "/src/ipc/utils/read_env.ts";
 
 const logger = log.scope("db");
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));

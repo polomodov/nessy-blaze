@@ -1,5 +1,5 @@
-import { db } from "../../db";
-import { messages } from "../../db/schema";
+import { db } from "/src/db/index.ts";
+import { messages } from "/src/db/schema.ts";
 import { eq } from "drizzle-orm";
 import { Message } from "../ipc_types";
 import { exec } from "node:child_process";

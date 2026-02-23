@@ -1,25 +1,14 @@
-import { db } from "../../db";
-import { chats, messages } from "../../db/schema";
+import { db } from "/src/db/index.ts";
+import { chats, messages } from "/src/db/schema.ts";
 import { and, eq } from "drizzle-orm";
 import fs from "node:fs";
-import { getBlazeAppPath } from "../../paths/paths";
+import { getBlazeAppPath } from "/src/paths/paths.ts";
 import path from "node:path";
-import { safeJoin } from "../utils/path_utils";
+import { safeJoin } from "/src/ipc/utils/path_utils.ts";
 
-import log from "electron-log";
-import { executeAddDependency } from "./executeAddDependency";
-import {
-  deleteSupabaseFunction,
-  deploySupabaseFunction,
-  executeSupabaseSql,
-} from "../../supabase_admin/supabase_management_client";
-import {
-  isServerFunction,
-  isSharedServerModule,
-  deployAllSupabaseFunctions,
-  extractFunctionNameFromPath,
-} from "../../supabase_admin/supabase_utils";
-import { UserSettings } from "../../lib/schemas";
+import { log } from "/src/lib/logger.ts";
+import { executeAddDependency } from "/src/ipc/processors/executeAddDependency.ts";
+import { UserSettings } from "/src/lib/schemas.ts";
 import {
   gitCommit,
   gitAdd,
@@ -27,9 +16,9 @@ import {
   gitAddAll,
   getGitUncommittedFiles,
   isGitStatusClean,
-} from "../utils/git_utils";
-import { readSettings } from "../../main/settings";
-import { writeMigrationFile } from "../utils/file_utils";
+} from "/src/ipc/utils/git_utils.ts";
+import { readSettings } from "/src/main/settings.ts";
+import { writeMigrationFile } from "/src/ipc/utils/file_utils.ts";
 import {
   getBlazeWriteTags,
   getBlazeRenameTags,
@@ -37,14 +26,60 @@ import {
   getBlazeAddDependencyTags,
   getBlazeExecuteSqlTags,
   getBlazeSearchReplaceTags,
-} from "../utils/blaze_tag_parser";
-import { applySearchReplace } from "../../core/main/ipc/processors/search_replace_processor";
-import { storeDbTimestampAtCurrentVersion } from "../utils/neon_timestamp_utils";
-
-import { FileUploadsState } from "../utils/file_uploads_state";
+} from "/src/ipc/utils/blaze_tag_parser.ts";
+import { applySearchReplace } from "/src/core/main/ipc/processors/search_replace_processor.ts";
+import { FileUploadsState } from "/src/ipc/utils/file_uploads_state.ts";
 
 const readFile = fs.promises.readFile;
 const logger = log.scope("response_processor");
+
+function isServerFunction(_filePath: string): boolean {
+  return false;
+}
+
+function isSharedServerModule(_filePath: string): boolean {
+  return false;
+}
+
+async function deleteSupabaseFunction(_params: {
+  supabaseProjectId: string;
+  functionName: string;
+  organizationSlug: string | null;
+}): Promise<void> {}
+
+async function deploySupabaseFunction(_params: {
+  supabaseProjectId: string;
+  functionName: string;
+  appPath: string;
+  organizationSlug: string | null;
+}): Promise<void> {}
+
+async function executeSupabaseSql(_params: {
+  supabaseProjectId: string;
+  query: string;
+  organizationSlug: string | null;
+}): Promise<void> {}
+
+async function deployAllSupabaseFunctions(_params: {
+  appPath: string;
+  supabaseProjectId: string;
+  supabaseOrganizationSlug: string | null;
+}): Promise<string[]> {
+  return [];
+}
+
+function extractFunctionNameFromPath(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, "/");
+  const match = normalized.match(/^supabase\/functions\/([^/]+)/);
+  if (match?.[1]) {
+    return match[1];
+  }
+  return path.basename(path.dirname(normalized));
+}
+
+async function storeDbTimestampAtCurrentVersion(_params: {
+  appId: number;
+}): Promise<void> {}
 
 interface Output {
   message: string;

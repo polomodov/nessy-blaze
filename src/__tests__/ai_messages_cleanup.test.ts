@@ -38,8 +38,8 @@ vi.mock("@/db/schema", () => ({
   messages: schemaMocks.messages,
 }));
 
-vi.mock("electron-log", () => ({
-  default: {
+vi.mock("@/lib/logger", () => ({
+  log: {
     scope: vi.fn(() => logMocks),
   },
 }));

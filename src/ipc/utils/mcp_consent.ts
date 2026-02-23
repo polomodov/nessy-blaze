@@ -1,9 +1,9 @@
-import { db } from "../../db";
-import { mcpToolConsents } from "../../db/schema";
+import { db } from "/src/db/index.ts";
+import { mcpToolConsents } from "/src/db/schema.ts";
 import { and, eq } from "drizzle-orm";
 import crypto from "node:crypto";
-import { safeSend } from "./safe_sender";
-import type { ServerEventSink } from "./server_event_sink";
+import { safeSend } from "/src/ipc/utils/safe_sender.ts";
+import type { ServerEventSink } from "/src/ipc/utils/server_event_sink.ts";
 
 export type Consent = "ask" | "always" | "denied";
 

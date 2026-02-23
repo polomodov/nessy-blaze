@@ -1,5 +1,5 @@
-import log from "electron-log";
-import { extractActionableBlazeTags } from "./actionable_blaze_tags";
+import { log } from "/src/lib/logger.ts";
+import { extractActionableBlazeTags } from "/src/ipc/utils/actionable_blaze_tags.ts";
 
 const logger = log.scope("manual_apply_self_heal");
 

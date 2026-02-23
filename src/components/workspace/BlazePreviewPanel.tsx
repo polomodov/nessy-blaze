@@ -442,7 +442,6 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
             appId: activeAppId,
             timestamp,
           };
-          IpcClient.getInstance().addLog(logEntry);
           setConsoleEntries((prev) => [...prev, logEntry]);
         }
         return;
@@ -472,7 +471,6 @@ export function BlazePreviewPanel({ activeAppId }: BlazePreviewPanelProps) {
             appId: activeAppId,
             timestamp,
           };
-          IpcClient.getInstance().addLog(logEntry);
           setConsoleEntries((prev) => [...prev, logEntry]);
         }
         return;

@@ -3,7 +3,7 @@ import {
   type ApiTemplate,
   localTemplatesData,
 } from "../../shared/templates";
-import log from "electron-log";
+import { log } from "@/lib/logger";
 
 const logger = log.scope("template_utils");
 

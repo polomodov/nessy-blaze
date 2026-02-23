@@ -436,12 +436,12 @@ function resolveApiRoute(
     case "get-user-settings":
       return {
         method: "GET",
-        path: "/api/v1/user/settings",
+        path: "/api/v1/settings/user",
       };
     case "set-user-settings":
       return {
         method: "PATCH",
-        path: "/api/v1/user/settings",
+        path: "/api/v1/settings/user",
         body: getFirstArg(args),
       };
     case "list-apps":

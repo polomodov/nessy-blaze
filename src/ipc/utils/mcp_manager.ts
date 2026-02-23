@@ -1,5 +1,5 @@
-import { db } from "../../db";
-import { mcpServers } from "../../db/schema";
+import { db } from "/src/db/index.ts";
+import { mcpServers } from "/src/db/schema.ts";
 import { createMCPClient, type MCPClient } from "@ai-sdk/mcp";
 import { eq } from "drizzle-orm";
 

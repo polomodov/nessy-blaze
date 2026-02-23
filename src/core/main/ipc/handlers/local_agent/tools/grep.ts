@@ -11,7 +11,7 @@ import {
   MAX_FILE_SEARCH_SIZE,
   RIPGREP_EXCLUDED_GLOBS,
 } from "@/ipc/utils/ripgrep_utils";
-import log from "electron-log";
+import { log } from "@/lib/logger";
 
 const logger = log.scope("grep");
 

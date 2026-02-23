@@ -2,8 +2,8 @@ import fs from "node:fs";
 import { promises as fsPromises } from "node:fs";
 import path from "node:path";
 import fsExtra from "fs-extra";
-import { generateCuteAppName } from "../../lib/utils";
-import { normalizePath } from "../../../shared/normalizePath";
+import { generateCuteAppName } from "/src/lib/utils.ts";
+import { normalizePath } from "/shared/normalizePath.ts";
 
 // Directories to exclude when scanning files
 const EXCLUDED_DIRS = ["node_modules", ".git", ".next"];

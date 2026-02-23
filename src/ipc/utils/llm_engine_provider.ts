@@ -6,7 +6,7 @@ import {
   withoutTrailingSlash,
 } from "@ai-sdk/provider-utils";
 
-import log from "electron-log";
+import { log } from "@/lib/logger";
 import { getExtraProviderOptions } from "./thinking_utils";
 import type { UserSettings } from "../../lib/schemas";
 import type { LanguageModel } from "ai";

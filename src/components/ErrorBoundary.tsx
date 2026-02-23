@@ -3,7 +3,6 @@ import { Button } from "@/components/ui/button";
 import { LightbulbIcon } from "lucide-react";
 import { ErrorComponentProps } from "@tanstack/react-router";
 import { usePostHog } from "posthog-js/react";
-import { IpcClient } from "@/ipc/ipc_client";
 import { useI18n } from "@/contexts/I18nContext";
 
 export function ErrorBoundary({ error }: ErrorComponentProps) {
@@ -19,10 +18,7 @@ export function ErrorBoundary({ error }: ErrorComponentProps) {
   const handleReportBug = async () => {
     setIsLoading(true);
     try {
-      // Get system debug info
-      const debugInfo = await IpcClient.getInstance().getSystemDebugInfo();
-
-      // Create a formatted issue body with the debug info and error information
+      // Create a formatted issue body with the current error information
       const issueBody = `
 ## Bug Description
 <!-- Please describe the issue you're experiencing -->
@@ -40,20 +36,6 @@ export function ErrorBoundary({ error }: ErrorComponentProps) {
 - Error Name: ${error?.name || "Unknown"}
 - Error Message: ${error?.message || "Unknown"}
 ${error?.stack ? `\n\`\`\`\n${error.stack.slice(0, 1000)}\n\`\`\`` : ""}
-
-## System Information
-- Blaze Version: ${debugInfo.blazeVersion}
-- Platform: ${debugInfo.platform}
-- Architecture: ${debugInfo.architecture}
-- Node Version: ${debugInfo.nodeVersion || "Not available"}
-- PNPM Version: ${debugInfo.pnpmVersion || "Not available"}
-- Node Path: ${debugInfo.nodePath || "Not available"}
-- Telemetry ID: ${debugInfo.telemetryId || "Not available"}
-
-## Logs
-\`\`\`
-${debugInfo.logs.slice(-3_500) || "No logs available"}
-\`\`\`
 `;
 
       // Create the GitHub issue URL with the pre-filled body
@@ -64,12 +46,14 @@ ${debugInfo.logs.slice(-3_500) || "No logs available"}
       const githubIssueUrl = `https://github.com/blaze-sh/blaze/issues/new?title=${encodedTitle}&labels=bug,filed-from-app,client-error&body=${encodedBody}`;
 
       // Open the pre-filled GitHub issue page
-      await IpcClient.getInstance().openExternalUrl(githubIssueUrl);
+      window.open(githubIssueUrl, "_blank", "noopener,noreferrer");
     } catch (err) {
       console.error("Failed to prepare bug report:", err);
-      // Fallback to opening the regular GitHub issue page
-      IpcClient.getInstance().openExternalUrl(
+      // Fallback to opening the regular GitHub issue page.
+      window.open(
         "https://github.com/blaze-sh/blaze/issues/new",
+        "_blank",
+        "noopener,noreferrer",
       );
     } finally {
       setIsLoading(false);

@@ -1,17 +1,20 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { initializeDatabase } from "../db";
-import type { ChatResponseEnd, ChatStreamParams } from "../ipc/ipc_types";
-import { resolveConsent } from "../ipc/utils/mcp_consent";
+import { initializeDatabase } from "/src/db/index.ts";
+import type { ChatResponseEnd, ChatStreamParams } from "/src/ipc/ipc_types.ts";
+import { resolveConsent } from "/src/ipc/utils/mcp_consent.ts";
 import {
   NOOP_SERVER_EVENT_SINK,
   type ServerEventSink,
-} from "../ipc/utils/server_event_sink";
-import { resolveAgentToolConsent } from "../core/main/ipc/handlers/local_agent/agent_tool_consent";
-import { isMultitenantEnforced } from "./feature_flags";
-import { isHttpError } from "./http_errors";
-import { enforceAndRecordUsage, writeAuditEvent } from "./quota_audit";
-import { resolveRequestContext } from "./request_context";
-import { ensureChatInScope } from "./scoped_repositories";
+} from "/src/ipc/utils/server_event_sink.ts";
+import { resolveAgentToolConsent } from "/src/core/main/ipc/handlers/local_agent/agent_tool_consent.ts";
+import { isMultitenantEnforced } from "/src/http/feature_flags.ts";
+import { isHttpError } from "/src/http/http_errors.ts";
+import {
+  enforceAndRecordUsage,
+  writeAuditEvent,
+} from "/src/http/quota_audit.ts";
+import { resolveRequestContext } from "/src/http/request_context.ts";
+import { ensureChatInScope } from "/src/http/scoped_repositories.ts";
 
 type Next = (error?: unknown) => void;
 
@@ -26,7 +29,7 @@ const LEGACY_CANCEL_STREAM_ROUTE = /^\/api\/v1\/chats\/(\d+)\/stream\/cancel$/;
 const activeHttpEvents = new Map<number, ServerEventSink>();
 
 type ChatStreamHandlerModule =
-  typeof import("../ipc/handlers/chat_stream_handlers");
+  typeof import("/src/ipc/handlers/chat_stream_handlers.ts");
 
 export type ChatStreamHandlersLoader = () => Promise<ChatStreamHandlerModule>;
 
@@ -38,7 +41,7 @@ function dynamicImportModule<T>(modulePath: string): Promise<T> {
 
 function defaultLoadChatStreamHandlers(): Promise<ChatStreamHandlerModule> {
   return dynamicImportModule<ChatStreamHandlerModule>(
-    "../ipc/handlers/chat_stream_handlers",
+    "/src/ipc/handlers/chat_stream_handlers.ts",
   );
 }
 

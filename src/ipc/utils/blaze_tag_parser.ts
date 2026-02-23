@@ -1,6 +1,6 @@
-import { normalizePath } from "../../../shared/normalizePath";
-import log from "electron-log";
-import { SqlQuery } from "../../lib/schemas";
+import { normalizePath } from "/shared/normalizePath.ts";
+import { log } from "/src/lib/logger.ts";
+import { SqlQuery } from "/src/lib/schemas.ts";
 
 const logger = log.scope("blaze_tag_parser");
 

@@ -1,8 +1,9 @@
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 
 import { ProblemReport } from "../ipc_types";
-import log from "electron-log";
+import { log } from "@/lib/logger";
 import { WorkerInput, WorkerOutput } from "../../../shared/tsc_types";
 
 import {
@@ -13,6 +14,7 @@ import {
 import { getTypeScriptCachePath } from "../../paths/paths";
 
 const logger = log.scope("tsc");
+const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 
 export async function generateProblemReport({
   fullResponse,
@@ -23,7 +25,7 @@ export async function generateProblemReport({
 }): Promise<ProblemReport> {
   return new Promise((resolve, reject) => {
     // Determine the worker script path
-    const workerPath = path.join(__dirname, "tsc_worker.js");
+    const workerPath = path.join(moduleDirectory, "tsc_worker.js");
 
     logger.info(`Starting TSC worker for app ${appPath}`);
 

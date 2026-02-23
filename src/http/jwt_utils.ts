@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { getEnvVar } from "../ipc/utils/read_env";
+import { getEnvVar } from "/src/ipc/utils/read_env.ts";
 
 export interface JwtClaims {
   sub: string;

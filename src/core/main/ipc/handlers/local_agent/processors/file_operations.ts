@@ -2,7 +2,7 @@
  * Shared file operations for both XML-based (Build mode) and Tool-based (Local Agent) processing
  */
 
-import log from "electron-log";
+import { log } from "@/lib/logger";
 import {
   gitCommit,
   gitAddAll,

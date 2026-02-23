@@ -6,7 +6,7 @@ import net from "node:net";
 import { and, asc, desc, eq, gt, gte, ilike } from "drizzle-orm";
 import git from "isomorphic-git";
 import killPort from "kill-port";
-import { initializeDatabase, db } from "../db";
+import { initializeDatabase, db } from "/src/db/index.ts";
 import {
   apps,
   chats,
@@ -18,32 +18,35 @@ import {
   workspaceModelSettings,
   workspaceMemberships,
   workspaces,
-} from "../db/schema";
-import { getBlazeAppPath, getUserDataPath } from "../paths/paths";
-import { getEnvVar } from "../ipc/utils/read_env";
-import { withLock } from "../ipc/utils/lock_utils";
-import { startProxy } from "../ipc/utils/start_proxy_server";
+} from "/src/db/schema.ts";
+import { getBlazeAppPath, getUserDataPath } from "/src/paths/paths.ts";
+import { getEnvVar } from "/src/ipc/utils/read_env.ts";
+import { withLock } from "/src/ipc/utils/lock_utils.ts";
+import { startProxy } from "/src/ipc/utils/start_proxy_server.ts";
 import {
   processCounter,
   removeAppIfCurrentProcess,
   runningApps,
   stopAppByInfo,
-} from "../ipc/utils/process_manager";
+} from "/src/ipc/utils/process_manager.ts";
 import {
   CLOUD_PROVIDERS,
   LOCAL_PROVIDERS,
   PROVIDER_TO_ENV_VAR,
-} from "../ipc/shared/language_model_constants";
-import { UserSettingsSchema, type UserSettings } from "../lib/schemas";
-import { DEFAULT_TEMPLATE_ID } from "../shared/templates";
-import { DEFAULT_THEME_ID } from "../shared/themes";
-import { getAppPort } from "../../shared/ports";
-import { isMultitenantEnforced } from "./feature_flags";
-import { HttpError } from "./http_errors";
-import { cleanUpPortWithVerification } from "./preview_port_cleanup";
-import { enforceAndRecordUsage, writeAuditEvent } from "./quota_audit";
-import type { RequestContext } from "./request_context";
-import { requireRoleForMutation } from "./request_context";
+} from "/src/ipc/shared/language_model_constants.ts";
+import { UserSettingsSchema, type UserSettings } from "/src/lib/schemas.ts";
+import { DEFAULT_TEMPLATE_ID } from "/src/shared/templates.ts";
+import { DEFAULT_THEME_ID } from "/src/shared/themes.ts";
+import { getAppPort } from "/shared/ports.ts";
+import { isMultitenantEnforced } from "/src/http/feature_flags.ts";
+import { HttpError } from "/src/http/http_errors.ts";
+import { cleanUpPortWithVerification } from "/src/http/preview_port_cleanup.ts";
+import {
+  enforceAndRecordUsage,
+  writeAuditEvent,
+} from "/src/http/quota_audit.ts";
+import type { RequestContext } from "/src/http/request_context.ts";
+import { requireRoleForMutation } from "/src/http/request_context.ts";
 import {
   createAppRecordForScope,
   createChatForScope,
@@ -57,8 +60,8 @@ import {
   listWorkspacesForScope,
   searchAppsForScope,
   toggleAppFavoriteForScope,
-} from "./scoped_repositories";
-import { processFullResponseActions } from "../ipc/processors/response_processor";
+} from "/src/http/scoped_repositories.ts";
+import { processFullResponseActions } from "/src/ipc/processors/response_processor.ts";
 import {
   getBlazeAddDependencyTags,
   getBlazeChatSummaryTag,
@@ -67,9 +70,8 @@ import {
   getBlazeRenameTags,
   getBlazeSearchReplaceTags,
   getBlazeWriteTags,
-} from "../ipc/utils/blaze_tag_parser";
-import { isServerFunction } from "../supabase_admin/supabase_utils";
-import { applyManualChangesWithSelfHealing } from "../ipc/utils/manual_apply_self_heal";
+} from "/src/ipc/utils/blaze_tag_parser.ts";
+import { applyManualChangesWithSelfHealing } from "/src/ipc/utils/manual_apply_self_heal.ts";
 
 interface InvokeMeta {
   requestContext?: RequestContext;
@@ -86,6 +88,13 @@ interface OAuth2TokenResponse {
   scope?: string;
   error?: string;
   error_description?: string;
+}
+
+function isServerFunction(filePath: string): boolean {
+  return (
+    filePath.startsWith("supabase/functions/") &&
+    !filePath.startsWith("supabase/functions/_shared/")
+  );
 }
 
 interface OAuth2ResolvedConfig {

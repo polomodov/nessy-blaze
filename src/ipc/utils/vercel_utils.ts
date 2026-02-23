@@ -1,5 +1,5 @@
 import { readSettings } from "../../main/settings";
-import log from "electron-log";
+import { log } from "@/lib/logger";
 import { IS_TEST_BUILD } from "./test_utils";
 
 const logger = log.scope("vercel_utils");

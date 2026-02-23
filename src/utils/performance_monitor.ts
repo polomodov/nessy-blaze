@@ -1,4 +1,4 @@
-import log from "electron-log";
+import { log } from "@/lib/logger";
 import { writeSettings } from "../main/settings";
 import os from "node:os";
 

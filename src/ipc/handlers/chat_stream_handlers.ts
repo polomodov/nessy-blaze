@@ -10,8 +10,8 @@ import {
   hasToolCall,
 } from "ai";
 
-import { db } from "../../db";
-import { apps, chats, messages } from "../../db/schema";
+import { db } from "/src/db/index.ts";
+import { apps, chats, messages } from "/src/db/schema.ts";
 import { and, eq, isNull } from "drizzle-orm";
 import type { SmartContextMode, UserSettings } from "../../lib/schemas";
 import {
@@ -34,7 +34,7 @@ import {
 import { streamTestResponse } from "./testing_chat_handlers";
 import { getTestResponse } from "./testing_chat_handlers";
 import { getModelClient, ModelClient } from "../utils/get_model_client";
-import log from "electron-log";
+import { log } from "@/lib/logger";
 import { sendTelemetryEvent } from "../utils/telemetry";
 import { SUMMARIZE_CHAT_SYSTEM_PROMPT } from "../../prompts/summarize_chat_system_prompt";
 import { CHANGE_SUMMARY_SYSTEM_PROMPT } from "../../prompts/change_summary_system_prompt";
@@ -65,7 +65,7 @@ import { fileExists } from "../utils/file_utils";
 import { FileUploadsState } from "../utils/file_uploads_state";
 import { extractMentionedAppsCodebases } from "../utils/mention_apps";
 import { parseAppMentions } from "../../shared/parse_mention_apps";
-import { prompts as promptsTable } from "../../db/schema";
+import { prompts as promptsTable } from "/src/db/schema.ts";
 import { inArray } from "drizzle-orm";
 import { replacePromptReference } from "../utils/replacePromptReference";
 import { isTurboEditsV2Enabled } from "../../lib/schemas";
@@ -76,17 +76,14 @@ import {
   VersionedFiles,
 } from "../utils/versioned_codebase_context";
 import { getAiMessagesJsonIfWithinLimit } from "../utils/ai_messages_utils";
-import { initializeDatabase } from "../../db";
+import { initializeDatabase } from "/src/db/index.ts";
 import { resolveMessageTenantScope } from "../utils/message_tenant_scope";
 import {
   appendResponseLanguageInstruction,
   resolveUiLanguage,
 } from "../utils/response_language_prompt";
 import { extractActionableBlazeTags } from "../utils/actionable_blaze_tags";
-import {
-  createServerEventSinkFromEvent,
-  type ServerEventSink,
-} from "../utils/server_event_sink";
+import { type ServerEventSink } from "../utils/server_event_sink";
 
 type AsyncIterableStream<T> = AsyncIterable<T> & ReadableStream<T>;
 
@@ -1959,15 +1956,7 @@ export async function handleChatCancelRequest(
   return true;
 }
 
-export function registerChatStreamHandlers() {
-  const { ipcMain } = require("electron") as typeof import("electron");
-  ipcMain.handle("chat:stream", (event, req: ChatStreamParams) =>
-    handleChatStreamRequest(createServerEventSinkFromEvent(event), req),
-  );
-  ipcMain.handle("chat:cancel", (event, chatId: number) =>
-    handleChatCancelRequest(createServerEventSinkFromEvent(event), chatId),
-  );
-}
+export function registerChatStreamHandlers() {}
 
 export function formatMessagesForSummary(
   messages: { role: string; content: string | undefined }[],

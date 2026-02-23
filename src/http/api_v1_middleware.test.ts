@@ -66,14 +66,14 @@ describe("createApiV1Middleware", () => {
 
   const resolveRequestContextMock = vi.fn().mockResolvedValue(requestContext);
 
-  it("routes GET /api/v1/apps to list-apps channel", async () => {
+  it("routes GET /api/v1/orgs/:orgId/workspaces/:workspaceId/apps to list-apps channel", async () => {
     const invoke = vi.fn().mockResolvedValue({ apps: [] });
     const middleware = createApiV1Middleware(invoke, {
       resolveRequestContext: resolveRequestContextMock as any,
     });
     const req = createMockRequest({
       method: "GET",
-      url: "/api/v1/apps",
+      url: "/api/v1/orgs/org-1/workspaces/ws-1/apps",
     });
     const { response, headers, getBody } = createMockResponse();
     const next = vi.fn();
@@ -89,14 +89,14 @@ describe("createApiV1Middleware", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it("routes PATCH /api/v1/user/settings to set-user-settings channel", async () => {
+  it("routes PATCH /api/v1/settings/user to set-user-settings channel", async () => {
     const invoke = vi.fn().mockResolvedValue({ ok: true });
     const middleware = createApiV1Middleware(invoke, {
       resolveRequestContext: resolveRequestContextMock as any,
     });
     const req = createMockRequest({
       method: "PATCH",
-      url: "/api/v1/user/settings",
+      url: "/api/v1/settings/user",
       body: JSON.stringify({ enableAutoUpdate: false }),
     });
     const { response, getBody } = createMockResponse();
@@ -116,14 +116,14 @@ describe("createApiV1Middleware", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it("routes dynamic path /api/v1/apps/:appId/chats", async () => {
+  it("routes dynamic path /api/v1/orgs/:orgId/workspaces/:workspaceId/apps/:appId/chats", async () => {
     const invoke = vi.fn().mockResolvedValue([]);
     const middleware = createApiV1Middleware(invoke, {
       resolveRequestContext: resolveRequestContextMock as any,
     });
     const req = createMockRequest({
       method: "GET",
-      url: "/api/v1/apps/42/chats",
+      url: "/api/v1/orgs/org-1/workspaces/ws-1/apps/42/chats",
     });
     const { response, getBody } = createMockResponse();
     const next = vi.fn();

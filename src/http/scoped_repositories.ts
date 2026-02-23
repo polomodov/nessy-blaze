@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, ilike, isNull, or } from "drizzle-orm";
-import { db, initializeDatabase } from "../db";
+import { db, initializeDatabase } from "/src/db/index.ts";
 import {
   apps,
   chats,
@@ -7,9 +7,9 @@ import {
   organizationMemberships,
   organizations,
   workspaces,
-} from "../db/schema";
-import type { RequestContext } from "./request_context";
-import { HttpError } from "./http_errors";
+} from "/src/db/schema.ts";
+import type { RequestContext } from "/src/http/request_context.ts";
+import { HttpError } from "/src/http/http_errors.ts";
 
 function toIsoDate(
   value: Date | number | string | null | undefined,

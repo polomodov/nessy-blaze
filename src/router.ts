@@ -2,23 +2,8 @@ import { createRouter } from "@tanstack/react-router";
 import { rootRoute } from "./routes/root";
 import { homeRoute } from "./routes/home";
 import { authRoute } from "./routes/auth";
-import { chatRoute } from "./routes/chat";
-import { settingsRoute } from "./routes/settings";
-import { providerSettingsRoute } from "./routes/settings/providers/$provider";
-import { appDetailsRoute } from "./routes/app-details";
-import { hubRoute } from "./routes/hub";
-import { libraryRoute } from "./routes/library";
 
-const routeTree = rootRoute.addChildren([
-  homeRoute,
-  authRoute,
-  hubRoute,
-  libraryRoute,
-  chatRoute,
-  appDetailsRoute,
-  settingsRoute,
-  providerSettingsRoute,
-]);
+const routeTree = rootRoute.addChildren([homeRoute, authRoute]);
 
 // src/components/NotFoundRedirect.tsx
 import * as React from "react";
