@@ -25,6 +25,20 @@ export interface WsServerEvent {
   payload: unknown;
 }
 
+const START_CHAT_STREAM_ALLOWED_KEYS = new Set([
+  "type",
+  "requestId",
+  "orgId",
+  "workspaceId",
+  "chatId",
+  "prompt",
+  "redo",
+  "attachments",
+  "selectedComponents",
+]);
+
+const CANCEL_CHAT_STREAM_ALLOWED_KEYS = new Set(["type", "requestId"]);
+
 function parseRequiredNonEmptyString(value: unknown): string | null {
   if (typeof value !== "string") {
     return null;
@@ -34,6 +48,45 @@ function parseRequiredNonEmptyString(value: unknown): string | null {
     return null;
   }
   return normalized;
+}
+
+function assertAllowedKeys(
+  payload: Record<string, unknown>,
+  allowedKeys: Set<string>,
+  messageType: string,
+): void {
+  const unknownKeys = Object.keys(payload).filter(
+    (key) => !allowedKeys.has(key),
+  );
+  if (unknownKeys.length > 0) {
+    throw new Error(
+      `Invalid ${messageType} payload: unsupported keys (${unknownKeys.join(", ")})`,
+    );
+  }
+}
+
+function parseOptionalAttachments(
+  value: unknown,
+): ChatStreamParams["attachments"] | undefined | null {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  return value as ChatStreamParams["attachments"];
+}
+
+function parseOptionalSelectedComponents(
+  value: unknown,
+): ChatStreamParams["selectedComponents"] | undefined | null {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  return value as ChatStreamParams["selectedComponents"];
 }
 
 export function parseWsClientMessage(raw: string): WsClientMessage {
@@ -50,16 +103,33 @@ export function parseWsClientMessage(raw: string): WsClientMessage {
 
   const type = (parsed as Record<string, unknown>).type;
   if (type === "start_chat_stream") {
-    const msg = parsed as Partial<WsStartChatStreamMessage>;
+    const msgRecord = parsed as Record<string, unknown>;
+    assertAllowedKeys(msgRecord, START_CHAT_STREAM_ALLOWED_KEYS, type);
+    const msg = msgRecord as Partial<WsStartChatStreamMessage>;
     const requestId = parseRequiredNonEmptyString(msg.requestId);
     const orgId = parseRequiredNonEmptyString(msg.orgId);
     const workspaceId = parseRequiredNonEmptyString(msg.workspaceId);
     const prompt = parseRequiredNonEmptyString(msg.prompt);
+    const redo =
+      msg.redo === undefined || typeof msg.redo === "boolean" ? msg.redo : null;
     const chatId =
       typeof msg.chatId === "number" && Number.isFinite(msg.chatId)
         ? msg.chatId
         : null;
-    if (!requestId || !orgId || !workspaceId || chatId == null || !prompt) {
+    const attachments = parseOptionalAttachments(msg.attachments);
+    const selectedComponents = parseOptionalSelectedComponents(
+      msg.selectedComponents,
+    );
+    if (
+      !requestId ||
+      !orgId ||
+      !workspaceId ||
+      chatId == null ||
+      !prompt ||
+      redo === null ||
+      attachments === null ||
+      selectedComponents === null
+    ) {
       throw new Error("Invalid start_chat_stream payload");
     }
     return {
@@ -69,14 +139,16 @@ export function parseWsClientMessage(raw: string): WsClientMessage {
       workspaceId,
       chatId,
       prompt,
-      redo: msg.redo,
-      attachments: msg.attachments,
-      selectedComponents: msg.selectedComponents,
+      redo,
+      attachments,
+      selectedComponents,
     };
   }
 
   if (type === "cancel_chat_stream") {
-    const msg = parsed as Partial<WsCancelChatStreamMessage>;
+    const msgRecord = parsed as Record<string, unknown>;
+    assertAllowedKeys(msgRecord, CANCEL_CHAT_STREAM_ALLOWED_KEYS, type);
+    const msg = msgRecord as Partial<WsCancelChatStreamMessage>;
     const requestId = parseRequiredNonEmptyString(msg.requestId);
     if (!requestId) {
       throw new Error(

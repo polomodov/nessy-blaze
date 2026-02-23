@@ -85,7 +85,7 @@ This document locks the runtime scope for the HTTP-only migration.
 - HTTP chat stream adapters (SSE/WS) now ignore agent/MCP consent channels and only forward chat response events in v1 mode.
 - Chat stream handler contract is side-effect-only in active runtime path (`Promise<void>`); backward-compat return values are removed from SSE/WS invocation flow.
 - WebSocket cancel stream payload contract is requestId-only in active v1 runtime (legacy chatId-targeted cancel fallback removed).
-- WebSocket stream payload validation is tightened to active v1 requirements (non-empty request/org/workspace/prompt strings and finite chatId for `start_chat_stream`).
+- WebSocket stream payload validation is tightened to active v1 requirements (non-empty request/org/workspace/prompt strings, finite chatId, typed optional fields, and rejection of unsupported top-level keys).
 - Unused MCP consent i18n labels are removed from active UI localization bundles.
 
 ### In progress

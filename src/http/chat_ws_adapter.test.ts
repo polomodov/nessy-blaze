@@ -78,6 +78,66 @@ describe("chat_ws_adapter", () => {
         }),
       ),
     ).toThrow("Invalid start_chat_stream payload");
+
+    expect(() =>
+      parseWsClientMessage(
+        JSON.stringify({
+          type: "start_chat_stream",
+          requestId: "req-1",
+          orgId: "org-1",
+          workspaceId: "ws-1",
+          chatId: 11,
+          prompt: "Build a page",
+          redo: "yes",
+        }),
+      ),
+    ).toThrow("Invalid start_chat_stream payload");
+
+    expect(() =>
+      parseWsClientMessage(
+        JSON.stringify({
+          type: "start_chat_stream",
+          requestId: "req-1",
+          orgId: "org-1",
+          workspaceId: "ws-1",
+          chatId: 11,
+          prompt: "Build a page",
+          attachments: {},
+        }),
+      ),
+    ).toThrow("Invalid start_chat_stream payload");
+
+    expect(() =>
+      parseWsClientMessage(
+        JSON.stringify({
+          type: "start_chat_stream",
+          requestId: "req-1",
+          orgId: "org-1",
+          workspaceId: "ws-1",
+          chatId: 11,
+          prompt: "Build a page",
+          selectedComponents: {},
+        }),
+      ),
+    ).toThrow("Invalid start_chat_stream payload");
+  });
+
+  it("rejects start_chat_stream payload with unsupported top-level keys", () => {
+    expect(() =>
+      parseWsClientMessage(
+        JSON.stringify({
+          type: "start_chat_stream",
+          requestId: "req-1",
+          orgId: "org-1",
+          workspaceId: "ws-1",
+          chatId: 11,
+          prompt: "Build a page",
+          extraField: true,
+        }),
+      ),
+    ).toThrow(
+      "Invalid start_chat_stream payload: unsupported keys (extraField)",
+    );
   });
 
   it("parses cancel_chat_stream payload", () => {
@@ -113,6 +173,18 @@ describe("chat_ws_adapter", () => {
         }),
       ),
     ).toThrow("Invalid cancel_chat_stream payload: requestId is required");
+  });
+
+  it("rejects cancel_chat_stream payload with unsupported top-level keys", () => {
+    expect(() =>
+      parseWsClientMessage(
+        JSON.stringify({
+          type: "cancel_chat_stream",
+          requestId: "req-1",
+          chatId: 11,
+        }),
+      ),
+    ).toThrow("Invalid cancel_chat_stream payload: unsupported keys (chatId)");
   });
 
   it("serializes server events", () => {
