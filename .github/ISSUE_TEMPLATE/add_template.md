@@ -17,7 +17,3 @@ If you'd like to add a template to Blaze Hub, follow the [Add Template guide](ht
 **Screenshot**
 
 <!-- Please attach a screenshot of your template in action -->
-
-**Open Source License**
-
-- [ ] This template is open-source (e.g. MIT, Apache 2.0)
