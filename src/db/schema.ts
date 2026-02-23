@@ -377,7 +377,6 @@ export const versions = pgTable(
       .notNull()
       .references(() => apps.id, { onDelete: "cascade" }),
     commitHash: text("commit_hash").notNull(),
-    neonDbTimestamp: text("neon_db_timestamp"),
     createdAt: timestamp("created_at", {
       mode: "date",
       withTimezone: true,

@@ -67,6 +67,7 @@ This document locks the runtime scope for the HTTP-only migration.
 - Proposal payload contract no longer carries legacy SQL migration metadata (`sqlQueries`).
 - Removed unused `local_agent_prompt` module from active runtime prompt surface.
 - Version history HTTP payload no longer carries legacy integration timestamp metadata (`dbTimestamp`).
+- Legacy `versions.neon_db_timestamp` column is removed via generated Drizzle migration.
 
 ### In progress
 

@@ -1,0 +1,1 @@
+ALTER TABLE "versions" DROP COLUMN "neon_db_timestamp";
