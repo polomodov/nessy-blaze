@@ -487,3 +487,71 @@ test("version and chat update endpoints reject unsupported payload keys in v1", 
     error: expect.stringContaining("unsupported keys"),
   });
 });
+
+test("tenant org and workspace endpoints reject unsupported payload keys in v1", async ({
+  page,
+}) => {
+  await loginViaPassword(page);
+  const { orgId, workspaceId } = await resolveScopedTenant(page);
+
+  const invalidCreateOrgResponse = await page.request.post("/api/v1/orgs", {
+    data: {
+      name: `invalid-org-${Date.now()}`,
+      workspaceId,
+    },
+  });
+  expect(invalidCreateOrgResponse.status()).toBe(400);
+  await expect(
+    invalidCreateOrgResponse.json() as Promise<Record<string, unknown>>,
+  ).resolves.toMatchObject({
+    error: expect.stringContaining("unsupported keys"),
+  });
+
+  const invalidPatchOrgResponse = await page.request.patch(
+    `/api/v1/orgs/${orgId}`,
+    {
+      data: {
+        name: `renamed-org-${Date.now()}`,
+        orgId,
+      },
+    },
+  );
+  expect(invalidPatchOrgResponse.status()).toBe(400);
+  await expect(
+    invalidPatchOrgResponse.json() as Promise<Record<string, unknown>>,
+  ).resolves.toMatchObject({
+    error: expect.stringContaining("unsupported keys"),
+  });
+
+  const invalidCreateWorkspaceResponse = await page.request.post(
+    `/api/v1/orgs/${orgId}/workspaces`,
+    {
+      data: {
+        name: `invalid-ws-${Date.now()}`,
+        orgId,
+      },
+    },
+  );
+  expect(invalidCreateWorkspaceResponse.status()).toBe(400);
+  await expect(
+    invalidCreateWorkspaceResponse.json() as Promise<Record<string, unknown>>,
+  ).resolves.toMatchObject({
+    error: expect.stringContaining("unsupported keys"),
+  });
+
+  const invalidPatchWorkspaceResponse = await page.request.patch(
+    `/api/v1/orgs/${orgId}/workspaces/${workspaceId}`,
+    {
+      data: {
+        name: `renamed-ws-${Date.now()}`,
+        workspaceId,
+      },
+    },
+  );
+  expect(invalidPatchWorkspaceResponse.status()).toBe(400);
+  await expect(
+    invalidPatchWorkspaceResponse.json() as Promise<Record<string, unknown>>,
+  ).resolves.toMatchObject({
+    error: expect.stringContaining("unsupported keys"),
+  });
+});

@@ -184,6 +184,169 @@ describe("createApiV1Middleware", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it("routes create-org endpoint with strict payload", async () => {
+    const invoke = vi.fn().mockResolvedValue({ id: "org-2", name: "New Org" });
+    const middleware = createApiV1Middleware(invoke, {
+      resolveRequestContext: resolveRequestContextMock as any,
+    });
+    const req = createMockRequest({
+      method: "POST",
+      url: "/api/v1/orgs",
+      body: JSON.stringify({ name: "New Org", slug: "new-org" }),
+    });
+    const { response, getBody } = createMockResponse();
+    const next = vi.fn();
+
+    await middleware(req, response, next);
+
+    expect(invoke).toHaveBeenCalledWith(
+      "create-org",
+      [{ name: "New Org", slug: "new-org" }],
+      {
+        requestContext,
+      },
+    );
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(getBody())).toEqual({
+      data: { id: "org-2", name: "New Org" },
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("rejects create-org payload with unsupported keys", async () => {
+    const invoke = vi.fn();
+    const middleware = createApiV1Middleware(invoke, {
+      resolveRequestContext: resolveRequestContextMock as any,
+    });
+    const req = createMockRequest({
+      method: "POST",
+      url: "/api/v1/orgs",
+      body: JSON.stringify({ name: "New Org", workspaceId: "ws-legacy" }),
+    });
+    const { response, getBody } = createMockResponse();
+    const next = vi.fn();
+
+    await middleware(req, response, next);
+
+    expect(response.statusCode).toBe(400);
+    expect(JSON.parse(getBody())).toMatchObject({
+      code: "INVALID_PAYLOAD",
+      error: expect.stringContaining("unsupported keys"),
+    });
+    expect(invoke).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("routes create-workspace endpoint with strict payload", async () => {
+    const invoke = vi
+      .fn()
+      .mockResolvedValue({ id: "ws-2", name: "Team Space", type: "team" });
+    const middleware = createApiV1Middleware(invoke, {
+      resolveRequestContext: resolveRequestContextMock as any,
+    });
+    const req = createMockRequest({
+      method: "POST",
+      url: "/api/v1/orgs/org-1/workspaces",
+      body: JSON.stringify({
+        name: "Team Space",
+        slug: "team-space",
+        type: "team",
+      }),
+    });
+    const { response, getBody } = createMockResponse();
+    const next = vi.fn();
+
+    await middleware(req, response, next);
+
+    expect(invoke).toHaveBeenCalledWith(
+      "create-workspace",
+      [{ name: "Team Space", slug: "team-space", type: "team" }],
+      {
+        requestContext,
+      },
+    );
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(getBody())).toEqual({
+      data: { id: "ws-2", name: "Team Space", type: "team" },
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("rejects create-workspace payload with unsupported keys", async () => {
+    const invoke = vi.fn();
+    const middleware = createApiV1Middleware(invoke, {
+      resolveRequestContext: resolveRequestContextMock as any,
+    });
+    const req = createMockRequest({
+      method: "POST",
+      url: "/api/v1/orgs/org-1/workspaces",
+      body: JSON.stringify({ name: "Team Space", orgId: "org-legacy" }),
+    });
+    const { response, getBody } = createMockResponse();
+    const next = vi.fn();
+
+    await middleware(req, response, next);
+
+    expect(response.statusCode).toBe(400);
+    expect(JSON.parse(getBody())).toMatchObject({
+      code: "INVALID_PAYLOAD",
+      error: expect.stringContaining("unsupported keys"),
+    });
+    expect(invoke).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("rejects patch-org payload with unsupported keys", async () => {
+    const invoke = vi.fn();
+    const middleware = createApiV1Middleware(invoke, {
+      resolveRequestContext: resolveRequestContextMock as any,
+    });
+    const req = createMockRequest({
+      method: "PATCH",
+      url: "/api/v1/orgs/org-1",
+      body: JSON.stringify({ name: "Renamed Org", orgId: "org-legacy" }),
+    });
+    const { response, getBody } = createMockResponse();
+    const next = vi.fn();
+
+    await middleware(req, response, next);
+
+    expect(response.statusCode).toBe(400);
+    expect(JSON.parse(getBody())).toMatchObject({
+      code: "INVALID_PAYLOAD",
+      error: expect.stringContaining("unsupported keys"),
+    });
+    expect(invoke).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("rejects patch-workspace payload with unsupported keys", async () => {
+    const invoke = vi.fn();
+    const middleware = createApiV1Middleware(invoke, {
+      resolveRequestContext: resolveRequestContextMock as any,
+    });
+    const req = createMockRequest({
+      method: "PATCH",
+      url: "/api/v1/orgs/org-1/workspaces/ws-1",
+      body: JSON.stringify({
+        name: "Renamed Workspace",
+        workspaceId: "legacy",
+      }),
+    });
+    const { response, getBody } = createMockResponse();
+    const next = vi.fn();
+
+    await middleware(req, response, next);
+
+    expect(response.statusCode).toBe(400);
+    expect(JSON.parse(getBody())).toMatchObject({
+      code: "INVALID_PAYLOAD",
+      error: expect.stringContaining("unsupported keys"),
+    });
+    expect(invoke).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it("routes create-app endpoint with strict payload", async () => {
     const invoke = vi.fn().mockResolvedValue({
       app: { id: 77, name: "My app" },

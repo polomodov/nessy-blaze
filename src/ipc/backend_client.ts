@@ -340,7 +340,17 @@ function resolveApiRoute(
       return {
         method: "POST",
         path: "/api/v1/orgs",
-        body: getFirstArg(args),
+        body: (() => {
+          const params = getFirstArg<{ name?: string; slug?: string }>(args);
+          const body: { name?: string; slug?: string } = {};
+          if (typeof params?.name === "string") {
+            body.name = params.name;
+          }
+          if (typeof params?.slug === "string") {
+            body.slug = params.slug;
+          }
+          return body;
+        })(),
       };
     case "get-org": {
       const params = getFirstArg<{ orgId?: string }>(args);
@@ -351,12 +361,14 @@ function resolveApiRoute(
       };
     }
     case "patch-org": {
-      const params = getFirstArg<{ orgId?: string }>(args);
+      const params = getFirstArg<{ orgId?: string; name?: string }>(args);
       const orgId = params?.orgId?.trim() || tenantScope.orgId;
+      const body =
+        typeof params?.name === "string" ? { name: params.name } : {};
       return {
         method: "PATCH",
         path: `/api/v1/orgs/${encodeURIComponent(orgId)}`,
-        body: getFirstArg(args),
+        body,
       };
     }
     case "list-workspaces": {
@@ -413,16 +425,26 @@ function resolveApiRoute(
       };
     }
     case "patch-workspace": {
-      const params = getFirstArg<{ orgId?: string; workspaceId?: string }>(
-        args,
-      );
+      const params = getFirstArg<{
+        orgId?: string;
+        workspaceId?: string;
+        name?: string;
+        slug?: string;
+      }>(args);
       const orgId = params?.orgId?.trim() || tenantScope.orgId;
       const workspaceId =
         params?.workspaceId?.trim() || tenantScope.workspaceId;
+      const body: { name?: string; slug?: string } = {};
+      if (typeof params?.name === "string") {
+        body.name = params.name;
+      }
+      if (typeof params?.slug === "string") {
+        body.slug = params.slug;
+      }
       return {
         method: "PATCH",
         path: `/api/v1/orgs/${encodeURIComponent(orgId)}/workspaces/${encodeURIComponent(workspaceId)}`,
-        body: getFirstArg(args),
+        body,
       };
     }
     case "delete-workspace": {

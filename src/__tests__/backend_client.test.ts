@@ -69,6 +69,110 @@ describe("backend_client transport", () => {
     expect(result).toEqual({ ok: true });
   });
 
+  it("routes tenant management channels with strict payloads", async () => {
+    window.__BLAZE_REMOTE_CONFIG__ = {
+      backendClient: {
+        baseUrl: "https://api.example.com",
+      },
+    };
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: { id: "org-7" } }), {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: { id: "org-7", name: "Org 7" } }), {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: { id: "ws-7" } }), {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: { id: "ws-7", name: "WS 7" } }), {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createBackendClientTransport();
+
+    await client.invoke("create-org", {
+      name: "Org 7",
+      slug: "org-7",
+      workspaceId: "legacy",
+    } as any);
+    await client.invoke("patch-org", {
+      orgId: "org-7",
+      name: "Org Seven",
+      workspaceId: "legacy",
+    } as any);
+    await client.invoke("create-workspace", {
+      orgId: "org-7",
+      name: "WS 7",
+      slug: "ws-7",
+      type: "team",
+      workspaceId: "legacy",
+    } as any);
+    await client.invoke("patch-workspace", {
+      orgId: "org-7",
+      workspaceId: "ws-7",
+      name: "WS Seven",
+      slug: "ws-seven",
+      type: "team",
+    } as any);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "https://api.example.com/api/v1/orgs",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ name: "Org 7", slug: "org-7" }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "https://api.example.com/api/v1/orgs/org-7",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ name: "Org Seven" }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "https://api.example.com/api/v1/orgs/org-7/workspaces",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ name: "WS 7", slug: "ws-7", type: "team" }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "https://api.example.com/api/v1/orgs/org-7/workspaces/ws-7",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ name: "WS Seven", slug: "ws-seven" }),
+      }),
+    );
+  });
+
   it("routes proposal and file-read core endpoints", async () => {
     window.__BLAZE_REMOTE_CONFIG__ = {
       backendClient: {

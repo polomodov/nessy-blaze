@@ -357,6 +357,185 @@ function parsePatchAppPayload(body: unknown): {
   return normalized;
 }
 
+function parseCreateOrgPayload(body: unknown): {
+  name?: string;
+  slug?: string;
+} {
+  const payload = parseRecordBody(body);
+  const allowedKeys = new Set(["name", "slug"]);
+  const unsupportedKeys = Object.keys(payload).filter(
+    (key) => !allowedKeys.has(key),
+  );
+
+  if (unsupportedKeys.length > 0) {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      `Invalid payload: unsupported keys (${unsupportedKeys.join(", ")})`,
+    );
+  }
+
+  if ("name" in payload && typeof payload.name !== "string") {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      'Invalid payload: "name" must be a string',
+    );
+  }
+
+  if ("slug" in payload && typeof payload.slug !== "string") {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      'Invalid payload: "slug" must be a string',
+    );
+  }
+
+  const normalized: { name?: string; slug?: string } = {};
+  if (typeof payload.name === "string") {
+    normalized.name = payload.name;
+  }
+  if (typeof payload.slug === "string") {
+    normalized.slug = payload.slug;
+  }
+  return normalized;
+}
+
+function parsePatchOrgPayload(body: unknown): {
+  name: string;
+} {
+  const payload = parseRecordBody(body);
+  const allowedKeys = new Set(["name"]);
+  const unsupportedKeys = Object.keys(payload).filter(
+    (key) => !allowedKeys.has(key),
+  );
+
+  if (unsupportedKeys.length > 0) {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      `Invalid payload: unsupported keys (${unsupportedKeys.join(", ")})`,
+    );
+  }
+
+  if (typeof payload.name !== "string" || payload.name.trim().length === 0) {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      'Invalid payload: "name" must be a non-empty string',
+    );
+  }
+
+  return { name: payload.name };
+}
+
+function parseCreateWorkspacePayload(body: unknown): {
+  name: string;
+  slug?: string;
+  type?: "personal" | "team";
+} {
+  const payload = parseRecordBody(body);
+  const allowedKeys = new Set(["name", "slug", "type"]);
+  const unsupportedKeys = Object.keys(payload).filter(
+    (key) => !allowedKeys.has(key),
+  );
+
+  if (unsupportedKeys.length > 0) {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      `Invalid payload: unsupported keys (${unsupportedKeys.join(", ")})`,
+    );
+  }
+
+  if (typeof payload.name !== "string" || payload.name.trim().length === 0) {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      'Invalid payload: "name" must be a non-empty string',
+    );
+  }
+
+  if ("slug" in payload && typeof payload.slug !== "string") {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      'Invalid payload: "slug" must be a string',
+    );
+  }
+
+  if (
+    "type" in payload &&
+    payload.type !== "personal" &&
+    payload.type !== "team"
+  ) {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      'Invalid payload: "type" must be "personal" or "team"',
+    );
+  }
+
+  const normalized: {
+    name: string;
+    slug?: string;
+    type?: "personal" | "team";
+  } = {
+    name: payload.name,
+  };
+  if (typeof payload.slug === "string") {
+    normalized.slug = payload.slug;
+  }
+  if (payload.type === "personal" || payload.type === "team") {
+    normalized.type = payload.type;
+  }
+  return normalized;
+}
+
+function parsePatchWorkspacePayload(body: unknown): {
+  name?: string;
+  slug?: string;
+} {
+  const payload = parseRecordBody(body);
+  const allowedKeys = new Set(["name", "slug"]);
+  const unsupportedKeys = Object.keys(payload).filter(
+    (key) => !allowedKeys.has(key),
+  );
+
+  if (unsupportedKeys.length > 0) {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      `Invalid payload: unsupported keys (${unsupportedKeys.join(", ")})`,
+    );
+  }
+
+  if ("name" in payload && typeof payload.name !== "string") {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      'Invalid payload: "name" must be a string',
+    );
+  }
+
+  if ("slug" in payload && typeof payload.slug !== "string") {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      'Invalid payload: "slug" must be a string',
+    );
+  }
+
+  const normalized: { name?: string; slug?: string } = {};
+  if (typeof payload.name === "string") {
+    normalized.name = payload.name;
+  }
+  if (typeof payload.slug === "string") {
+    normalized.slug = payload.slug;
+  }
+  return normalized;
+}
+
 const SCOPED_ROUTES: RouteDefinition[] = [
   {
     method: "GET",
@@ -370,11 +549,14 @@ const SCOPED_ROUTES: RouteDefinition[] = [
   {
     method: "POST",
     pattern: /^\/api\/v1\/orgs$/,
-    build: (_url, _match, body) => ({
-      channel: "create-org",
-      args: [body],
-      requiresAuth: true,
-    }),
+    build: (_url, _match, body) => {
+      const payload = parseCreateOrgPayload(body);
+      return {
+        channel: "create-org",
+        args: [payload],
+        requiresAuth: true,
+      };
+    },
   },
   {
     method: "GET",
@@ -389,12 +571,15 @@ const SCOPED_ROUTES: RouteDefinition[] = [
   {
     method: "PATCH",
     pattern: /^\/api\/v1\/orgs\/([^/]+)$/,
-    build: (_url, match, body) => ({
-      channel: "patch-org",
-      args: [body],
-      tenantPath: { orgId: match[1] },
-      requiresAuth: true,
-    }),
+    build: (_url, match, body) => {
+      const payload = parsePatchOrgPayload(body);
+      return {
+        channel: "patch-org",
+        args: [payload],
+        tenantPath: { orgId: match[1] },
+        requiresAuth: true,
+      };
+    },
   },
   {
     method: "GET",
@@ -409,12 +594,15 @@ const SCOPED_ROUTES: RouteDefinition[] = [
   {
     method: "POST",
     pattern: /^\/api\/v1\/orgs\/([^/]+)\/workspaces$/,
-    build: (_url, match, body) => ({
-      channel: "create-workspace",
-      args: [body],
-      tenantPath: { orgId: match[1] },
-      requiresAuth: true,
-    }),
+    build: (_url, match, body) => {
+      const payload = parseCreateWorkspacePayload(body);
+      return {
+        channel: "create-workspace",
+        args: [payload],
+        tenantPath: { orgId: match[1] },
+        requiresAuth: true,
+      };
+    },
   },
   {
     method: "GET",
@@ -429,12 +617,15 @@ const SCOPED_ROUTES: RouteDefinition[] = [
   {
     method: "PATCH",
     pattern: /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)$/,
-    build: (_url, match, body) => ({
-      channel: "patch-workspace",
-      args: [body],
-      tenantPath: { orgId: match[1], workspaceId: match[2] },
-      requiresAuth: true,
-    }),
+    build: (_url, match, body) => {
+      const payload = parsePatchWorkspacePayload(body);
+      return {
+        channel: "patch-workspace",
+        args: [payload],
+        tenantPath: { orgId: match[1], workspaceId: match[2] },
+        requiresAuth: true,
+      };
+    },
   },
   {
     method: "DELETE",
