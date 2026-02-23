@@ -236,7 +236,6 @@ export const UserSettingsSchema = z.object({
       systemCpuPercent: z.number().optional(),
     })
     .optional(),
-  hideLocalAgentNewChatToast: z.boolean().optional(),
 });
 
 /**

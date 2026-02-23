@@ -142,6 +142,7 @@ describe("invokeIpcChannelOverHttp", () => {
               enableFileEditing: true,
             },
             runtimeMode2: "docker",
+            hideLocalAgentNewChatToast: true,
             enableSupabaseWriteSqlMigration: true,
           } as Record<string, unknown>,
         ],
@@ -159,6 +160,7 @@ describe("invokeIpcChannelOverHttp", () => {
       );
       expect(updatedSettings).not.toHaveProperty("experiments");
       expect(updatedSettings).not.toHaveProperty("runtimeMode2");
+      expect(updatedSettings).not.toHaveProperty("hideLocalAgentNewChatToast");
 
       const persistedSettings = (await invokeIpcChannelOverHttp(
         "get-user-settings",
@@ -175,6 +177,9 @@ describe("invokeIpcChannelOverHttp", () => {
       );
       expect(persistedSettings).not.toHaveProperty("experiments");
       expect(persistedSettings).not.toHaveProperty("runtimeMode2");
+      expect(persistedSettings).not.toHaveProperty(
+        "hideLocalAgentNewChatToast",
+      );
     } finally {
       await invokeIpcChannelOverHttp("set-user-settings", [
         { uiLanguage: initialLanguage },
