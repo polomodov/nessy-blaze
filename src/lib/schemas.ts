@@ -185,9 +185,6 @@ export const SmartContextModeSchema = z.enum([
 ]);
 export type SmartContextMode = z.infer<typeof SmartContextModeSchema>;
 
-export const AgentToolConsentSchema = z.enum(["ask", "always", "never"]);
-export type AgentToolConsent = z.infer<typeof AgentToolConsentSchema>;
-
 /**
  * Zod schema for user settings
  */
@@ -202,7 +199,6 @@ export const UserSettingsSchema = z.object({
   ////////////////////////////////
   selectedModel: LargeLanguageModelSchema,
   providerSettings: z.record(z.string(), ProviderSettingSchema),
-  agentToolConsents: z.record(z.string(), AgentToolConsentSchema).optional(),
   autoApproveChanges: z.boolean().optional(),
   telemetryConsent: z.enum(["opted_in", "opted_out", "unset"]).optional(),
   telemetryUserId: z.string().optional(),

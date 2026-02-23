@@ -4,7 +4,6 @@
  */
 
 import crypto from "node:crypto";
-import { readSettings, writeSettings } from "@/main/settings";
 import { writeFileTool } from "./tools/write_file";
 import { deleteFileTool } from "./tools/delete_file";
 import { renameFileTool } from "./tools/rename_file";
@@ -25,11 +24,11 @@ import type { LanguageModelV3ToolResultOutput } from "@ai-sdk/provider";
 import {
   escapeXmlAttr,
   escapeXmlContent,
+  type AgentToolConsent,
   type ToolDefinition,
   type AgentContext,
   type ToolResult,
 } from "./tools/types";
-import { AgentToolConsent } from "@/lib/schemas";
 import { waitForAgentToolConsent } from "./agent_tool_consent";
 import { safeSend } from "@/ipc/utils/safe_sender";
 import type { ServerEventSink } from "@/ipc/utils/server_event_sink";
@@ -62,6 +61,7 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
 // ============================================================================
 
 export type AgentToolName = (typeof TOOL_DEFINITIONS)[number]["name"];
+const agentToolConsents = new Map<AgentToolName, AgentToolConsent>();
 
 export function getDefaultConsent(toolName: AgentToolName): AgentToolConsent {
   const tool = TOOL_DEFINITIONS.find((t) => t.name === toolName);
@@ -69,9 +69,8 @@ export function getDefaultConsent(toolName: AgentToolName): AgentToolConsent {
 }
 
 export function getAgentToolConsent(toolName: AgentToolName): AgentToolConsent {
-  const settings = readSettings();
-  const stored = settings.agentToolConsents?.[toolName];
-  if (stored) {
+  const stored = agentToolConsents.get(toolName);
+  if (stored != null) {
     return stored;
   }
   return getDefaultConsent(toolName);
@@ -81,27 +80,19 @@ export function setAgentToolConsent(
   toolName: AgentToolName,
   consent: AgentToolConsent,
 ): void {
-  const settings = readSettings();
-  writeSettings({
-    agentToolConsents: {
-      ...settings.agentToolConsents,
-      [toolName]: consent,
-    },
-  });
+  agentToolConsents.set(toolName, consent);
 }
 
 export function getAllAgentToolConsents(): Record<
   AgentToolName,
   AgentToolConsent
 > {
-  const settings = readSettings();
-  const stored = settings.agentToolConsents ?? {};
   const result: Record<string, AgentToolConsent> = {};
 
   // Start with defaults, override with stored values
   for (const tool of TOOL_DEFINITIONS) {
-    const storedConsent = stored[tool.name];
-    if (storedConsent) {
+    const storedConsent = agentToolConsents.get(tool.name as AgentToolName);
+    if (storedConsent != null) {
       result[tool.name] = storedConsent;
     } else {
       result[tool.name] = getDefaultConsent(tool.name as AgentToolName);

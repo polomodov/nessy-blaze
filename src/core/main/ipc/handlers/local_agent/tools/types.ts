@@ -4,9 +4,10 @@
 
 import { z } from "zod";
 import { jsonrepair } from "jsonrepair";
-import { AgentToolConsent } from "@/lib/schemas";
 import { AgentTodo } from "@/ipc/ipc_types";
 import type { ServerEventSink } from "@/ipc/utils/server_event_sink";
+
+export type AgentToolConsent = "ask" | "always" | "never";
 
 // ============================================================================
 // XML Escape Helpers
