@@ -90,6 +90,7 @@ This document locks the runtime scope for the HTTP-only migration.
 - SSE stream payload validation is tightened to active v1 requirements (strict top-level keys plus typed optional `redo|attachments|selectedComponents` fields).
 - Unused MCP consent i18n labels are removed from active UI localization bundles.
 - Active chat UI message role mapping uses `assistant` terminology in v1 (legacy `agent` role label removed from renderer message model and typing/status copy).
+- Core web E2E suite now includes chat stream payload contract checks for v1 rejection paths (unsupported top-level keys and invalid attachment object shapes).
 
 ### In progress
 
