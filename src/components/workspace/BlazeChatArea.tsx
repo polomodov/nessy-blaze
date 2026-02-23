@@ -53,7 +53,7 @@ type Message = {
   id: string;
   backendId?: number;
   content: string;
-  role: "user" | "agent";
+  role: "user" | "assistant";
   createdAt?: Date | null;
   isAssistantActionOnly?: boolean;
   statusBlocks?: StatusBlock[];
@@ -269,7 +269,7 @@ function mapBackendMessages(
           ? options.assistantActionOnlyMessage
           : strippedContent
         : message.content;
-      const role: Message["role"] = isAssistant ? "agent" : "user";
+      const role: Message["role"] = isAssistant ? "assistant" : "user";
 
       return {
         id: String(message.id),
@@ -443,7 +443,8 @@ export function BlazeChatArea({
   const [revertingHistoryVersionId, setRevertingHistoryVersionId] = useState<
     string | null
   >(null);
-  const [isHiddenAgentActivity, setIsHiddenAgentActivity] = useState(false);
+  const [isHiddenAssistantActivity, setIsHiddenAssistantActivity] =
+    useState(false);
   const [visibleStartIndex, setVisibleStartIndex] = useState(0);
   const [pendingCodeProposal, setPendingCodeProposal] =
     useState<PendingCodeProposal | null>(null);
@@ -661,7 +662,7 @@ export function BlazeChatArea({
         shouldUseSmoothScrollRef.current = false;
         setRevertingMessageId(null);
         setIsTyping(false);
-        setIsHiddenAgentActivity(false);
+        setIsHiddenAssistantActivity(false);
         return;
       }
 
@@ -695,7 +696,7 @@ export function BlazeChatArea({
 
       let selectedChatId: number | null = null;
       let selectedMessages: Message[] = [];
-      let selectedHasHiddenAgentActivity = false;
+      let selectedHasHiddenAssistantActivity = false;
 
       for (const chatSummary of chatsByRecency) {
         const chat = await IpcClient.getInstance().getChat(chatSummary.id);
@@ -707,7 +708,7 @@ export function BlazeChatArea({
         if (mappedMessages.length > 0) {
           selectedChatId = chat.id;
           selectedMessages = mappedMessages;
-          selectedHasHiddenAgentActivity = hasHiddenActivity(chat.messages);
+          selectedHasHiddenAssistantActivity = hasHiddenActivity(chat.messages);
           break;
         }
       }
@@ -721,7 +722,9 @@ export function BlazeChatArea({
         }
         selectedChatId = latestChat.id;
         selectedMessages = mapMessages(latestChat.messages);
-        selectedHasHiddenAgentActivity = hasHiddenActivity(latestChat.messages);
+        selectedHasHiddenAssistantActivity = hasHiddenActivity(
+          latestChat.messages,
+        );
       }
 
       visibleChatIdRef.current = selectedChatId;
@@ -733,8 +736,8 @@ export function BlazeChatArea({
       const isSelectedChatPending =
         pendingStreamChatIdsRef.current.has(selectedChatId);
       setIsTyping(isSelectedChatPending);
-      setIsHiddenAgentActivity(
-        isSelectedChatPending ? selectedHasHiddenAgentActivity : false,
+      setIsHiddenAssistantActivity(
+        isSelectedChatPending ? selectedHasHiddenAssistantActivity : false,
       );
     };
 
@@ -812,7 +815,9 @@ export function BlazeChatArea({
           setMessages(nextMessages);
           setVisibleStartIndex(getHistoryWindowStart(nextMessages));
           shouldUseSmoothScrollRef.current = false;
-          setIsHiddenAgentActivity(hasHiddenActivity(refreshedChat.messages));
+          setIsHiddenAssistantActivity(
+            hasHiddenActivity(refreshedChat.messages),
+          );
           setIsTyping(false);
           await syncPendingCodeProposal(completedChatId);
         } catch (error) {
@@ -853,7 +858,7 @@ export function BlazeChatArea({
     setMessages((previous) => [...previous, userMessage]);
     setInput("");
     setIsTyping(true);
-    setIsHiddenAgentActivity(false);
+    setIsHiddenAssistantActivity(false);
     setPendingCodeProposal(null);
     setSelectedComponents([]);
     setVisualEditingSelectedComponent(null);
@@ -909,13 +914,13 @@ export function BlazeChatArea({
             return;
           }
           setMessages(mapMessages(updatedMessages));
-          setIsHiddenAgentActivity(hasHiddenActivity(updatedMessages));
+          setIsHiddenAssistantActivity(hasHiddenActivity(updatedMessages));
         },
         onEnd: () => {
           pendingStreamChatIdsRef.current.delete(streamChatId);
           if (visibleChatIdRef.current === streamChatId) {
             setIsTyping(false);
-            setIsHiddenAgentActivity(false);
+            setIsHiddenAssistantActivity(false);
           }
           void syncPendingCodeProposal(streamChatId);
           if (activeTab === "history") {
@@ -927,7 +932,7 @@ export function BlazeChatArea({
           if (visibleChatIdRef.current === streamChatId) {
             setError(streamError);
             setIsTyping(false);
-            setIsHiddenAgentActivity(false);
+            setIsHiddenAssistantActivity(false);
           }
         },
       });
@@ -955,7 +960,7 @@ export function BlazeChatArea({
 
       if (visibleChatIdRef.current === pendingCodeProposal.chatId) {
         setMessages(mapMessages(refreshedChat.messages));
-        setIsHiddenAgentActivity(hasHiddenActivity(refreshedChat.messages));
+        setIsHiddenAssistantActivity(hasHiddenActivity(refreshedChat.messages));
       }
       await syncPendingCodeProposal(pendingCodeProposal.chatId);
 
@@ -998,7 +1003,7 @@ export function BlazeChatArea({
     const assistantMessage = messages[assistantMessageIndex];
     if (
       !assistantMessage ||
-      assistantMessage.role !== "agent" ||
+      assistantMessage.role !== "assistant" ||
       !assistantMessage.sourceCommitHash
     ) {
       return;
@@ -1032,7 +1037,7 @@ export function BlazeChatArea({
       const refreshedChat = await IpcClient.getInstance().getChat(chatId);
       if (visibleChatIdRef.current === chatId) {
         setMessages(mapMessages(refreshedChat.messages));
-        setIsHiddenAgentActivity(hasHiddenActivity(refreshedChat.messages));
+        setIsHiddenAssistantActivity(hasHiddenActivity(refreshedChat.messages));
       }
       await syncPendingCodeProposal(chatId);
       if (activeTab === "history") {
@@ -1064,7 +1069,9 @@ export function BlazeChatArea({
         const refreshedChat = await IpcClient.getInstance().getChat(chatId);
         if (visibleChatIdRef.current === chatId) {
           setMessages(mapMessages(refreshedChat.messages));
-          setIsHiddenAgentActivity(hasHiddenActivity(refreshedChat.messages));
+          setIsHiddenAssistantActivity(
+            hasHiddenActivity(refreshedChat.messages),
+          );
         }
         await syncPendingCodeProposal(chatId);
       }
@@ -1086,7 +1093,7 @@ export function BlazeChatArea({
 
     pendingStreamChatIdsRef.current.delete(chatId);
     setIsTyping(false);
-    setIsHiddenAgentActivity(false);
+    setIsHiddenAssistantActivity(false);
     IpcClient.getInstance().cancelChatStream(chatId);
   };
 
@@ -1252,7 +1259,7 @@ export function BlazeChatArea({
                           }`}
                         >
                           {message.content &&
-                            (message.role === "agent" ? (
+                            (message.role === "assistant" ? (
                               <WorkspaceMarkdown content={message.content} />
                             ) : (
                               <div className="whitespace-pre-wrap">
@@ -1297,7 +1304,7 @@ export function BlazeChatArea({
                               </div>
                             );
                           })}
-                          {message.role === "agent" &&
+                          {message.role === "assistant" &&
                             message.sourceCommitHash && (
                               <div className="mt-3 border-t border-border/60 pt-2">
                                 <button
@@ -1357,7 +1364,7 @@ export function BlazeChatArea({
                         <span className="h-2 w-2 animate-pulse-dot rounded-full bg-muted-foreground [animation-delay:0.4s]" />
                       </div>
                       <p className="mt-2 text-xs text-muted-foreground">
-                        {isHiddenAgentActivity
+                        {isHiddenAssistantActivity
                           ? t("chat.typing.thinking")
                           : t("chat.typing.drafting")}
                       </p>

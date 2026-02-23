@@ -580,7 +580,7 @@ describe("BlazeChatArea", () => {
 
     expect(cancelChatStreamMock).toHaveBeenCalledTimes(1);
     expect(cancelChatStreamMock).toHaveBeenCalledWith(300);
-    expect(screen.queryByText("Агент формирует ответ...")).toBeNull();
+    expect(screen.queryByText("Ассистент формирует ответ...")).toBeNull();
   });
 
   it("keeps waiting indicator for a pending stream after switching projects away and back", async () => {
@@ -641,7 +641,7 @@ describe("BlazeChatArea", () => {
 
     await waitFor(() => {
       expect(streamMessageMock).toHaveBeenCalledTimes(1);
-      expect(screen.getByText("Агент формирует ответ...")).toBeTruthy();
+      expect(screen.getByText("Ассистент формирует ответ...")).toBeTruthy();
     });
 
     view.rerender(<BlazeChatArea activeAppId={2} />);
@@ -651,14 +651,14 @@ describe("BlazeChatArea", () => {
       expect(getChatMock).toHaveBeenCalledWith(400);
       expect(screen.getByText("Second project context")).toBeTruthy();
     });
-    expect(screen.queryByText("Агент формирует ответ...")).toBeNull();
+    expect(screen.queryByText("Ассистент формирует ответ...")).toBeNull();
 
     view.rerender(<BlazeChatArea activeAppId={1} />);
 
     await waitFor(() => {
       expect(getChatsMock).toHaveBeenCalledWith(1);
       expect(screen.getByText("First project context")).toBeTruthy();
-      expect(screen.getByText("Агент формирует ответ...")).toBeTruthy();
+      expect(screen.getByText("Ассистент формирует ответ...")).toBeTruthy();
     });
   });
 
@@ -1134,7 +1134,7 @@ Files to write: 1</blaze-status>`,
     });
 
     expect(
-      screen.getByText("Агент думает и применяет изменения..."),
+      screen.getByText("Ассистент думает и применяет изменения..."),
     ).toBeTruthy();
   });
 

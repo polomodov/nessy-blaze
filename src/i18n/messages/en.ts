@@ -118,7 +118,7 @@ export const en = {
   "chat.rollback.button.reverting": "Rolling back...",
   "chat.empty.title": "Nessy Blaze",
   "chat.empty.subtitle":
-    "Describe the page you need, and the agent will draft it for you.",
+    "Describe the page you need, and the assistant will draft it for you.",
   "chat.starter.landing.label": "Landing page",
   "chat.starter.landing.prompt":
     "Build a promo landing page with a hero section, value props, and a lead form.",
@@ -131,8 +131,8 @@ export const en = {
   "chat.starter.redesign.label": "Redesign",
   "chat.starter.redesign.prompt":
     "Redesign the About page in a modern and minimalist style with clear typography.",
-  "chat.typing.thinking": "Agent is thinking and applying changes...",
-  "chat.typing.drafting": "Agent is drafting a response...",
+  "chat.typing.thinking": "Assistant is thinking and applying changes...",
+  "chat.typing.drafting": "Assistant is drafting a response...",
   "chat.input.placeholder": "Describe what should be built...",
   "chat.input.send": "Send message",
   "chat.input.cancel": "Cancel generation",
@@ -151,7 +151,7 @@ export const en = {
   "chat.history.restoreInProgress": "Restoring...",
   "chat.history.hint":
     "Use this tab to inspect and rollback saved project versions.",
-  "chat.footer.hint": "The agent drafts pages based on your design system.",
+  "chat.footer.hint": "The assistant drafts pages based on your design system.",
   "chat.autofix.started":
     "Auto-fix started. Gathering diagnostics and preparing changes.",
 

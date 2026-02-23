@@ -123,7 +123,7 @@ export const ru = {
   "chat.rollback.button.reverting": "Откатываем...",
   "chat.empty.title": "Nessy Blaze",
   "chat.empty.subtitle":
-    "Опишите нужную страницу, и агент подготовит черновик.",
+    "Опишите нужную страницу, и ассистент подготовит черновик.",
   "chat.starter.landing.label": "Лендинг",
   "chat.starter.landing.prompt":
     "Собери промо-лендинг с hero-блоком, преимуществами и формой заявки.",
@@ -136,8 +136,8 @@ export const ru = {
   "chat.starter.redesign.label": "Редизайн",
   "chat.starter.redesign.prompt":
     "Сделай редизайн страницы About в современном минималистичном стиле с четкой типографикой.",
-  "chat.typing.thinking": "Агент думает и применяет изменения...",
-  "chat.typing.drafting": "Агент формирует ответ...",
+  "chat.typing.thinking": "Ассистент думает и применяет изменения...",
+  "chat.typing.drafting": "Ассистент формирует ответ...",
   "chat.input.placeholder": "Опишите, что нужно собрать...",
   "chat.input.send": "Отправить сообщение",
   "chat.input.cancel": "Остановить генерацию",
@@ -156,7 +156,7 @@ export const ru = {
   "chat.history.restoreInProgress": "Восстанавливаем...",
   "chat.history.hint":
     "Во вкладке можно посмотреть и откатить сохраненные версии проекта.",
-  "chat.footer.hint": "Агент создает страницы по вашей дизайн-системе.",
+  "chat.footer.hint": "Ассистент создает страницы по вашей дизайн-системе.",
   "chat.autofix.started":
     "Автофикс запущен. Собираем диагностику и готовим изменения.",
 

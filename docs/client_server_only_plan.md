@@ -89,6 +89,7 @@ This document locks the runtime scope for the HTTP-only migration.
 - WebSocket stream payload validation is tightened to active v1 requirements (non-empty request/org/workspace/prompt strings, finite chatId, typed optional fields, and rejection of unsupported top-level keys).
 - SSE stream payload validation is tightened to active v1 requirements (strict top-level keys plus typed optional `redo|attachments|selectedComponents` fields).
 - Unused MCP consent i18n labels are removed from active UI localization bundles.
+- Active chat UI message role mapping uses `assistant` terminology in v1 (legacy `agent` role label removed from renderer message model and typing/status copy).
 
 ### In progress
 
