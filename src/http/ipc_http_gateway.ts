@@ -125,15 +125,16 @@ const DEFAULT_USER_SETTINGS: UserSettings = UserSettingsSchema.parse({
   enableNativeGit: true,
 });
 
-const LEGACY_USER_SETTINGS_KEYS = [
+const REMOVED_USER_SETTINGS_KEYS = [
   "githubUser",
   "githubAccessToken",
   "vercelAccessToken",
   "supabase",
   "neon",
+  "agentToolConsents",
 ] as const;
 
-type LegacyUserSettingsKey = (typeof LEGACY_USER_SETTINGS_KEYS)[number];
+type RemovedUserSettingsKey = (typeof REMOVED_USER_SETTINGS_KEYS)[number];
 
 function normalizeChatModeForHttpOnly(value: unknown): "build" | "ask" {
   return value === "ask" ? "ask" : "build";
@@ -161,8 +162,25 @@ function normalizeLegacyUserSettingsModes(
 
 function stripLegacyUserSettings(settings: UserSettings): UserSettings {
   const sanitized: UserSettings & Record<string, unknown> = { ...settings };
-  for (const key of LEGACY_USER_SETTINGS_KEYS) {
-    delete sanitized[key as LegacyUserSettingsKey];
+  for (const key of REMOVED_USER_SETTINGS_KEYS) {
+    delete sanitized[key as RemovedUserSettingsKey];
+  }
+
+  if (
+    sanitized.experiments &&
+    typeof sanitized.experiments === "object" &&
+    !Array.isArray(sanitized.experiments)
+  ) {
+    const experiments = {
+      ...(sanitized.experiments as Record<string, unknown>),
+    };
+    delete experiments.enableLocalAgent;
+    delete experiments.enableFileEditing;
+    if (Object.keys(experiments).length === 0) {
+      delete sanitized.experiments;
+    } else {
+      sanitized.experiments = experiments;
+    }
   }
   return UserSettingsSchema.parse(normalizeLegacyUserSettingsModes(sanitized));
 }
@@ -173,8 +191,25 @@ function sanitizeUserSettingsPatch(
   const sanitized: Partial<UserSettings> & Record<string, unknown> = {
     ...patch,
   };
-  for (const key of LEGACY_USER_SETTINGS_KEYS) {
-    delete sanitized[key as LegacyUserSettingsKey];
+  for (const key of REMOVED_USER_SETTINGS_KEYS) {
+    delete sanitized[key as RemovedUserSettingsKey];
+  }
+
+  if (
+    sanitized.experiments &&
+    typeof sanitized.experiments === "object" &&
+    !Array.isArray(sanitized.experiments)
+  ) {
+    const experiments = {
+      ...(sanitized.experiments as Record<string, unknown>),
+    };
+    delete experiments.enableLocalAgent;
+    delete experiments.enableFileEditing;
+    if (Object.keys(experiments).length === 0) {
+      delete sanitized.experiments;
+    } else {
+      sanitized.experiments = experiments;
+    }
   }
   return normalizeLegacyUserSettingsModes(sanitized) as Partial<UserSettings>;
 }

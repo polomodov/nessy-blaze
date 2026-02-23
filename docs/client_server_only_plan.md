@@ -46,6 +46,7 @@ This document locks the runtime scope for the HTTP-only migration.
   - `vercelAccessToken`
   - `supabase`
   - `neon`
+- User settings HTTP contract strips agent-only consent/experiment fields (`agentToolConsents`, legacy local-agent experiment toggles).
 - Legacy Supabase settings flags are removed from active runtime schema.
 - `blaze-execute-sql` integration branch is disabled in response processing for client-server-only mode.
 - Manual approval payload extraction no longer treats legacy `blaze-execute-sql` tags as actionable runtime changes.

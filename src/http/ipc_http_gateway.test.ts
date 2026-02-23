@@ -115,7 +115,7 @@ describe("invokeIpcChannelOverHttp", () => {
     }
   });
 
-  it("filters legacy integration fields from user settings payloads", async () => {
+  it("filters legacy integration and agent-only fields from user settings payloads", async () => {
     const initialSettings = (await invokeIpcChannelOverHttp(
       "get-user-settings",
       [],
@@ -136,6 +136,11 @@ describe("invokeIpcChannelOverHttp", () => {
             vercelAccessToken: "legacy-vercel-token",
             supabase: { organizations: {} },
             neon: { accessToken: "legacy-neon-token" },
+            agentToolConsents: { "read-file": "always" },
+            experiments: {
+              enableLocalAgent: true,
+              enableFileEditing: true,
+            },
             enableSupabaseWriteSqlMigration: true,
           } as Record<string, unknown>,
         ],
@@ -147,9 +152,11 @@ describe("invokeIpcChannelOverHttp", () => {
       expect(updatedSettings).not.toHaveProperty("vercelAccessToken");
       expect(updatedSettings).not.toHaveProperty("supabase");
       expect(updatedSettings).not.toHaveProperty("neon");
+      expect(updatedSettings).not.toHaveProperty("agentToolConsents");
       expect(updatedSettings).not.toHaveProperty(
         "enableSupabaseWriteSqlMigration",
       );
+      expect(updatedSettings).not.toHaveProperty("experiments");
 
       const persistedSettings = (await invokeIpcChannelOverHttp(
         "get-user-settings",
@@ -160,9 +167,11 @@ describe("invokeIpcChannelOverHttp", () => {
       expect(persistedSettings).not.toHaveProperty("vercelAccessToken");
       expect(persistedSettings).not.toHaveProperty("supabase");
       expect(persistedSettings).not.toHaveProperty("neon");
+      expect(persistedSettings).not.toHaveProperty("agentToolConsents");
       expect(persistedSettings).not.toHaveProperty(
         "enableSupabaseWriteSqlMigration",
       );
+      expect(persistedSettings).not.toHaveProperty("experiments");
     } finally {
       await invokeIpcChannelOverHttp("set-user-settings", [
         { uiLanguage: initialLanguage },
