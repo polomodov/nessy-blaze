@@ -171,6 +171,96 @@ describe("createChatStreamMiddleware", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it("returns 400 for invalid JSON payload", async () => {
+    const middleware = createMiddleware();
+    const req = createMockRequest({
+      method: "POST",
+      url: "/api/v1/orgs/org-1/workspaces/ws-1/chats/22/stream",
+      body: '{"prompt": "hello"',
+    });
+    const { response, getBody } = createMockResponse();
+
+    await middleware(req, response, vi.fn());
+
+    expect(response.statusCode).toBe(400);
+    expect(JSON.parse(getBody())).toEqual({
+      error: "Invalid JSON body",
+    });
+  });
+
+  it("returns 400 for unsupported stream payload keys", async () => {
+    const middleware = createMiddleware();
+    const req = createMockRequest({
+      method: "POST",
+      url: "/api/v1/orgs/org-1/workspaces/ws-1/chats/22/stream",
+      body: JSON.stringify({
+        prompt: "Build a landing page",
+        extraField: true,
+      }),
+    });
+    const { response, getBody } = createMockResponse();
+
+    await middleware(req, response, vi.fn());
+
+    expect(response.statusCode).toBe(400);
+    expect(JSON.parse(getBody())).toEqual({
+      error: "Invalid payload: unsupported keys (extraField)",
+    });
+  });
+
+  it("returns 400 for invalid optional stream payload field types", async () => {
+    const middleware = createMiddleware();
+
+    const reqRedo = createMockRequest({
+      method: "POST",
+      url: "/api/v1/orgs/org-1/workspaces/ws-1/chats/22/stream",
+      body: JSON.stringify({
+        prompt: "Build a landing page",
+        redo: "yes",
+      }),
+    });
+    const responseRedo = createMockResponse();
+    await middleware(reqRedo, responseRedo.response, vi.fn());
+    expect(responseRedo.response.statusCode).toBe(400);
+    expect(JSON.parse(responseRedo.getBody())).toEqual({
+      error: 'Invalid payload: "redo" must be a boolean',
+    });
+
+    const reqAttachments = createMockRequest({
+      method: "POST",
+      url: "/api/v1/orgs/org-1/workspaces/ws-1/chats/22/stream",
+      body: JSON.stringify({
+        prompt: "Build a landing page",
+        attachments: {},
+      }),
+    });
+    const responseAttachments = createMockResponse();
+    await middleware(reqAttachments, responseAttachments.response, vi.fn());
+    expect(responseAttachments.response.statusCode).toBe(400);
+    expect(JSON.parse(responseAttachments.getBody())).toEqual({
+      error: 'Invalid payload: "attachments" must be an array',
+    });
+
+    const reqSelectedComponents = createMockRequest({
+      method: "POST",
+      url: "/api/v1/orgs/org-1/workspaces/ws-1/chats/22/stream",
+      body: JSON.stringify({
+        prompt: "Build a landing page",
+        selectedComponents: {},
+      }),
+    });
+    const responseSelectedComponents = createMockResponse();
+    await middleware(
+      reqSelectedComponents,
+      responseSelectedComponents.response,
+      vi.fn(),
+    );
+    expect(responseSelectedComponents.response.statusCode).toBe(400);
+    expect(JSON.parse(responseSelectedComponents.getBody())).toEqual({
+      error: 'Invalid payload: "selectedComponents" must be an array',
+    });
+  });
+
   it("streams chat updates over SSE", async () => {
     mockHandleChatStreamRequest.mockImplementationOnce(
       async (eventSink: any, request: ChatStreamParams) => {

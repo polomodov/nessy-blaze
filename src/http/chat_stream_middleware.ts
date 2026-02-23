@@ -60,6 +60,73 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   return JSON.parse(rawBody);
 }
 
+const STREAM_PAYLOAD_ALLOWED_KEYS = new Set([
+  "prompt",
+  "redo",
+  "attachments",
+  "selectedComponents",
+]);
+
+function parseChatStreamPayload(rawPayload: unknown): {
+  prompt: string;
+  redo?: boolean;
+  attachments?: ChatStreamParams["attachments"];
+  selectedComponents?: ChatStreamParams["selectedComponents"];
+} {
+  if (
+    !rawPayload ||
+    typeof rawPayload !== "object" ||
+    Array.isArray(rawPayload)
+  ) {
+    throw new Error("Invalid payload");
+  }
+
+  const payload = rawPayload as Record<string, unknown>;
+  const unsupportedKeys = Object.keys(payload).filter(
+    (key) => !STREAM_PAYLOAD_ALLOWED_KEYS.has(key),
+  );
+  if (unsupportedKeys.length > 0) {
+    throw new Error(
+      `Invalid payload: unsupported keys (${unsupportedKeys.join(", ")})`,
+    );
+  }
+
+  const prompt =
+    typeof payload.prompt === "string" ? payload.prompt.trim() : "";
+  if (!prompt) {
+    throw new Error('Invalid payload: "prompt" is required');
+  }
+
+  if (payload.redo !== undefined && typeof payload.redo !== "boolean") {
+    throw new Error('Invalid payload: "redo" must be a boolean');
+  }
+  if (
+    payload.attachments !== undefined &&
+    !Array.isArray(payload.attachments)
+  ) {
+    throw new Error('Invalid payload: "attachments" must be an array');
+  }
+  if (
+    payload.selectedComponents !== undefined &&
+    !Array.isArray(payload.selectedComponents)
+  ) {
+    throw new Error('Invalid payload: "selectedComponents" must be an array');
+  }
+
+  return {
+    prompt,
+    redo: payload.redo === true ? true : undefined,
+    attachments:
+      payload.attachments !== undefined
+        ? (payload.attachments as ChatStreamParams["attachments"])
+        : undefined,
+    selectedComponents:
+      payload.selectedComponents !== undefined
+        ? (payload.selectedComponents as ChatStreamParams["selectedComponents"])
+        : undefined,
+  };
+}
+
 function writeJson(res: ServerResponse, statusCode: number, body: unknown) {
   res.statusCode = statusCode;
   res.setHeader("Content-Type", "application/json");
@@ -244,18 +311,25 @@ export function createChatStreamMiddleware(
         return;
       }
 
-      let payload: Partial<ChatStreamParams>;
+      let payload: {
+        prompt: string;
+        redo?: boolean;
+        attachments?: ChatStreamParams["attachments"];
+        selectedComponents?: ChatStreamParams["selectedComponents"];
+      };
       try {
-        payload = (await readJsonBody(req)) as Partial<ChatStreamParams>;
-      } catch {
+        const rawPayload = await readJsonBody(req);
+        payload = parseChatStreamPayload(rawPayload);
+      } catch (error) {
+        if (error instanceof SyntaxError) {
+          writeJson(res, 400, { error: "Invalid JSON body" });
+          return;
+        }
+        if (error instanceof Error) {
+          writeJson(res, 400, { error: error.message });
+          return;
+        }
         writeJson(res, 400, { error: "Invalid JSON body" });
-        return;
-      }
-
-      const prompt =
-        typeof payload.prompt === "string" ? payload.prompt.trim() : "";
-      if (!prompt) {
-        writeJson(res, 400, { error: 'Invalid payload: "prompt" is required' });
         return;
       }
 
@@ -267,14 +341,10 @@ export function createChatStreamMiddleware(
 
       const streamRequest: ChatStreamParams = {
         chatId: routeState.chatId,
-        prompt,
-        redo: payload.redo === true ? true : undefined,
-        attachments: Array.isArray(payload.attachments)
-          ? (payload.attachments as ChatStreamParams["attachments"])
-          : undefined,
-        selectedComponents: Array.isArray(payload.selectedComponents)
-          ? (payload.selectedComponents as ChatStreamParams["selectedComponents"])
-          : undefined,
+        prompt: payload.prompt,
+        redo: payload.redo,
+        attachments: payload.attachments,
+        selectedComponents: payload.selectedComponents,
       };
 
       res.statusCode = 200;
@@ -380,7 +450,7 @@ export function createChatStreamMiddleware(
         action: "chat_stream_start",
         resourceType: "chat",
         resourceId: routeState.chatId,
-        metadata: { transport: "sse", promptLength: prompt.length },
+        metadata: { transport: "sse", promptLength: payload.prompt.length },
       });
 
       try {
