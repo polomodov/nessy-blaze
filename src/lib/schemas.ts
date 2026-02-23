@@ -145,20 +145,11 @@ export type RegularProviderSetting = z.infer<
 export type AzureProviderSetting = z.infer<typeof AzureProviderSettingSchema>;
 export type VertexProviderSetting = z.infer<typeof VertexProviderSettingSchema>;
 
-export const RuntimeModeSchema = z.enum(["web-sandbox", "local-node", "unset"]);
-export type RuntimeMode = z.infer<typeof RuntimeModeSchema>;
-
 export const RuntimeMode2Schema = z.enum(["host", "docker"]);
 export type RuntimeMode2 = z.infer<typeof RuntimeMode2Schema>;
 
 export const ChatModeSchema = z.enum(["build", "ask"]);
 export type ChatMode = z.infer<typeof ChatModeSchema>;
-
-export const BlazeProBudgetSchema = z.object({
-  budgetResetAt: z.string(),
-  maxBudget: z.number(),
-});
-export type BlazeProBudget = z.infer<typeof BlazeProBudgetSchema>;
 
 export const GlobPathSchema = z.object({
   globPath: z.string(),
@@ -208,13 +199,6 @@ export const UserSettingsSchema = z.object({
   // E2E TESTING ONLY.
   ////////////////////////////////
   isTestMode: z.boolean().optional(),
-
-  ////////////////////////////////
-  // DEPRECATED.
-  ////////////////////////////////
-  enableProSaverMode: z.boolean().optional(),
-  blazeProBudget: BlazeProBudgetSchema.optional(),
-  runtimeMode: RuntimeModeSchema.optional(),
 
   ////////////////////////////////
   // ACTIVE FIELDS.
@@ -317,64 +301,8 @@ export interface CodeProposal {
   packagesAdded: string[];
 }
 
-export type SuggestedAction =
-  | RestartAppAction
-  | SummarizeInNewChatAction
-  | RefactorFileAction
-  | WriteCodeProperlyAction
-  | RebuildAction
-  | RestartAction
-  | RefreshAction
-  | KeepGoingAction;
-
-export interface RestartAppAction {
-  id: "restart-app";
-}
-
-export interface SummarizeInNewChatAction {
-  id: "summarize-in-new-chat";
-}
-
-export interface WriteCodeProperlyAction {
-  id: "write-code-properly";
-}
-
-export interface RefactorFileAction {
-  id: "refactor-file";
-  path: string;
-}
-
-export interface RebuildAction {
-  id: "rebuild";
-}
-
-export interface RestartAction {
-  id: "restart";
-}
-
-export interface RefreshAction {
-  id: "refresh";
-}
-
-export interface KeepGoingAction {
-  id: "keep-going";
-}
-
-export interface ActionProposal {
-  type: "action-proposal";
-  actions: SuggestedAction[];
-}
-
-export interface TipProposal {
-  type: "tip-proposal";
-  title: string;
-  description: string;
-}
-
-export type Proposal = CodeProposal | ActionProposal | TipProposal;
-
 export interface ProposalResult {
-  proposal: Proposal;
+  proposal: CodeProposal;
   chatId: number;
   messageId: number;
 }

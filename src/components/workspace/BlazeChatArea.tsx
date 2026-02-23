@@ -75,7 +75,7 @@ type TranslateFn = (key: string, params?: TranslationParams) => string;
 function toPendingCodeProposal(
   proposalResult: ProposalResult | null,
 ): PendingCodeProposal | null {
-  if (!proposalResult || proposalResult.proposal.type !== "code-proposal") {
+  if (!proposalResult) {
     return null;
   }
 

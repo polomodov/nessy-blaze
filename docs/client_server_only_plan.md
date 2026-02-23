@@ -47,6 +47,7 @@ This document locks the runtime scope for the HTTP-only migration.
   - `supabase`
   - `neon`
 - User settings HTTP contract strips agent-only fields (`agentToolConsents`) and drops legacy `experiments` payload keys.
+- Shared user settings schema drops unused deprecated keys (`enableProSaverMode`, `blazeProBudget`, `runtimeMode`) from active contracts.
 - Shared IPC type surface drops unused agent-tool consent DTOs from active client-server contracts.
 - Legacy Supabase settings flags are removed from active runtime schema.
 - `blaze-execute-sql` integration branch is disabled in response processing for client-server-only mode.
@@ -70,6 +71,7 @@ This document locks the runtime scope for the HTTP-only migration.
   - `/api/v1/orgs/:orgId/workspaces/:workspaceId/chats/:chatId/stream/cancel`
 - Proposal payload contract no longer carries Supabase-specific `isServerFunction` file metadata.
 - Proposal payload contract no longer carries legacy SQL migration metadata (`sqlQueries`).
+- Shared proposal type contract is narrowed to active v1 `code-proposal` payloads (legacy action/tip proposal DTOs removed).
 - Removed unused `local_agent_prompt` module from active runtime prompt surface.
 - Version history HTTP payload no longer carries legacy integration timestamp metadata (`dbTimestamp`).
 - Legacy `versions.neon_db_timestamp` column is removed via generated Drizzle migration.
