@@ -285,6 +285,78 @@ function parseUpdateChatPayload(body: unknown): {
   return typeof payload.title === "string" ? { title: payload.title } : {};
 }
 
+function parseCreateAppPayload(body: unknown): {
+  name: string;
+} {
+  const payload = parseRecordBody(body);
+  const allowedKeys = new Set(["name"]);
+  const unsupportedKeys = Object.keys(payload).filter(
+    (key) => !allowedKeys.has(key),
+  );
+
+  if (unsupportedKeys.length > 0) {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      `Invalid payload: unsupported keys (${unsupportedKeys.join(", ")})`,
+    );
+  }
+
+  if (typeof payload.name !== "string" || payload.name.trim().length === 0) {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      'Invalid payload: "name" must be a non-empty string',
+    );
+  }
+
+  return { name: payload.name };
+}
+
+function parsePatchAppPayload(body: unknown): {
+  name?: string;
+  isFavorite?: boolean;
+} {
+  const payload = parseRecordBody(body);
+  const allowedKeys = new Set(["name", "isFavorite"]);
+  const unsupportedKeys = Object.keys(payload).filter(
+    (key) => !allowedKeys.has(key),
+  );
+
+  if (unsupportedKeys.length > 0) {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      `Invalid payload: unsupported keys (${unsupportedKeys.join(", ")})`,
+    );
+  }
+
+  if ("name" in payload && typeof payload.name !== "string") {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      'Invalid payload: "name" must be a string',
+    );
+  }
+
+  if ("isFavorite" in payload && typeof payload.isFavorite !== "boolean") {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      'Invalid payload: "isFavorite" must be a boolean',
+    );
+  }
+
+  const normalized: { name?: string; isFavorite?: boolean } = {};
+  if (typeof payload.name === "string") {
+    normalized.name = payload.name;
+  }
+  if (typeof payload.isFavorite === "boolean") {
+    normalized.isFavorite = payload.isFavorite;
+  }
+  return normalized;
+}
+
 const SCOPED_ROUTES: RouteDefinition[] = [
   {
     method: "GET",
@@ -387,12 +459,15 @@ const SCOPED_ROUTES: RouteDefinition[] = [
   {
     method: "POST",
     pattern: /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/apps$/,
-    build: (_url, match, body) => ({
-      channel: "create-app",
-      args: [body],
-      tenantPath: { orgId: match[1], workspaceId: match[2] },
-      requiresAuth: true,
-    }),
+    build: (_url, match, body) => {
+      const payload = parseCreateAppPayload(body);
+      return {
+        channel: "create-app",
+        args: [payload],
+        tenantPath: { orgId: match[1], workspaceId: match[2] },
+        requiresAuth: true,
+      };
+    },
   },
   {
     method: "GET",
@@ -463,9 +538,10 @@ const SCOPED_ROUTES: RouteDefinition[] = [
       if (appId == null) {
         return null;
       }
+      const payload = parsePatchAppPayload(body);
       return {
         channel: "patch-app",
-        args: [appId, body],
+        args: [appId, payload],
         tenantPath: { orgId: match[1], workspaceId: match[2] },
         requiresAuth: true,
       };

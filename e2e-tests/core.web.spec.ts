@@ -162,6 +162,19 @@ test("core v1 app CRUD works via scoped HTTP API", async ({ page }) => {
   await loginViaPassword(page);
   const { orgId, workspaceId } = await resolveScopedTenant(page);
 
+  const invalidCreateResponse = await page.request.post(
+    `/api/v1/orgs/${orgId}/workspaces/${workspaceId}/apps`,
+    {
+      data: { name: `invalid-create-${Date.now()}`, githubRepo: "legacy" },
+    },
+  );
+  expect(invalidCreateResponse.status()).toBe(400);
+  await expect(
+    invalidCreateResponse.json() as Promise<Record<string, unknown>>,
+  ).resolves.toMatchObject({
+    error: expect.stringContaining("unsupported keys"),
+  });
+
   const createdName = `e2e-core-crud-${Date.now()}`;
   const createResponse = await page.request.post(
     `/api/v1/orgs/${orgId}/workspaces/${workspaceId}/apps`,
@@ -201,6 +214,19 @@ test("core v1 app CRUD works via scoped HTTP API", async ({ page }) => {
   expect(patchPayload.data?.id).toBe(appId);
   expect(patchPayload.data?.name).toBe(updatedName);
   expect(patchPayload.data?.isFavorite).toBe(true);
+
+  const invalidPatchResponse = await page.request.patch(
+    `/api/v1/orgs/${orgId}/workspaces/${workspaceId}/apps/${appId}`,
+    {
+      data: { name: updatedName, appId },
+    },
+  );
+  expect(invalidPatchResponse.status()).toBe(400);
+  await expect(
+    invalidPatchResponse.json() as Promise<Record<string, unknown>>,
+  ).resolves.toMatchObject({
+    error: expect.stringContaining("unsupported keys"),
+  });
 
   const getResponse = await page.request.get(
     `/api/v1/orgs/${orgId}/workspaces/${workspaceId}/apps/${appId}`,
