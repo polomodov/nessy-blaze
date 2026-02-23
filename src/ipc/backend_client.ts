@@ -192,6 +192,10 @@ function trimTrailingSlash(url: string): string {
   return url.replace(/\/+$/, "");
 }
 
+function isHttpLikeOrigin(value: string | undefined): value is string {
+  return typeof value === "string" && /^https?:\/\//i.test(value);
+}
+
 function isLikelyNetworkFetchError(error: unknown): boolean {
   if (error instanceof TypeError) {
     return true;
@@ -763,7 +767,7 @@ export class BrowserBackendClient implements BackendClient {
   constructor() {
     const configuredBaseUrl = getConfiguredBackendBaseUrl();
     const originBaseUrl =
-      typeof window !== "undefined" && window.location?.origin
+      typeof window !== "undefined" && isHttpLikeOrigin(window.location?.origin)
         ? trimTrailingSlash(window.location.origin)
         : "";
 

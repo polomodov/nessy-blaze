@@ -94,7 +94,11 @@ function getBackendBaseUrlCandidates(): string[] {
     candidates.push(configuredBaseUrl);
   }
 
-  if (typeof window !== "undefined" && window.location?.origin) {
+  if (
+    typeof window !== "undefined" &&
+    window.location?.origin &&
+    /^https?:\/\//i.test(window.location.origin)
+  ) {
     const origin = window.location.origin.replace(/\/+$/, "");
     if (!candidates.includes(origin)) {
       candidates.push(origin);
@@ -115,6 +119,20 @@ function isLikelyFetchFailure(error: unknown): boolean {
 
   const message = error instanceof Error ? error.message : String(error);
   return /failed to fetch|fetch failed|networkerror/i.test(message);
+}
+
+function formatChatStreamFetchError(
+  error: unknown,
+  attemptedUrls: string[],
+): string {
+  const fallbackMessage =
+    error instanceof Error ? error.message : String(error);
+  if (!isLikelyFetchFailure(error)) {
+    return fallbackMessage;
+  }
+
+  const attempted = attemptedUrls.length > 0 ? attemptedUrls.join(", ") : "n/a";
+  return `Unable to reach backend chat stream endpoint. Tried: ${attempted}. Verify backend URL config and that the local API server is running.`;
 }
 
 function extractPreviewUrls(value: unknown): {
@@ -502,6 +520,7 @@ export class IpcClient {
     };
 
     void (async () => {
+      const attemptedStreamUrls: string[] = [];
       try {
         const encodedAttachments =
           await encodeAttachmentsForStream(attachments);
@@ -522,7 +541,9 @@ export class IpcClient {
           const baseUrl = baseUrls[index];
           const hasNextBaseUrl = index < baseUrls.length - 1;
           try {
-            response = await fetch(`${baseUrl}${path}`, {
+            const streamUrl = `${baseUrl}${path}`;
+            attemptedStreamUrls.push(streamUrl);
+            response = await fetch(streamUrl, {
               method: "POST",
               headers: getDefaultRequestHeaders("chat:stream"),
               body: JSON.stringify({
@@ -637,8 +658,10 @@ export class IpcClient {
           return;
         }
 
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
+        const errorMessage = formatChatStreamFetchError(
+          error,
+          attemptedStreamUrls,
+        );
         showError(error);
         settleWithError(errorMessage);
       }

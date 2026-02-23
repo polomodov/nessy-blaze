@@ -131,6 +131,88 @@ describe("IpcClient HTTP stream", () => {
     expect(invokeMock).not.toHaveBeenCalled();
   });
 
+  it("retries stream request with window origin when configured URL is unreachable", async () => {
+    window.__BLAZE_REMOTE_CONFIG__ = {
+      backendClient: {
+        baseUrl: "https://api.example.com",
+      },
+    };
+
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockResolvedValueOnce(
+        createSseResponse([
+          [
+            "event: chat:response:end",
+            'data: {"chatId":44,"updatedFiles":false}',
+            "",
+            "",
+          ].join("\n"),
+        ]),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = IpcClient.getInstance();
+    const onError = vi.fn();
+
+    await new Promise<void>((resolve) => {
+      client.streamMessage("Retry stream", {
+        chatId: 44,
+        onUpdate: vi.fn(),
+        onEnd: () => resolve(),
+        onError,
+      });
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "https://api.example.com/api/v1/orgs/me/workspaces/me/chats/44/stream",
+      expect.objectContaining({
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      `${window.location.origin}/api/v1/orgs/me/workspaces/me/chats/44/stream`,
+      expect.objectContaining({
+        method: "POST",
+      }),
+    );
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("returns actionable stream error message when network fetch fails", async () => {
+    window.__BLAZE_REMOTE_CONFIG__ = {
+      backendClient: {
+        baseUrl: window.location.origin,
+      },
+    };
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new TypeError("Failed to fetch")),
+    );
+
+    const client = IpcClient.getInstance();
+    const onError = vi.fn();
+
+    client.streamMessage("Build a page", {
+      chatId: 123,
+      onUpdate: vi.fn(),
+      onEnd: vi.fn(),
+      onError,
+    });
+
+    await vi.waitFor(() => {
+      expect(onError).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "Unable to reach backend chat stream endpoint.",
+        ),
+      );
+    });
+  });
+
   it("emits preview url output when run-app returns HTTP payload", async () => {
     window.__BLAZE_REMOTE_CONFIG__ = {
       backendClient: {
