@@ -59,6 +59,7 @@ This document locks the runtime scope for the HTTP-only migration.
   - `vercel*`
   - legacy `files`
 - User settings chat mode contract is restricted to HTTP v1 modes (`build|ask`) with legacy values (`agent|local-agent`) normalized on read/write.
+- Runtime system prompt selection is restricted to active v1 chat modes (`build|ask`) with legacy `agent/local-agent` prompt branches removed from the shared selector.
 
 ### In progress
 
