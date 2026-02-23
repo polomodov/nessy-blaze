@@ -514,26 +514,42 @@ async function generateSummaryWithExternalLlm({
   );
 }
 
-// Safely parse an MCP tool key that combines server and tool names.
-// We split on the LAST occurrence of "__" to avoid ambiguity if either
-// side contains "__" as part of its sanitized name.
-function parseMcpToolKey(toolKey: string): {
-  serverName: string;
-  toolName: string;
-} {
-  const separator = "__";
-  const lastIndex = toolKey.lastIndexOf(separator);
-  if (lastIndex === -1) {
-    return { serverName: "", toolName: toolKey };
-  }
-  const serverName = toolKey.slice(0, lastIndex);
-  const toolName = toolKey.slice(lastIndex + separator.length);
-  return { serverName, toolName };
-}
-
 // Ensure the temp directory exists
 if (!fs.existsSync(TEMP_DIR)) {
   fs.mkdirSync(TEMP_DIR, { recursive: true });
+}
+
+export function buildClientServerStreamChunk(
+  part: TextStreamPart<ToolSet>,
+  inThinkingBlock: boolean,
+): { chunk: string; inThinkingBlock: boolean } {
+  let chunk = "";
+  let nextThinkingBlock = inThinkingBlock;
+
+  if (
+    nextThinkingBlock &&
+    !["reasoning-delta", "reasoning-end", "reasoning-start"].includes(part.type)
+  ) {
+    chunk = "</think>";
+    nextThinkingBlock = false;
+  }
+
+  if (part.type === "text-delta") {
+    chunk += part.text;
+  } else if (part.type === "reasoning-delta") {
+    if (!nextThinkingBlock) {
+      chunk += "<think>";
+      nextThinkingBlock = true;
+    }
+    chunk += escapeBlazeTags(part.text);
+  } else if (part.type === "tool-call" || part.type === "tool-result") {
+    // MCP tool call/result chunks are not part of the active client-server v1 stream contract.
+  }
+
+  return {
+    chunk,
+    inThinkingBlock: nextThinkingBlock,
+  };
 }
 
 // Helper function to process stream chunks
@@ -556,34 +572,9 @@ async function processStreamChunks({
   let inThinkingBlock = false;
 
   for await (const part of fullStream) {
-    let chunk = "";
-    if (
-      inThinkingBlock &&
-      !["reasoning-delta", "reasoning-end", "reasoning-start"].includes(
-        part.type,
-      )
-    ) {
-      chunk = "</think>";
-      inThinkingBlock = false;
-    }
-    if (part.type === "text-delta") {
-      chunk += part.text;
-    } else if (part.type === "reasoning-delta") {
-      if (!inThinkingBlock) {
-        chunk = "<think>";
-        inThinkingBlock = true;
-      }
-
-      chunk += escapeBlazeTags(part.text);
-    } else if (part.type === "tool-call") {
-      const { serverName, toolName } = parseMcpToolKey(part.toolName);
-      const content = escapeBlazeTags(JSON.stringify(part.input));
-      chunk = `<blaze-mcp-tool-call server="${serverName}" tool="${toolName}">\n${content}\n</blaze-mcp-tool-call>\n`;
-    } else if (part.type === "tool-result") {
-      const { serverName, toolName } = parseMcpToolKey(part.toolName);
-      const content = escapeBlazeTags(part.output);
-      chunk = `<blaze-mcp-tool-result server="${serverName}" tool="${toolName}">\n${content}\n</blaze-mcp-tool-result>\n`;
-    }
+    const mapped = buildClientServerStreamChunk(part, inThinkingBlock);
+    const chunk = mapped.chunk;
+    inThinkingBlock = mapped.inThinkingBlock;
 
     if (!chunk) {
       continue;

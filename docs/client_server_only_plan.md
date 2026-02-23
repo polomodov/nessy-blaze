@@ -84,6 +84,7 @@ This document locks the runtime scope for the HTTP-only migration.
 - Legacy `versions.neon_db_timestamp` column is removed via generated Drizzle migration.
 - HTTP chat stream adapters (SSE/WS) now ignore agent/MCP consent channels and only forward chat response events in v1 mode.
 - Chat stream handler contract is side-effect-only in active runtime path (`Promise<void>`); backward-compat return values are removed from SSE/WS invocation flow.
+- Active chat stream chunk assembly no longer emits legacy MCP tool visualization tags (`blaze-mcp-tool-call` / `blaze-mcp-tool-result`) in client-server v1 mode.
 - WebSocket cancel stream payload contract is requestId-only in active v1 runtime (legacy chatId-targeted cancel fallback removed).
 - WebSocket stream payload validation is tightened to active v1 requirements (non-empty request/org/workspace/prompt strings, finite chatId, typed optional fields, and rejection of unsupported top-level keys).
 - SSE stream payload validation is tightened to active v1 requirements (strict top-level keys plus typed optional `redo|attachments|selectedComponents` fields).

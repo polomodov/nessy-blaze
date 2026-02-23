@@ -16,7 +16,9 @@ import {
   sanitizeGeneratedSummary,
   formatSelectedComponentLabel,
   formatSelectedComponentPromptBlock,
+  buildClientServerStreamChunk,
 } from "../ipc/handlers/chat_stream_handlers";
+import type { TextStreamPart, ToolSet } from "ai";
 import fs from "node:fs";
 import { db } from "../db";
 import { cleanFullResponse } from "../ipc/utils/cleanFullResponse";
@@ -1444,6 +1446,70 @@ describe("formatSelectedComponentPromptBlock", () => {
     expect(block).toContain("Component: HeroSection (src/App.tsx:12)");
     expect(block).toContain("Snippet:");
     expect(block).toContain("<h1>Hello</h1>");
+  });
+});
+
+describe("buildClientServerStreamChunk", () => {
+  const asStreamPart = (part: object): TextStreamPart<ToolSet> =>
+    part as TextStreamPart<ToolSet>;
+
+  it("passes text deltas through unchanged", () => {
+    const result = buildClientServerStreamChunk(
+      asStreamPart({
+        type: "text-delta",
+        text: "Hello from model",
+      }),
+      false,
+    );
+
+    expect(result).toEqual({
+      chunk: "Hello from model",
+      inThinkingBlock: false,
+    });
+  });
+
+  it("wraps reasoning deltas in think tags and escapes blaze tags", () => {
+    const result = buildClientServerStreamChunk(
+      asStreamPart({
+        type: "reasoning-delta",
+        text: `Look at <blaze-write path="src/App.tsx">code</blaze-write>`,
+      }),
+      false,
+    );
+
+    expect(result).toEqual({
+      chunk:
+        '<think>Look at ＜blaze-write path="src/App.tsx">code＜/blaze-write>',
+      inThinkingBlock: true,
+    });
+  });
+
+  it("drops tool-call/tool-result payloads from v1 output", () => {
+    const closeThink = buildClientServerStreamChunk(
+      asStreamPart({
+        type: "tool-call",
+        toolName: "server__list-files",
+        input: { path: "/" },
+      }),
+      true,
+    );
+    const dropResult = buildClientServerStreamChunk(
+      asStreamPart({
+        type: "tool-result",
+        toolName: "server__list-files",
+        output: "[]",
+      }),
+      false,
+    );
+
+    expect(closeThink).toEqual({
+      chunk: "</think>",
+      inThinkingBlock: false,
+    });
+    expect(dropResult).toEqual({
+      chunk: "",
+      inThinkingBlock: false,
+    });
   });
 });
 
