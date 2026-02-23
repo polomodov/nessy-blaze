@@ -25,6 +25,17 @@ export interface WsServerEvent {
   payload: unknown;
 }
 
+function parseRequiredNonEmptyString(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim();
+  if (!normalized) {
+    return null;
+  }
+  return normalized;
+}
+
 export function parseWsClientMessage(raw: string): WsClientMessage {
   let parsed: unknown;
   try {
@@ -40,22 +51,24 @@ export function parseWsClientMessage(raw: string): WsClientMessage {
   const type = (parsed as Record<string, unknown>).type;
   if (type === "start_chat_stream") {
     const msg = parsed as Partial<WsStartChatStreamMessage>;
-    if (
-      typeof msg.requestId !== "string" ||
-      typeof msg.orgId !== "string" ||
-      typeof msg.workspaceId !== "string" ||
-      typeof msg.chatId !== "number" ||
-      typeof msg.prompt !== "string"
-    ) {
+    const requestId = parseRequiredNonEmptyString(msg.requestId);
+    const orgId = parseRequiredNonEmptyString(msg.orgId);
+    const workspaceId = parseRequiredNonEmptyString(msg.workspaceId);
+    const prompt = parseRequiredNonEmptyString(msg.prompt);
+    const chatId =
+      typeof msg.chatId === "number" && Number.isFinite(msg.chatId)
+        ? msg.chatId
+        : null;
+    if (!requestId || !orgId || !workspaceId || chatId == null || !prompt) {
       throw new Error("Invalid start_chat_stream payload");
     }
     return {
       type: "start_chat_stream",
-      requestId: msg.requestId,
-      orgId: msg.orgId,
-      workspaceId: msg.workspaceId,
-      chatId: msg.chatId,
-      prompt: msg.prompt,
+      requestId,
+      orgId,
+      workspaceId,
+      chatId,
+      prompt,
       redo: msg.redo,
       attachments: msg.attachments,
       selectedComponents: msg.selectedComponents,
@@ -64,14 +77,15 @@ export function parseWsClientMessage(raw: string): WsClientMessage {
 
   if (type === "cancel_chat_stream") {
     const msg = parsed as Partial<WsCancelChatStreamMessage>;
-    if (typeof msg.requestId !== "string") {
+    const requestId = parseRequiredNonEmptyString(msg.requestId);
+    if (!requestId) {
       throw new Error(
         "Invalid cancel_chat_stream payload: requestId is required",
       );
     }
     return {
       type: "cancel_chat_stream",
-      requestId: msg.requestId,
+      requestId,
     };
   }
 
