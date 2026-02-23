@@ -218,17 +218,6 @@ export const UserSettingsSchema = z.object({
   enableNativeGit: z.boolean().optional(),
   enableAutoUpdate: z.boolean(),
   releaseChannel: ReleaseChannelSchema,
-  isRunning: z.boolean().optional(),
-  lastKnownPerformance: z
-    .object({
-      timestamp: z.number(),
-      memoryUsageMB: z.number(),
-      cpuUsagePercent: z.number().optional(),
-      systemMemoryUsageMB: z.number().optional(),
-      systemMemoryTotalMB: z.number().optional(),
-      systemCpuPercent: z.number().optional(),
-    })
-    .optional(),
 });
 
 /**

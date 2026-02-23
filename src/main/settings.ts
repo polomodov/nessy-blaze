@@ -35,8 +35,6 @@ const DEFAULT_SETTINGS: UserSettings = {
   selectedTemplateId: DEFAULT_TEMPLATE_ID,
   selectedThemeId: DEFAULT_THEME_ID,
   uiLanguage: "ru",
-  isRunning: false,
-  lastKnownPerformance: undefined,
   // Enabled by default in 0.33.0-beta.1
   enableNativeGit: true,
 };

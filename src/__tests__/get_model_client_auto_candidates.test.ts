@@ -22,7 +22,6 @@ function createSettings(overrides?: Partial<UserSettings>): UserSettings {
     releaseChannel: "stable",
     selectedTemplateId: "react",
     selectedThemeId: "default",
-    isRunning: false,
     enableNativeGit: true,
     ...overrides,
   };
