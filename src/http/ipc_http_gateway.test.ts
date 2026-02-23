@@ -143,6 +143,15 @@ describe("invokeIpcChannelOverHttp", () => {
             },
             runtimeMode2: "docker",
             hideLocalAgentNewChatToast: true,
+            lastShownReleaseNotesVersion: "0.34.0",
+            acceptedCommunityCode: true,
+            zoomLevel: "125",
+            customNodePath: "/usr/local/bin/node",
+            isRunning: true,
+            lastKnownPerformance: {
+              timestamp: Date.now(),
+              memoryUsageMB: 123,
+            },
             enableSupabaseWriteSqlMigration: true,
           } as Record<string, unknown>,
         ],
@@ -161,6 +170,14 @@ describe("invokeIpcChannelOverHttp", () => {
       expect(updatedSettings).not.toHaveProperty("experiments");
       expect(updatedSettings).not.toHaveProperty("runtimeMode2");
       expect(updatedSettings).not.toHaveProperty("hideLocalAgentNewChatToast");
+      expect(updatedSettings).not.toHaveProperty(
+        "lastShownReleaseNotesVersion",
+      );
+      expect(updatedSettings).not.toHaveProperty("acceptedCommunityCode");
+      expect(updatedSettings).not.toHaveProperty("zoomLevel");
+      expect(updatedSettings).not.toHaveProperty("customNodePath");
+      expect(updatedSettings).not.toHaveProperty("isRunning");
+      expect(updatedSettings).not.toHaveProperty("lastKnownPerformance");
 
       const persistedSettings = (await invokeIpcChannelOverHttp(
         "get-user-settings",
@@ -180,6 +197,14 @@ describe("invokeIpcChannelOverHttp", () => {
       expect(persistedSettings).not.toHaveProperty(
         "hideLocalAgentNewChatToast",
       );
+      expect(persistedSettings).not.toHaveProperty(
+        "lastShownReleaseNotesVersion",
+      );
+      expect(persistedSettings).not.toHaveProperty("acceptedCommunityCode");
+      expect(persistedSettings).not.toHaveProperty("zoomLevel");
+      expect(persistedSettings).not.toHaveProperty("customNodePath");
+      expect(persistedSettings).not.toHaveProperty("isRunning");
+      expect(persistedSettings).not.toHaveProperty("lastKnownPerformance");
     } finally {
       await invokeIpcChannelOverHttp("set-user-settings", [
         { uiLanguage: initialLanguage },

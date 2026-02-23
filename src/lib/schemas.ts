@@ -175,9 +175,6 @@ export type ContextPathResults = {
 export const ReleaseChannelSchema = z.enum(["stable", "beta"]);
 export type ReleaseChannel = z.infer<typeof ReleaseChannelSchema>;
 
-export const ZoomLevelSchema = z.enum(["90", "100", "110", "125", "150"]);
-export type ZoomLevel = z.infer<typeof ZoomLevelSchema>;
-
 export const SmartContextModeSchema = z.enum([
   "balanced",
   "conservative",
@@ -204,7 +201,6 @@ export const UserSettingsSchema = z.object({
   telemetryUserId: z.string().optional(),
   hasRunBefore: z.boolean().optional(),
   enableBlazePro: z.boolean().optional(),
-  lastShownReleaseNotesVersion: z.string().optional(),
   maxChatTurnsInContext: z.number().optional(),
   thinkingBudget: z.enum(["low", "medium", "high"]).optional(),
   enableProLazyEditsMode: z.boolean().optional(),
@@ -217,14 +213,11 @@ export const UserSettingsSchema = z.object({
   uiLanguage: z.enum(["ru", "en"]).optional(),
   selectedChatMode: ChatModeSchema.optional(),
   defaultChatMode: ChatModeSchema.optional(),
-  acceptedCommunityCode: z.boolean().optional(),
-  zoomLevel: ZoomLevelSchema.optional(),
 
   enableAutoFixProblems: z.boolean().optional(),
   enableNativeGit: z.boolean().optional(),
   enableAutoUpdate: z.boolean(),
   releaseChannel: ReleaseChannelSchema,
-  customNodePath: z.string().optional().nullable(),
   isRunning: z.boolean().optional(),
   lastKnownPerformance: z
     .object({

@@ -120,7 +120,6 @@ const DEFAULT_USER_SETTINGS: UserSettings = UserSettingsSchema.parse({
   selectedTemplateId: DEFAULT_TEMPLATE_ID,
   selectedThemeId: DEFAULT_THEME_ID,
   uiLanguage: "ru",
-  isRunning: false,
   enableNativeGit: true,
 });
 
@@ -132,6 +131,8 @@ const REMOVED_USER_SETTINGS_KEYS = [
   "neon",
   "agentToolConsents",
   "experiments",
+  "isRunning",
+  "lastKnownPerformance",
 ] as const;
 
 type RemovedUserSettingsKey = (typeof REMOVED_USER_SETTINGS_KEYS)[number];
