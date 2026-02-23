@@ -134,6 +134,36 @@ const DEFAULT_USER_SETTINGS: UserSettings = UserSettingsSchema.parse({
   enableNativeGit: true,
 });
 
+const LEGACY_USER_SETTINGS_KEYS = [
+  "githubUser",
+  "githubAccessToken",
+  "vercelAccessToken",
+  "supabase",
+  "neon",
+] as const;
+
+type LegacyUserSettingsKey = (typeof LEGACY_USER_SETTINGS_KEYS)[number];
+
+function stripLegacyUserSettings(settings: UserSettings): UserSettings {
+  const sanitized: UserSettings & Record<string, unknown> = { ...settings };
+  for (const key of LEGACY_USER_SETTINGS_KEYS) {
+    delete sanitized[key as LegacyUserSettingsKey];
+  }
+  return UserSettingsSchema.parse(sanitized);
+}
+
+function sanitizeUserSettingsPatch(
+  patch: Partial<UserSettings>,
+): Partial<UserSettings> {
+  const sanitized: Partial<UserSettings> & Record<string, unknown> = {
+    ...patch,
+  };
+  for (const key of LEGACY_USER_SETTINGS_KEYS) {
+    delete sanitized[key as LegacyUserSettingsKey];
+  }
+  return sanitized;
+}
+
 function readRuntimeEnv(name: string): string | undefined {
   return process.env[name] ?? getEnvVar(name);
 }
@@ -417,30 +447,32 @@ function readUserSettings(): UserSettings {
       settingsPath,
       JSON.stringify(DEFAULT_USER_SETTINGS, null, 2),
     );
-    return DEFAULT_USER_SETTINGS;
+    return stripLegacyUserSettings(DEFAULT_USER_SETTINGS);
   }
 
   try {
     const rawSettings = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
-    return UserSettingsSchema.parse({
-      ...DEFAULT_USER_SETTINGS,
-      ...rawSettings,
-    });
+    return stripLegacyUserSettings(
+      UserSettingsSchema.parse({
+        ...DEFAULT_USER_SETTINGS,
+        ...rawSettings,
+      }),
+    );
   } catch {
-    return DEFAULT_USER_SETTINGS;
+    return stripLegacyUserSettings(DEFAULT_USER_SETTINGS);
   }
 }
 
 function writeUserSettings(settings: Partial<UserSettings>): UserSettings {
   const mergedSettings = UserSettingsSchema.parse({
     ...readUserSettings(),
-    ...settings,
+    ...sanitizeUserSettingsPatch(settings),
   });
   fs.writeFileSync(
     getSettingsFilePath(),
     JSON.stringify(mergedSettings, null, 2),
   );
-  return mergedSettings;
+  return stripLegacyUserSettings(mergedSettings);
 }
 
 type AppRow = typeof apps.$inferSelect;
@@ -458,20 +490,6 @@ function mapAppRow(row: AppRow) {
     path: appPath,
     createdAt: toIsoDate(row.createdAt),
     updatedAt: toIsoDate(row.updatedAt),
-    githubOrg: row.githubOrg ?? null,
-    githubRepo: row.githubRepo ?? null,
-    githubBranch: row.githubBranch ?? null,
-    supabaseProjectId: row.supabaseProjectId ?? null,
-    supabaseParentProjectId: row.supabaseParentProjectId ?? null,
-    supabaseProjectName: null,
-    supabaseOrganizationSlug: row.supabaseOrganizationSlug ?? null,
-    neonProjectId: row.neonProjectId ?? null,
-    neonDevelopmentBranchId: row.neonDevelopmentBranchId ?? null,
-    neonPreviewBranchId: row.neonPreviewBranchId ?? null,
-    vercelProjectId: row.vercelProjectId ?? null,
-    vercelProjectName: row.vercelProjectName ?? null,
-    vercelTeamSlug: null,
-    vercelDeploymentUrl: row.vercelDeploymentUrl ?? null,
     installCommand: row.installCommand ?? null,
     startCommand: row.startCommand ?? null,
     isFavorite: Boolean(row.isFavorite),
@@ -1649,11 +1667,7 @@ const handlers: Record<string, InvokeHandler> = {
 
     const scopedContext = getRequestContext(meta);
     if (scopedContext) {
-      const app = await getAppByIdForScope(scopedContext, appId);
-      return {
-        ...app,
-        files: [],
-      };
+      return getAppByIdForScope(scopedContext, appId);
     }
 
     if (isMultitenantEnforced()) {
@@ -1672,10 +1686,7 @@ const handlers: Record<string, InvokeHandler> = {
       throw new Error("App not found");
     }
 
-    return {
-      ...mapAppRow(row),
-      files: [],
-    };
+    return mapAppRow(row);
   },
 
   async "patch-app"(args, meta) {

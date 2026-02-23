@@ -285,22 +285,7 @@ export class IpcClient {
       : data && typeof data === "object"
         ? ((data as { chats?: unknown[] }).chats ?? [])
         : [];
-
-    const normalizedChats = chatArray.map((chat) => {
-      if (!chat || typeof chat !== "object") {
-        return chat;
-      }
-      const record = chat as Record<string, unknown>;
-      return {
-        ...record,
-        createdAt: normalizeDate(record.createdAt),
-      };
-    });
-
-    return ChatSummariesSchema.parse(normalizedChats).map((chat) => ({
-      ...chat,
-      createdAt: normalizeDate(chat.createdAt),
-    }));
+    return ChatSummariesSchema.parse(chatArray);
   }
 
   public async createChat(appId: number): Promise<number> {

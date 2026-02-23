@@ -122,23 +122,8 @@ export interface App {
   createdByUserId?: string | null;
   name: string;
   path: string;
-  files: string[];
   createdAt: Date;
   updatedAt: Date;
-  githubOrg: string | null;
-  githubRepo: string | null;
-  githubBranch: string | null;
-  supabaseProjectId: string | null;
-  supabaseParentProjectId: string | null;
-  supabaseProjectName: string | null;
-  supabaseOrganizationSlug: string | null;
-  neonProjectId: string | null;
-  neonDevelopmentBranchId: string | null;
-  neonPreviewBranchId: string | null;
-  vercelProjectId: string | null;
-  vercelProjectName: string | null;
-  vercelTeamSlug: string | null;
-  vercelDeploymentUrl: string | null;
   installCommand: string | null;
   startCommand: string | null;
   isFavorite: boolean;
@@ -419,42 +404,6 @@ export interface IsVercelProjectAvailableResponse {
   error?: string;
 }
 
-export interface CreateVercelProjectParams {
-  name: string;
-  appId: number;
-}
-
-export interface GetVercelDeploymentsParams {
-  appId: number;
-}
-
-export interface VercelDeployment {
-  uid: string;
-  url: string;
-  state: string;
-  createdAt: number;
-  target: string;
-  readyState: string;
-}
-
-export interface DisconnectVercelProjectParams {
-  appId: number;
-}
-
-export interface IsVercelProjectAvailableParams {
-  name: string;
-}
-
-export interface SaveVercelAccessTokenParams {
-  token: string;
-}
-
-export interface VercelProject {
-  id: string;
-  name: string;
-  framework: string | null;
-}
-
 export interface UpdateChatParams {
   chatId: number;
   title: string;
@@ -497,39 +446,6 @@ export interface FileAttachment {
   type: "upload-to-codebase" | "chat-context";
 }
 
-// --- Neon Types ---
-export interface CreateNeonProjectParams {
-  name: string;
-  appId: number;
-}
-
-export interface NeonProject {
-  id: string;
-  name: string;
-  connectionString: string;
-  branchId: string;
-}
-
-export interface NeonBranch {
-  type: "production" | "development" | "snapshot" | "preview";
-  branchId: string;
-  branchName: string;
-  lastUpdated: string; // ISO timestamp
-  parentBranchId?: string; // ID of the parent branch
-  parentBranchName?: string; // Name of the parent branch
-}
-
-export interface GetNeonProjectParams {
-  appId: number;
-}
-
-export interface GetNeonProjectResponse {
-  projectId: string;
-  projectName: string;
-  orgId: string;
-  branches: NeonBranch[];
-}
-
 export interface RevertVersionParams {
   appId: number;
   previousVersionId: string;
@@ -542,94 +458,6 @@ export interface RevertVersionParams {
 export type RevertVersionResponse =
   | { successMessage: string }
   | { warningMessage: string };
-
-// --- Help Bot Types ---
-export interface StartHelpChatParams {
-  sessionId: string;
-  message: string;
-}
-
-export interface HelpChatResponseChunk {
-  sessionId: string;
-  delta: string;
-  type: "text";
-}
-
-export interface HelpChatResponseReasoning {
-  sessionId: string;
-  delta: string;
-  type: "reasoning";
-}
-
-export interface HelpChatResponseEnd {
-  sessionId: string;
-}
-
-export interface HelpChatResponseError {
-  sessionId: string;
-  error: string;
-}
-
-// --- MCP Types ---
-export interface McpServer {
-  id: number;
-  name: string;
-  transport: string;
-  command?: string | null;
-  args?: string[] | null;
-  cwd?: string | null;
-  envJson?: Record<string, string> | null;
-  url?: string | null;
-  enabled: boolean;
-  createdAt: number;
-  updatedAt: number;
-}
-
-export interface CreateMcpServer
-  extends Omit<McpServer, "id" | "createdAt" | "updatedAt"> {}
-export type McpServerUpdate = Partial<McpServer> & Pick<McpServer, "id">;
-export type McpToolConsentType = "ask" | "always" | "denied";
-
-export interface McpTool {
-  name: string;
-  description?: string | null;
-  consent: McpToolConsentType;
-}
-
-export interface McpToolConsent {
-  id: number;
-  serverId: number;
-  toolName: string;
-  consent: McpToolConsentType;
-  updatedAt: number;
-}
-export interface CloneRepoParams {
-  url: string;
-  installCommand?: string;
-  startCommand?: string;
-  appName: string;
-}
-
-export interface GithubRepository {
-  name: string;
-  full_name: string;
-  private: boolean;
-}
-
-export interface GithubSyncOptions {
-  force?: boolean;
-  rebase?: boolean;
-  forceWithLease?: boolean;
-}
-
-export type CloneRepoReturnType =
-  | {
-      app: App;
-      hasAiRules: boolean;
-    }
-  | {
-      error: string;
-    };
 
 export type MembershipRole = "owner" | "admin" | "member" | "viewer";
 
@@ -659,73 +487,6 @@ export interface CreateWorkspaceParams {
   name: string;
   slug?: string;
   type?: "personal" | "team";
-}
-
-export interface SupabaseBranch {
-  id: string;
-  name: string;
-  isDefault: boolean;
-  projectRef: string;
-  parentProjectRef: string;
-}
-
-/**
- * Supabase organization info for display (without secrets).
- */
-export interface SupabaseOrganizationInfo {
-  organizationSlug: string;
-  name?: string;
-  ownerEmail?: string;
-}
-
-/**
- * Supabase project info.
- */
-export interface SupabaseProject {
-  id: string;
-  name: string;
-  region?: string;
-  organizationSlug: string;
-}
-
-export interface SetSupabaseAppProjectParams {
-  projectId: string;
-  parentProjectId?: string;
-  appId: number;
-  organizationSlug: string | null;
-}
-
-export interface DeleteSupabaseOrganizationParams {
-  organizationSlug: string;
-}
-
-// Supabase Logs
-export interface LogMetadata {
-  // For Edge Functions
-  function?: string;
-  request_id?: string;
-  status?: number;
-
-  // For Database logs
-  query?: string;
-  table?: string;
-  rows_affected?: number;
-
-  // For Auth logs
-  user_id?: string;
-  event?: string;
-
-  // Additional dynamic fields
-  [key: string]: any;
-}
-
-export interface SupabaseLog {
-  id: string;
-  timestamp: string;
-  log_type: "function" | "database" | "auth" | "api" | "realtime" | "system";
-  event_message: string;
-  metadata?: LogMetadata;
-  body?: any;
 }
 
 export interface SetNodePathParams {

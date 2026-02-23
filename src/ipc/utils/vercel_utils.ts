@@ -15,8 +15,15 @@ export async function getVercelTeamSlug(
   teamId: string,
 ): Promise<string | null> {
   try {
-    const settings = readSettings();
-    const accessToken = settings.vercelAccessToken?.value;
+    const settings = readSettings() as Record<string, unknown>;
+    const settingsToken =
+      settings.vercelAccessToken &&
+      typeof settings.vercelAccessToken === "object" &&
+      "value" in settings.vercelAccessToken
+        ? String((settings.vercelAccessToken as { value?: string }).value ?? "")
+        : "";
+    const envToken = process.env.VERCEL_ACCESS_TOKEN ?? "";
+    const accessToken = settingsToken || envToken;
 
     if (!accessToken) {
       logger.warn("No Vercel access token found when trying to get team slug");

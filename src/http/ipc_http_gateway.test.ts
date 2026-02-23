@@ -69,6 +69,54 @@ describe("invokeIpcChannelOverHttp", () => {
     ]);
   });
 
+  it("filters legacy integration fields from user settings payloads", async () => {
+    const initialSettings = (await invokeIpcChannelOverHttp(
+      "get-user-settings",
+      [],
+    )) as {
+      uiLanguage?: "ru" | "en";
+    };
+    const initialLanguage = initialSettings.uiLanguage ?? "ru";
+    const nextLanguage: "ru" | "en" = initialLanguage === "en" ? "ru" : "en";
+
+    try {
+      const updatedSettings = (await invokeIpcChannelOverHttp(
+        "set-user-settings",
+        [
+          {
+            uiLanguage: nextLanguage,
+            githubUser: { email: "legacy@example.com" },
+            githubAccessToken: "legacy-github-token",
+            vercelAccessToken: "legacy-vercel-token",
+            supabase: { organizations: {} },
+            neon: { accessToken: "legacy-neon-token" },
+          } as Record<string, unknown>,
+        ],
+      )) as Record<string, unknown>;
+
+      expect(updatedSettings.uiLanguage).toBe(nextLanguage);
+      expect(updatedSettings).not.toHaveProperty("githubUser");
+      expect(updatedSettings).not.toHaveProperty("githubAccessToken");
+      expect(updatedSettings).not.toHaveProperty("vercelAccessToken");
+      expect(updatedSettings).not.toHaveProperty("supabase");
+      expect(updatedSettings).not.toHaveProperty("neon");
+
+      const persistedSettings = (await invokeIpcChannelOverHttp(
+        "get-user-settings",
+        [],
+      )) as Record<string, unknown>;
+      expect(persistedSettings).not.toHaveProperty("githubUser");
+      expect(persistedSettings).not.toHaveProperty("githubAccessToken");
+      expect(persistedSettings).not.toHaveProperty("vercelAccessToken");
+      expect(persistedSettings).not.toHaveProperty("supabase");
+      expect(persistedSettings).not.toHaveProperty("neon");
+    } finally {
+      await invokeIpcChannelOverHttp("set-user-settings", [
+        { uiLanguage: initialLanguage },
+      ]);
+    }
+  });
+
   it("returns disabled OAuth2 config when not configured", async () => {
     process.env.AUTH_OAUTH2_ENABLED = "false";
     delete process.env.AUTH_OAUTH2_CLIENT_ID;
@@ -253,6 +301,61 @@ describe("invokeIpcChannelOverHttp", () => {
         expect(chat.initialCommitHash).toMatch(/^[a-f0-9]{40}$/);
       } finally {
         fs.rmSync(response.app.resolvedPath, { recursive: true, force: true });
+      }
+    },
+  );
+
+  (hasDatabaseUrl ? it : it.skip)(
+    "does not expose legacy integration app fields over HTTP IPC",
+    async () => {
+      const appName = `http-ipc-app-shape-${Date.now()}`;
+      const created = (await invokeIpcChannelOverHttp("create-app", [
+        { name: appName },
+      ])) as {
+        app: {
+          id: number;
+          resolvedPath: string;
+        };
+      };
+
+      const legacyFields = [
+        "files",
+        "githubOrg",
+        "githubRepo",
+        "githubBranch",
+        "supabaseProjectId",
+        "supabaseParentProjectId",
+        "supabaseProjectName",
+        "supabaseOrganizationSlug",
+        "neonProjectId",
+        "neonDevelopmentBranchId",
+        "neonPreviewBranchId",
+        "vercelProjectId",
+        "vercelProjectName",
+        "vercelTeamSlug",
+        "vercelDeploymentUrl",
+      ];
+
+      try {
+        const app = (await invokeIpcChannelOverHttp("get-app", [
+          created.app.id,
+        ])) as Record<string, unknown>;
+        for (const field of legacyFields) {
+          expect(app).not.toHaveProperty(field);
+        }
+
+        const listed = (await invokeIpcChannelOverHttp("list-apps", [])) as {
+          apps: Array<Record<string, unknown>>;
+        };
+        const listedApp = listed.apps.find(
+          (item) => item.id === created.app.id,
+        );
+        expect(listedApp).toBeDefined();
+        for (const field of legacyFields) {
+          expect(listedApp).not.toHaveProperty(field);
+        }
+      } finally {
+        fs.rmSync(created.app.resolvedPath, { recursive: true, force: true });
       }
     },
   );

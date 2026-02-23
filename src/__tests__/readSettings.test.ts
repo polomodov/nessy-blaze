@@ -126,7 +126,7 @@ describe("readSettings", () => {
       });
     });
 
-    it("preserves github access token when legacy encrypted settings are loaded", () => {
+    it("drops github access token when legacy encrypted settings are loaded", () => {
       const mockFileContent = {
         githubAccessToken: {
           value: "encrypted-github-token",
@@ -139,13 +139,12 @@ describe("readSettings", () => {
 
       const result = readSettings();
 
-      expect(result.githubAccessToken).toEqual({
-        value: "encrypted-github-token",
-        encryptionType: "electron-safe-storage",
-      });
+      expect((result as Record<string, unknown>).githubAccessToken).toBe(
+        undefined,
+      );
     });
 
-    it("preserves supabase tokens when legacy encrypted settings are loaded", () => {
+    it("drops supabase tokens when legacy encrypted settings are loaded", () => {
       const mockFileContent = {
         supabase: {
           accessToken: {
@@ -164,17 +163,10 @@ describe("readSettings", () => {
 
       const result = readSettings();
 
-      expect(result.supabase?.refreshToken).toEqual({
-        value: "encrypted-refresh-token",
-        encryptionType: "electron-safe-storage",
-      });
-      expect(result.supabase?.accessToken).toEqual({
-        value: "encrypted-access-token",
-        encryptionType: "electron-safe-storage",
-      });
+      expect((result as Record<string, unknown>).supabase).toBe(undefined);
     });
 
-    it("should handle plaintext secrets without decryption", () => {
+    it("should ignore legacy plaintext secrets and keep provider keys", () => {
       const mockFileContent = {
         githubAccessToken: {
           value: "plaintext-token",
@@ -195,13 +187,15 @@ describe("readSettings", () => {
 
       const result = readSettings();
 
-      expect(result.githubAccessToken?.value).toBe("plaintext-token");
+      expect((result as Record<string, unknown>).githubAccessToken).toBe(
+        undefined,
+      );
       expect(result.providerSettings.openai.apiKey?.value).toBe(
         "plaintext-api-key",
       );
     });
 
-    it("should handle secrets without encryptionType", () => {
+    it("should ignore legacy secrets without encryptionType", () => {
       const mockFileContent = {
         githubAccessToken: {
           value: "token-without-encryption-type",
@@ -220,15 +214,15 @@ describe("readSettings", () => {
 
       const result = readSettings();
 
-      expect(result.githubAccessToken?.value).toBe(
-        "token-without-encryption-type",
+      expect((result as Record<string, unknown>).githubAccessToken).toBe(
+        undefined,
       );
       expect(result.providerSettings.openai.apiKey?.value).toBe(
         "api-key-without-encryption-type",
       );
     });
 
-    it("should preserve extra fields not recognized by the schema", () => {
+    it("should strip extra fields not recognized by the schema", () => {
       const mockFileContent = {
         selectedModel: {
           name: "gpt-4",
@@ -261,15 +255,12 @@ describe("readSettings", () => {
       expect(result.telemetryConsent).toBe("opted_in");
       expect(result.hasRunBefore).toBe(true);
 
-      // Extra fields should be preserved by passthrough()
+      // Extra fields should be stripped by the schema.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const resultAny = result as any;
-      expect(resultAny.unknownField).toBe("should be preserved");
-      expect(resultAny.deprecatedSetting).toBe(true);
-      expect(resultAny.extraConfig).toEqual({
-        someValue: 123,
-        anotherValue: "test",
-      });
+      expect(resultAny.unknownField).toBeUndefined();
+      expect(resultAny.deprecatedSetting).toBeUndefined();
+      expect(resultAny.extraConfig).toBeUndefined();
 
       // Should still have defaults for missing properties
       expect(result.enableAutoUpdate).toBe(true);
@@ -352,7 +343,7 @@ describe("readSettings", () => {
       });
     });
 
-    it("handles legacy encrypted payloads without electron decryption", () => {
+    it("drops legacy encrypted payloads for removed integration fields", () => {
       const mockFileContent = {
         githubAccessToken: {
           value: "corrupted-encrypted-data",
@@ -365,10 +356,9 @@ describe("readSettings", () => {
 
       const result = readSettings();
 
-      expect(result.githubAccessToken).toEqual({
-        value: "corrupted-encrypted-data",
-        encryptionType: "electron-safe-storage",
-      });
+      expect((result as Record<string, unknown>).githubAccessToken).toBe(
+        undefined,
+      );
     });
   });
 
