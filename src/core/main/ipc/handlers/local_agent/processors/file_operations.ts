@@ -12,23 +12,6 @@ import type { AgentContext } from "../tools/types";
 
 const logger = log.scope("file_operations");
 
-export interface FileOperationResult {
-  success: boolean;
-  error?: string;
-  warning?: string;
-}
-
-/**
- * Integration deployment hooks are disabled in client-server core mode.
- */
-export async function deployAllFunctionsIfNeeded(
-  ctx: Pick<AgentContext, "appPath">,
-): Promise<FileOperationResult> {
-  void ctx;
-  logger.info("Skipping external integration deployment");
-  return { success: true };
-}
-
 /**
  * Commit all changes
  */

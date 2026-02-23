@@ -30,10 +30,7 @@ import {
   requireAgentToolConsent,
   clearPendingConsentsForChat,
 } from "./tool_definitions";
-import {
-  deployAllFunctionsIfNeeded,
-  commitAllChanges,
-} from "./processors/file_operations";
+import { commitAllChanges } from "./processors/file_operations";
 import { mcpManager } from "@/ipc/utils/mcp_manager";
 import { mcpServers } from "@/db/schema";
 import { requireMcpToolConsent } from "@/ipc/utils/mcp_consent";
@@ -112,7 +109,7 @@ export async function handleLocalAgentStream(
     blazeRequestId: string;
     /**
      * If true, the agent operates in read-only mode (e.g., ask mode).
-     * State-modifying tools are disabled, and no commits/deploys are made.
+     * State-modifying tools are disabled, and no commits are made.
      */
     readOnly?: boolean;
   },
@@ -421,11 +418,8 @@ export async function handleLocalAgentStream(
       logger.warn("Failed to save AI messages JSON:", err);
     }
 
-    // In read-only mode, skip deploys and commits
+    // In read-only mode, skip commits
     if (!readOnly) {
-      // Run post-edit integration hooks (currently no-op in core mode)
-      await deployAllFunctionsIfNeeded(ctx);
-
       // Commit all changes
       const commitResult = await commitAllChanges(ctx, ctx.chatSummary);
 

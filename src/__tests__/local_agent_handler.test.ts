@@ -247,7 +247,6 @@ vi.mock("@/core/main/ipc/handlers/local_agent/tool_definitions", () => ({
 vi.mock(
   "@/core/main/ipc/handlers/local_agent/processors/file_operations",
   () => ({
-    deployAllFunctionsIfNeeded: vi.fn(async () => {}),
     commitAllChanges: vi.fn(async () => ({ commitHash: "abc123" })),
   }),
 );
