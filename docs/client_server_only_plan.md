@@ -50,6 +50,7 @@ This document locks the runtime scope for the HTTP-only migration.
 - `blaze-execute-sql` integration branch is disabled in response processing for client-server-only mode.
 - Local-agent and response processing contexts no longer depend on Supabase/Neon app metadata.
 - Legacy integration columns are removed from the `apps` Drizzle schema and migration is generated.
+- Template catalog contract is normalized to transport-agnostic `sourceUrl` with backward compatibility for legacy GitHub API payloads.
 - App HTTP payload shape no longer exposes legacy integration metadata:
   - `github*`
   - `supabase*`

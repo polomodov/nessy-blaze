@@ -11,14 +11,54 @@ const logger = log.scope("template_utils");
 let apiTemplatesCache: Template[] | null = null;
 let apiTemplatesFetchPromise: Promise<Template[]> | null = null;
 
-// Convert API template to our Template interface
-function convertApiTemplate(apiTemplate: ApiTemplate): Template {
+function normalizeLegacyGithubValue(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function getTemplateId(apiTemplate: ApiTemplate): string | null {
+  const explicitId = normalizeLegacyGithubValue(apiTemplate.id);
+  if (explicitId) {
+    return explicitId;
+  }
+  const githubOrg = normalizeLegacyGithubValue(apiTemplate.githubOrg);
+  const githubRepo = normalizeLegacyGithubValue(apiTemplate.githubRepo);
+  if (githubOrg && githubRepo) {
+    return `${githubOrg}/${githubRepo}`;
+  }
+  return null;
+}
+
+function getTemplateSourceUrl(apiTemplate: ApiTemplate): string | undefined {
+  const explicitSourceUrl = normalizeLegacyGithubValue(apiTemplate.sourceUrl);
+  if (explicitSourceUrl) {
+    return explicitSourceUrl;
+  }
+  const githubOrg = normalizeLegacyGithubValue(apiTemplate.githubOrg);
+  const githubRepo = normalizeLegacyGithubValue(apiTemplate.githubRepo);
+  if (githubOrg && githubRepo) {
+    return `https://github.com/${githubOrg}/${githubRepo}`;
+  }
+  return undefined;
+}
+
+// Convert API template to our Template interface.
+// Returns null for invalid entries that do not expose an identifier.
+function convertApiTemplate(apiTemplate: ApiTemplate): Template | null {
+  const id = getTemplateId(apiTemplate);
+  if (!id) {
+    return null;
+  }
+
   return {
-    id: `${apiTemplate.githubOrg}/${apiTemplate.githubRepo}`,
+    id,
     title: apiTemplate.title,
     description: apiTemplate.description,
     imageUrl: apiTemplate.imageUrl,
-    githubUrl: `https://github.com/${apiTemplate.githubOrg}/${apiTemplate.githubRepo}`,
+    sourceUrl: getTemplateSourceUrl(apiTemplate),
     isOfficial: false,
   };
 }
@@ -46,7 +86,9 @@ export async function fetchApiTemplates(): Promise<Template[]> {
       }
 
       const apiTemplates: ApiTemplate[] = await response.json();
-      const convertedTemplates = apiTemplates.map(convertApiTemplate);
+      const convertedTemplates = apiTemplates
+        .map(convertApiTemplate)
+        .filter((template): template is Template => template !== null);
 
       // Cache the result
       apiTemplatesCache = convertedTemplates;
@@ -79,4 +121,9 @@ export async function getTemplateOrThrow(
     );
   }
   return template;
+}
+
+export function clearApiTemplatesCacheForTests(): void {
+  apiTemplatesCache = null;
+  apiTemplatesFetchPromise = null;
 }
