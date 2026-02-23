@@ -14,8 +14,8 @@
 
 | Channel | Endpoint |
 |---|---|
-| `get-user-settings` | `GET /api/v1/user/settings` |
-| `set-user-settings` | `PATCH /api/v1/user/settings` |
+| `get-user-settings` | `GET /api/v1/settings/user` |
+| `set-user-settings` | `PATCH /api/v1/settings/user` |
 | `list-apps` | `GET /api/v1/orgs/:orgId/workspaces/:workspaceId/apps` |
 | `create-app` | `POST /api/v1/orgs/:orgId/workspaces/:workspaceId/apps` |
 | `get-app` | `GET /api/v1/orgs/:orgId/workspaces/:workspaceId/apps/:appId` |

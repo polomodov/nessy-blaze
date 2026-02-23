@@ -33,6 +33,7 @@ This document locks the runtime scope for the HTTP-only migration.
 - Runtime transport is HTTP-only
 - Backend stays in-repo (no repo split in v1)
 - Namespace cleanup (`src/ipc/*` -> role-based paths) is a later iteration
+- This file is the single source of truth for v1 migration execution scope and status.
 
 ## Execution Status (February 23, 2026)
 
@@ -92,13 +93,34 @@ This document locks the runtime scope for the HTTP-only migration.
 - Active chat UI message role mapping uses `assistant` terminology in v1 (legacy `agent` role label removed from renderer message model and typing/status copy).
 - Core web E2E suite now includes chat stream payload contract checks for v1 rejection paths (unsupported top-level keys and invalid attachment object shapes).
 
-### In progress
+### Prioritized Checklist (February 23, 2026)
 
-- Removing remaining integration-specific execution branches from legacy compatibility code paths.
-- Tightening runtime contracts so only v1 core features remain reachable from active UI/API entry points.
+Priority `P0` (must close for v1 cut):
 
-### Next steps
+- [ ] Remove remaining integration-specific execution branches from legacy compatibility code paths.
+- [ ] Tighten runtime contracts so only v1 core features remain reachable from active UI/API entry points.
 
-1. Continue reducing compatibility-only integration code outside active runtime path.
-2. Add/extend E2E coverage for core v1 flow (app CRUD + chat/proposal + preview) with strict payload shape checks.
-3. Plan and execute cleanup of MCP/agent-only surfaces from active UI entry points in v1.
+Priority `P1` (core flow reliability):
+
+- [ ] Extend E2E coverage for core v1 flow:
+  - app CRUD
+  - chat/proposal lifecycle (approve/reject)
+  - preview run/stop/restart
+  - strict payload rejection paths
+
+Priority `P2` (UI/API cleanup):
+
+- [ ] Complete MCP/agent-only surface cleanup from active UI entry points in v1.
+- [ ] Remove or isolate compatibility-only local-agent artifacts from active web client paths.
+
+Priority `P3` (follow-up hygiene):
+
+- [x] Keep transport policy mapping in sync with runtime API routes.
+- [ ] Continue narrowing legacy compatibility utilities not required by active v1 runtime.
+
+### Next implementation sequence
+
+1. Close `P0` runtime branch cleanup (integration-specific compatibility branches).
+2. Complete `P1` E2E coverage for CRUD + proposal + preview flows.
+3. Finish `P2` MCP/agent UI entry-point cleanup.
+4. Execute `P3` compatibility utility reduction pass.
