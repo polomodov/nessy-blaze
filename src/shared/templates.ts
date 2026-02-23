@@ -15,9 +15,6 @@ export interface ApiTemplate {
   description: string;
   imageUrl: string;
   sourceUrl?: string;
-  // Legacy shape (kept for backward compatibility with older API payloads)
-  githubOrg?: string;
-  githubRepo?: string;
 }
 
 export const DEFAULT_TEMPLATE_ID = "react";

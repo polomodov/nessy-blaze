@@ -11,7 +11,7 @@ const logger = log.scope("template_utils");
 let apiTemplatesCache: Template[] | null = null;
 let apiTemplatesFetchPromise: Promise<Template[]> | null = null;
 
-function normalizeLegacyGithubValue(value: unknown): string | null {
+function normalizeString(value: unknown): string | null {
   if (typeof value !== "string") {
     return null;
   }
@@ -20,27 +20,13 @@ function normalizeLegacyGithubValue(value: unknown): string | null {
 }
 
 function getTemplateId(apiTemplate: ApiTemplate): string | null {
-  const explicitId = normalizeLegacyGithubValue(apiTemplate.id);
-  if (explicitId) {
-    return explicitId;
-  }
-  const githubOrg = normalizeLegacyGithubValue(apiTemplate.githubOrg);
-  const githubRepo = normalizeLegacyGithubValue(apiTemplate.githubRepo);
-  if (githubOrg && githubRepo) {
-    return `${githubOrg}/${githubRepo}`;
-  }
-  return null;
+  return normalizeString(apiTemplate.id);
 }
 
 function getTemplateSourceUrl(apiTemplate: ApiTemplate): string | undefined {
-  const explicitSourceUrl = normalizeLegacyGithubValue(apiTemplate.sourceUrl);
+  const explicitSourceUrl = normalizeString(apiTemplate.sourceUrl);
   if (explicitSourceUrl) {
     return explicitSourceUrl;
-  }
-  const githubOrg = normalizeLegacyGithubValue(apiTemplate.githubOrg);
-  const githubRepo = normalizeLegacyGithubValue(apiTemplate.githubRepo);
-  if (githubOrg && githubRepo) {
-    return `https://github.com/${githubOrg}/${githubRepo}`;
   }
   return undefined;
 }

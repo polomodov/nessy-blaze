@@ -33,16 +33,16 @@ describe("template_utils", () => {
     vi.unstubAllGlobals();
   });
 
-  it("converts legacy github API templates to template entries", async () => {
+  it("converts API templates with explicit id/sourceUrl", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
         buildFetchResponse([
           {
-            githubOrg: "blaze-sh",
-            githubRepo: "nextjs-template",
+            id: "starter/nextjs",
+            sourceUrl: "https://example.com/starter/nextjs.zip",
             title: "Next.js",
-            description: "Legacy payload",
+            description: "API payload",
             imageUrl: "https://example.com/image.png",
           },
         ]),
@@ -52,24 +52,24 @@ describe("template_utils", () => {
     const templates = await fetchApiTemplates();
     expect(templates).toEqual([
       {
-        id: "blaze-sh/nextjs-template",
+        id: "starter/nextjs",
         title: "Next.js",
-        description: "Legacy payload",
+        description: "API payload",
         imageUrl: "https://example.com/image.png",
-        sourceUrl: "https://github.com/blaze-sh/nextjs-template",
+        sourceUrl: "https://example.com/starter/nextjs.zip",
         isOfficial: false,
       },
     ]);
   });
 
-  it("uses explicit id and sourceUrl when provided by API", async () => {
+  it("trims id/sourceUrl values from API payload", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
         buildFetchResponse([
           {
-            id: "starter/react",
-            sourceUrl: "https://example.com/starter/react.zip",
+            id: " starter/react ",
+            sourceUrl: " https://example.com/starter/react.zip ",
             title: "React Starter",
             description: "Modern payload",
             imageUrl: "https://example.com/react.png",
@@ -85,7 +85,7 @@ describe("template_utils", () => {
     });
   });
 
-  it("filters out templates without id and legacy github coordinates", async () => {
+  it("filters out templates without id", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(

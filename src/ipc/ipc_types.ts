@@ -394,16 +394,6 @@ export interface GetAppEnvVarsParams {
   appId: number;
 }
 
-export interface ConnectToExistingVercelProjectParams {
-  projectId: string;
-  appId: number;
-}
-
-export interface IsVercelProjectAvailableResponse {
-  available: boolean;
-  error?: string;
-}
-
 export interface UpdateChatParams {
   chatId: number;
   title: string;
