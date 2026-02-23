@@ -66,7 +66,6 @@ import {
   getBlazeAddDependencyTags,
   getBlazeChatSummaryTag,
   getBlazeDeleteTags,
-  getBlazeExecuteSqlTags,
   getBlazeRenameTags,
   getBlazeSearchReplaceTags,
   getBlazeWriteTags,
@@ -556,7 +555,6 @@ function buildCodeProposalFromMessage(messageContent: string) {
   const proposalSearchReplaceFiles = getBlazeSearchReplaceTags(messageContent);
   const proposalRenameFiles = getBlazeRenameTags(messageContent);
   const proposalDeleteFiles = getBlazeDeleteTags(messageContent);
-  const proposalExecuteSqlQueries = getBlazeExecuteSqlTags(messageContent);
   const packagesAdded = getBlazeAddDependencyTags(messageContent);
 
   const filesChanged = [
@@ -580,11 +578,7 @@ function buildCodeProposalFromMessage(messageContent: string) {
     })),
   ];
 
-  if (
-    filesChanged.length === 0 &&
-    packagesAdded.length === 0 &&
-    proposalExecuteSqlQueries.length === 0
-  ) {
+  if (filesChanged.length === 0 && packagesAdded.length === 0) {
     return null;
   }
 
@@ -594,10 +588,6 @@ function buildCodeProposalFromMessage(messageContent: string) {
     securityRisks: [],
     filesChanged,
     packagesAdded,
-    sqlQueries: proposalExecuteSqlQueries.map((query) => ({
-      content: query.content,
-      description: query.description,
-    })),
   };
 }
 

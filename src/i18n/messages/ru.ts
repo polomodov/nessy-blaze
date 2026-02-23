@@ -116,8 +116,7 @@ export const ru = {
   "chat.error.rollbackFailed":
     "Не удалось откатить изменения. Попробуйте еще раз.",
   "chat.manualApply.title": "Изменения ждут ручного аппрува",
-  "chat.manualApply.summary":
-    "Файлов: {files}, пакетов: {packages}, SQL-запросов: {sqlQueries}",
+  "chat.manualApply.summary": "Файлов: {files}, пакетов: {packages}",
   "chat.manualApply.button.approve": "Применить изменения",
   "chat.manualApply.button.approving": "Применяем...",
   "chat.rollback.button": "Откатить изменения",

@@ -111,8 +111,7 @@ export const en = {
     "Failed to apply pending changes. Please try again.",
   "chat.error.rollbackFailed": "Failed to rollback changes. Please try again.",
   "chat.manualApply.title": "Changes are waiting for manual approval",
-  "chat.manualApply.summary":
-    "{files} files, {packages} packages, {sqlQueries} SQL queries",
+  "chat.manualApply.summary": "{files} files, {packages} packages",
   "chat.manualApply.button.approve": "Apply changes",
   "chat.manualApply.button.approving": "Applying...",
   "chat.rollback.button": "Rollback changes",

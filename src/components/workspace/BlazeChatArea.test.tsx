@@ -92,7 +92,6 @@ function buildPendingProposal(chatId = 77, messageId = 2) {
         },
       ],
       packagesAdded: ["zod"],
-      sqlQueries: [{ content: "select 1;" }],
     },
   };
 }

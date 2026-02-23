@@ -64,6 +64,7 @@ This document locks the runtime scope for the HTTP-only migration.
   - `/api/v1/orgs/:orgId/workspaces/:workspaceId/chats/:chatId/stream`
   - `/api/v1/orgs/:orgId/workspaces/:workspaceId/chats/:chatId/stream/cancel`
 - Proposal payload contract no longer carries Supabase-specific `isServerFunction` file metadata.
+- Proposal payload contract no longer carries legacy SQL migration metadata (`sqlQueries`).
 - Removed unused `local_agent_prompt` module from active runtime prompt surface.
 
 ### In progress

@@ -66,7 +66,6 @@ type PendingCodeProposal = {
   title: string;
   filesCount: number;
   packagesCount: number;
-  sqlQueriesCount: number;
 };
 
 type ChatAreaTabId = "chat" | "history";
@@ -86,7 +85,6 @@ function toPendingCodeProposal(
     title: proposalResult.proposal.title,
     filesCount: proposalResult.proposal.filesChanged.length,
     packagesCount: proposalResult.proposal.packagesAdded.length,
-    sqlQueriesCount: proposalResult.proposal.sqlQueries.length,
   };
 }
 
@@ -1382,7 +1380,6 @@ export function BlazeChatArea({
                     {t("chat.manualApply.summary", {
                       files: pendingCodeProposal.filesCount,
                       packages: pendingCodeProposal.packagesCount,
-                      sqlQueries: pendingCodeProposal.sqlQueriesCount,
                     })}
                   </p>
                 </div>

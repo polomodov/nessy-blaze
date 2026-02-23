@@ -323,7 +323,6 @@ export interface CodeProposal {
   securityRisks: SecurityRisk[];
   filesChanged: FileChange[];
   packagesAdded: string[];
-  sqlQueries: SqlQuery[];
 }
 
 export type SuggestedAction =
@@ -386,9 +385,4 @@ export interface ProposalResult {
   proposal: Proposal;
   chatId: number;
   messageId: number;
-}
-
-export interface SqlQuery {
-  content: string;
-  description?: string;
 }

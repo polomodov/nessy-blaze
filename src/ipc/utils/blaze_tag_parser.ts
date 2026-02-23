@@ -1,6 +1,5 @@
 import { normalizePath } from "/shared/normalizePath.ts";
 import { log } from "/src/lib/logger.ts";
-import { SqlQuery } from "/src/lib/schemas.ts";
 
 const logger = log.scope("blaze_tag_parser");
 
@@ -94,35 +93,6 @@ export function getBlazeChatSummaryTag(fullResponse: string): string | null {
     return match[1].trim();
   }
   return null;
-}
-
-export function getBlazeExecuteSqlTags(fullResponse: string): SqlQuery[] {
-  const blazeExecuteSqlRegex =
-    /<blaze-execute-sql([^>]*)>([\s\S]*?)<\/blaze-execute-sql>/g;
-  const descriptionRegex = /description="([^"]+)"/;
-  let match;
-  const queries: { content: string; description?: string }[] = [];
-
-  while ((match = blazeExecuteSqlRegex.exec(fullResponse)) !== null) {
-    const attributesString = match[1] || "";
-    let content = match[2].trim();
-    const descriptionMatch = descriptionRegex.exec(attributesString);
-    const description = descriptionMatch?.[1];
-
-    // Handle markdown code blocks if present
-    const contentLines = content.split("\n");
-    if (contentLines[0]?.startsWith("```")) {
-      contentLines.shift();
-    }
-    if (contentLines[contentLines.length - 1]?.startsWith("```")) {
-      contentLines.pop();
-    }
-    content = contentLines.join("\n");
-
-    queries.push({ content, description });
-  }
-
-  return queries;
 }
 
 export function getBlazeCommandTags(fullResponse: string): string[] {
