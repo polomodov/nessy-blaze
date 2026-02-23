@@ -229,13 +229,4 @@ export const en = {
   "toast.inputRequired.title": "Input Required",
   "toast.button.yes": "Yes",
   "toast.button.no": "No",
-
-  "mcpConsent.title": "Tool wants to run",
-  "mcpConsent.requestText":
-    "{toolName} from {serverName} requests your consent.",
-  "mcpConsent.showLess": "Show less",
-  "mcpConsent.showMore": "Show more",
-  "mcpConsent.button.allowOnce": "Allow once",
-  "mcpConsent.button.alwaysAllow": "Always allow",
-  "mcpConsent.button.decline": "Decline",
 } as const;

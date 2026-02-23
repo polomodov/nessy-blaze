@@ -235,13 +235,4 @@ export const ru = {
   "toast.inputRequired.title": "Требуется ввод",
   "toast.button.yes": "Да",
   "toast.button.no": "Нет",
-
-  "mcpConsent.title": "Инструмент хочет выполниться",
-  "mcpConsent.requestText":
-    "{toolName} от {serverName} запрашивает ваше подтверждение.",
-  "mcpConsent.showLess": "Свернуть",
-  "mcpConsent.showMore": "Показать больше",
-  "mcpConsent.button.allowOnce": "Разрешить один раз",
-  "mcpConsent.button.alwaysAllow": "Разрешать всегда",
-  "mcpConsent.button.decline": "Отклонить",
 } as const satisfies Record<keyof typeof en, string>;

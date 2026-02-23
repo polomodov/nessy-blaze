@@ -16,6 +16,8 @@ describe("system_prompt chat mode contract", () => {
     });
 
     expect(buildPrompt).toContain("<role> You are Blaze, an AI editor");
+    expect(buildPrompt).toContain("Do *not* emit <blaze-command> tags.");
+    expect(buildPrompt).not.toContain("<blaze-command type=");
     expect(turboBuildPrompt.length).toBeGreaterThan(buildPrompt.length);
   });
 
