@@ -58,6 +58,7 @@ This document locks the runtime scope for the HTTP-only migration.
   - `neon*`
   - `vercel*`
   - legacy `files`
+- User settings chat mode contract is restricted to HTTP v1 modes (`build|ask`) with legacy values (`agent|local-agent`) normalized on read/write.
 
 ### In progress
 

@@ -103,6 +103,21 @@ describe("readSettings", () => {
       expect(result.uiLanguage).toBe("ru");
     });
 
+    it("normalizes legacy chat modes to build for HTTP-only runtime", () => {
+      const mockFileContent = {
+        selectedChatMode: "local-agent",
+        defaultChatMode: "agent",
+      };
+
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(mockFileContent));
+
+      const result = readSettings();
+
+      expect(result.selectedChatMode).toBe("build");
+      expect(result.defaultChatMode).toBe("build");
+    });
+
     it("preserves provider API keys when legacy encrypted settings are loaded", () => {
       const mockFileContent = {
         providerSettings: {

@@ -69,6 +69,52 @@ describe("invokeIpcChannelOverHttp", () => {
     ]);
   });
 
+  it("normalizes legacy chat mode payloads to HTTP-only modes", async () => {
+    const initialSettings = (await invokeIpcChannelOverHttp(
+      "get-user-settings",
+      [],
+    )) as {
+      selectedChatMode?: "build" | "ask";
+      defaultChatMode?: "build" | "ask";
+    };
+
+    try {
+      const updatedSettings = (await invokeIpcChannelOverHttp(
+        "set-user-settings",
+        [
+          {
+            selectedChatMode: "local-agent",
+            defaultChatMode: "agent",
+          } as Record<string, unknown>,
+        ],
+      )) as {
+        selectedChatMode?: "build" | "ask";
+        defaultChatMode?: "build" | "ask";
+      };
+
+      expect(updatedSettings.selectedChatMode).toBe("build");
+      expect(updatedSettings.defaultChatMode).toBe("build");
+
+      const persistedSettings = (await invokeIpcChannelOverHttp(
+        "get-user-settings",
+        [],
+      )) as {
+        selectedChatMode?: "build" | "ask";
+        defaultChatMode?: "build" | "ask";
+      };
+
+      expect(persistedSettings.selectedChatMode).toBe("build");
+      expect(persistedSettings.defaultChatMode).toBe("build");
+    } finally {
+      await invokeIpcChannelOverHttp("set-user-settings", [
+        {
+          selectedChatMode: initialSettings.selectedChatMode ?? "build",
+          defaultChatMode: initialSettings.defaultChatMode,
+        },
+      ]);
+    }
+  });
+
   it("filters legacy integration fields from user settings payloads", async () => {
     const initialSettings = (await invokeIpcChannelOverHttp(
       "get-user-settings",

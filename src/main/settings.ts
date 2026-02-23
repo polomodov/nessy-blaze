@@ -4,7 +4,6 @@ import { getUserDataPath } from "/src/paths/paths.ts";
 import {
   UserSettingsSchema,
   type UserSettings,
-  type ChatMode,
   Secret,
   VertexProviderSetting,
 } from "/src/lib/schemas.ts";
@@ -45,10 +44,28 @@ const DEFAULT_SETTINGS: UserSettings = {
 
 const SETTINGS_FILE = "user-settings.json";
 
-function normalizeChatModeForHttpOnly(
-  value: ChatMode | undefined,
-): "build" | "ask" {
+function normalizeChatModeForHttpOnly(value: unknown): "build" | "ask" {
   return value === "ask" ? "ask" : "build";
+}
+
+function normalizeLegacyChatModes(
+  settings: Record<string, unknown>,
+): Record<string, unknown> {
+  const normalized = { ...settings };
+  if ("selectedChatMode" in normalized) {
+    normalized.selectedChatMode = normalizeChatModeForHttpOnly(
+      normalized.selectedChatMode,
+    );
+  }
+  if (
+    "defaultChatMode" in normalized &&
+    normalized.defaultChatMode !== undefined
+  ) {
+    normalized.defaultChatMode = normalizeChatModeForHttpOnly(
+      normalized.defaultChatMode,
+    );
+  }
+  return normalized;
 }
 
 export function getSettingsFilePath(): string {
@@ -63,10 +80,10 @@ export function readSettings(): UserSettings {
       return DEFAULT_SETTINGS;
     }
     const rawSettings = JSON.parse(fs.readFileSync(filePath, "utf-8"));
-    const combinedSettings: UserSettings = {
+    const combinedSettings = normalizeLegacyChatModes({
       ...DEFAULT_SETTINGS,
       ...rawSettings,
-    };
+    }) as UserSettings;
     for (const provider in combinedSettings.providerSettings) {
       if (combinedSettings.providerSettings[provider].apiKey) {
         const encryptionType =
@@ -95,12 +112,6 @@ export function readSettings(): UserSettings {
     if (validatedSettings.proSmartContextOption === "conservative") {
       validatedSettings.proSmartContextOption = undefined;
     }
-    validatedSettings.selectedChatMode = normalizeChatModeForHttpOnly(
-      validatedSettings.selectedChatMode,
-    );
-    validatedSettings.defaultChatMode = normalizeChatModeForHttpOnly(
-      validatedSettings.defaultChatMode,
-    );
     return validatedSettings;
   } catch (error) {
     logger.error("Error reading settings:", error);
@@ -112,7 +123,10 @@ export function writeSettings(settings: Partial<UserSettings>): void {
   try {
     const filePath = getSettingsFilePath();
     const currentSettings = readSettings();
-    const newSettings = { ...currentSettings, ...settings };
+    const newSettings = normalizeLegacyChatModes({
+      ...currentSettings,
+      ...settings,
+    }) as UserSettings;
     for (const provider in newSettings.providerSettings) {
       if (newSettings.providerSettings[provider].apiKey) {
         newSettings.providerSettings[provider].apiKey = encrypt(

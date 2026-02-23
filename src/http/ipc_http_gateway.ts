@@ -144,12 +144,36 @@ const LEGACY_USER_SETTINGS_KEYS = [
 
 type LegacyUserSettingsKey = (typeof LEGACY_USER_SETTINGS_KEYS)[number];
 
+function normalizeChatModeForHttpOnly(value: unknown): "build" | "ask" {
+  return value === "ask" ? "ask" : "build";
+}
+
+function normalizeLegacyUserSettingsModes(
+  settings: Record<string, unknown>,
+): Record<string, unknown> {
+  const normalized = { ...settings };
+  if ("selectedChatMode" in normalized) {
+    normalized.selectedChatMode = normalizeChatModeForHttpOnly(
+      normalized.selectedChatMode,
+    );
+  }
+  if (
+    "defaultChatMode" in normalized &&
+    normalized.defaultChatMode !== undefined
+  ) {
+    normalized.defaultChatMode = normalizeChatModeForHttpOnly(
+      normalized.defaultChatMode,
+    );
+  }
+  return normalized;
+}
+
 function stripLegacyUserSettings(settings: UserSettings): UserSettings {
   const sanitized: UserSettings & Record<string, unknown> = { ...settings };
   for (const key of LEGACY_USER_SETTINGS_KEYS) {
     delete sanitized[key as LegacyUserSettingsKey];
   }
-  return UserSettingsSchema.parse(sanitized);
+  return UserSettingsSchema.parse(normalizeLegacyUserSettingsModes(sanitized));
 }
 
 function sanitizeUserSettingsPatch(
@@ -161,7 +185,7 @@ function sanitizeUserSettingsPatch(
   for (const key of LEGACY_USER_SETTINGS_KEYS) {
     delete sanitized[key as LegacyUserSettingsKey];
   }
-  return sanitized;
+  return normalizeLegacyUserSettingsModes(sanitized) as Partial<UserSettings>;
 }
 
 function readRuntimeEnv(name: string): string | undefined {
@@ -454,8 +478,10 @@ function readUserSettings(): UserSettings {
     const rawSettings = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
     return stripLegacyUserSettings(
       UserSettingsSchema.parse({
-        ...DEFAULT_USER_SETTINGS,
-        ...rawSettings,
+        ...normalizeLegacyUserSettingsModes({
+          ...DEFAULT_USER_SETTINGS,
+          ...rawSettings,
+        }),
       }),
     );
   } catch {
@@ -465,8 +491,10 @@ function readUserSettings(): UserSettings {
 
 function writeUserSettings(settings: Partial<UserSettings>): UserSettings {
   const mergedSettings = UserSettingsSchema.parse({
-    ...readUserSettings(),
-    ...sanitizeUserSettingsPatch(settings),
+    ...normalizeLegacyUserSettingsModes({
+      ...readUserSettings(),
+      ...sanitizeUserSettingsPatch(settings),
+    }),
   });
   fs.writeFileSync(
     getSettingsFilePath(),
