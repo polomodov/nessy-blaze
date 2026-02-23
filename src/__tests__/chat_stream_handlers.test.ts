@@ -1306,6 +1306,18 @@ describe("extractActionTagsForManualApproval", () => {
     expect(payload).not.toContain("Thanks!");
   });
 
+  it("filters out legacy blaze-execute-sql tags from manual approval payload", () => {
+    const payload = extractActionTagsForManualApproval(`
+      <blaze-chat-summary>Update data flow</blaze-chat-summary>
+      <blaze-execute-sql description="legacy sql">select 1;</blaze-execute-sql>
+      <blaze-write path="src/data.ts">export const value = 1;</blaze-write>
+    `);
+
+    expect(payload).toContain("<blaze-chat-summary>Update data flow");
+    expect(payload).toContain('<blaze-write path="src/data.ts">');
+    expect(payload).not.toContain("<blaze-execute-sql");
+  });
+
   it("returns empty string when there are no actionable blaze tags", () => {
     const payload = extractActionTagsForManualApproval(
       "No actionable tags in this response.",

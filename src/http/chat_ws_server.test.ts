@@ -199,4 +199,69 @@ describe("chat_ws_server", () => {
       },
     });
   });
+
+  it("ignores non-chat stream channels in HTTP-only mode", async () => {
+    const sent: Array<{
+      event: string;
+      requestId?: string;
+      payload: any;
+    }> = [];
+
+    const session = createChatWsSession({
+      req: { headers: {} } as IncomingMessage,
+      send: (payload) => {
+        sent.push(JSON.parse(payload));
+      },
+      isOpen: () => true,
+      resolveRequestContext: vi.fn().mockResolvedValue(baseContext),
+      ensureChatInScope: vi.fn().mockResolvedValue(undefined),
+      enforceAndRecordUsage: vi.fn().mockResolvedValue(undefined),
+      writeAuditEvent: vi.fn().mockResolvedValue(undefined),
+      loadChatStreamHandlers: async () =>
+        ({
+          handleChatStreamRequest: async (
+            eventSink: any,
+            req: { chatId: number },
+          ) => {
+            eventSink.send("mcp:tool-consent-request", {
+              requestId: "mcp-1",
+              chatId: req.chatId,
+            });
+            eventSink.send("agent-tool:consent-request", {
+              requestId: "agent-1",
+              chatId: req.chatId,
+            });
+            eventSink.send("chat:response:end", {
+              chatId: req.chatId,
+              updatedFiles: false,
+            });
+          },
+          handleChatCancelRequest: async () => true,
+        }) as any,
+    });
+
+    await session.handleRawMessage(
+      Buffer.from(
+        JSON.stringify({
+          type: "start_chat_stream",
+          requestId: "req-3",
+          orgId: "org-1",
+          workspaceId: "ws-1",
+          chatId: 99,
+          prompt: "Ignore non-chat channels",
+        }),
+      ),
+    );
+
+    expect(sent).toEqual([
+      {
+        event: "chat:response:end",
+        requestId: "req-3",
+        payload: {
+          chatId: 99,
+          updatedFiles: false,
+        },
+      },
+    ]);
+  });
 });

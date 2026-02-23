@@ -3,9 +3,7 @@ import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { initializeDatabase } from "/src/db/index.ts";
 import type { ChatResponseEnd, ChatStreamParams } from "/src/ipc/ipc_types.ts";
-import { resolveConsent } from "/src/ipc/utils/mcp_consent.ts";
 import type { ServerEventSink } from "/src/ipc/utils/server_event_sink.ts";
-import { resolveAgentToolConsent } from "/src/core/main/ipc/handlers/local_agent/agent_tool_consent.ts";
 import { isWebSocketStreamingEnabled } from "/src/http/feature_flags.ts";
 import { isHttpError } from "/src/http/http_errors.ts";
 import {
@@ -225,35 +223,6 @@ export function createChatWsSession(
             },
           );
           return;
-        }
-
-        if (
-          channel === "mcp:tool-consent-request" &&
-          payload &&
-          typeof payload === "object" &&
-          "requestId" in (payload as Record<string, unknown>)
-        ) {
-          const requestId = String(
-            (payload as Record<string, unknown>).requestId ?? "",
-          );
-          if (requestId) {
-            resolveConsent(requestId, "decline");
-          }
-          return;
-        }
-
-        if (
-          channel === "agent-tool:consent-request" &&
-          payload &&
-          typeof payload === "object" &&
-          "requestId" in (payload as Record<string, unknown>)
-        ) {
-          const requestId = String(
-            (payload as Record<string, unknown>).requestId ?? "",
-          );
-          if (requestId) {
-            resolveAgentToolConsent(requestId, "decline");
-          }
         }
       },
       isClosed: () => !options.isOpen() || stableEmitter.isEnded(),

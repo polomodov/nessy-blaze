@@ -48,6 +48,7 @@ This document locks the runtime scope for the HTTP-only migration.
   - `neon`
 - Legacy Supabase settings flags are removed from active runtime schema.
 - `blaze-execute-sql` integration branch is disabled in response processing for client-server-only mode.
+- Manual approval payload extraction no longer treats legacy `blaze-execute-sql` tags as actionable runtime changes.
 - Local-agent and response processing contexts no longer depend on Supabase/Neon app metadata.
 - Legacy integration columns are removed from the `apps` Drizzle schema and migration is generated.
 - Template catalog contract is normalized to transport-agnostic `sourceUrl` and strict API identifiers.
@@ -68,6 +69,7 @@ This document locks the runtime scope for the HTTP-only migration.
 - Removed unused `local_agent_prompt` module from active runtime prompt surface.
 - Version history HTTP payload no longer carries legacy integration timestamp metadata (`dbTimestamp`).
 - Legacy `versions.neon_db_timestamp` column is removed via generated Drizzle migration.
+- HTTP chat stream adapters (SSE/WS) now ignore agent/MCP consent channels and only forward chat response events in v1 mode.
 
 ### In progress
 

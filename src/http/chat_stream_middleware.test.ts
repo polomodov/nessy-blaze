@@ -210,6 +210,40 @@ describe("createChatStreamMiddleware", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it("ignores non-chat stream channels in HTTP-only mode", async () => {
+    mockHandleChatStreamRequest.mockImplementationOnce(
+      async (eventSink: any, request: ChatStreamParams) => {
+        eventSink.send("mcp:tool-consent-request", {
+          requestId: "mcp-1",
+          chatId: request.chatId,
+        });
+        eventSink.send("agent-tool:consent-request", {
+          requestId: "agent-1",
+          chatId: request.chatId,
+        });
+        eventSink.send("chat:response:end", {
+          chatId: request.chatId,
+          updatedFiles: false,
+        });
+      },
+    );
+
+    const middleware = createMiddleware();
+    const req = createMockRequest({
+      method: "POST",
+      url: "/api/v1/orgs/org-1/workspaces/ws-1/chats/22/stream",
+      body: JSON.stringify({ prompt: "Ignore non-chat channels" }),
+    });
+    const { response, getBody } = createMockResponse();
+
+    await middleware(req, response, vi.fn());
+
+    expect(response.statusCode).toBe(200);
+    expect(getBody()).toContain("event: chat:response:end");
+    expect(getBody()).not.toContain("mcp:tool-consent-request");
+    expect(getBody()).not.toContain("agent-tool:consent-request");
+  });
+
   it("supports scoped SSE stream route", async () => {
     mockHandleChatStreamRequest.mockImplementationOnce(
       async (eventSink: any, request: ChatStreamParams) => {
