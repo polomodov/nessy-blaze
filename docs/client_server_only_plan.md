@@ -47,9 +47,11 @@ This document locks the runtime scope for the HTTP-only migration.
   - `supabase`
   - `neon`
 - User settings HTTP contract strips agent-only consent/experiment fields (`agentToolConsents`, legacy local-agent experiment toggles).
+- Shared IPC type surface drops unused agent-tool consent DTOs from active client-server contracts.
 - Legacy Supabase settings flags are removed from active runtime schema.
 - `blaze-execute-sql` integration branch is disabled in response processing for client-server-only mode.
 - Manual approval payload extraction no longer treats legacy `blaze-execute-sql` tags as actionable runtime changes.
+- Manual approval payload extraction no longer treats UI-only `blaze-command` tags as actionable file-change operations.
 - Local-agent and response processing contexts no longer depend on Supabase/Neon app metadata.
 - Legacy integration columns are removed from the `apps` Drizzle schema and migration is generated.
 - Template catalog contract is normalized to transport-agnostic `sourceUrl` and strict API identifiers.

@@ -95,19 +95,6 @@ export function getBlazeChatSummaryTag(fullResponse: string): string | null {
   return null;
 }
 
-export function getBlazeCommandTags(fullResponse: string): string[] {
-  const blazeCommandRegex =
-    /<blaze-command type="([^"]+)"[^>]*><\/blaze-command>/g;
-  let match;
-  const commands: string[] = [];
-
-  while ((match = blazeCommandRegex.exec(fullResponse)) !== null) {
-    commands.push(match[1]);
-  }
-
-  return commands;
-}
-
 export function getBlazeSearchReplaceTags(fullResponse: string): {
   path: string;
   content: string;

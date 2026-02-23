@@ -1301,7 +1301,7 @@ describe("extractActionTagsForManualApproval", () => {
 
     expect(payload).toContain("<blaze-chat-summary>Update landing hero");
     expect(payload).toContain('<blaze-write path="src/App.tsx">');
-    expect(payload).toContain('<blaze-command type="rebuild">');
+    expect(payload).not.toContain("<blaze-command");
     expect(payload).not.toContain("Here is my plan");
     expect(payload).not.toContain("Thanks!");
   });
