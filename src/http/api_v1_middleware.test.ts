@@ -374,6 +374,30 @@ describe("createApiV1Middleware", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it("rejects checkout payload with unsupported keys", async () => {
+    const invoke = vi.fn();
+    const middleware = createApiV1Middleware(invoke, {
+      resolveRequestContext: resolveRequestContextMock as any,
+    });
+    const req = createMockRequest({
+      method: "POST",
+      url: "/api/v1/orgs/org-1/workspaces/ws-1/apps/77/versions/checkout",
+      body: JSON.stringify({ versionId: "main", appId: 77 }),
+    });
+    const { response, getBody } = createMockResponse();
+    const next = vi.fn();
+
+    await middleware(req, response, next);
+
+    expect(response.statusCode).toBe(400);
+    expect(JSON.parse(getBody())).toMatchObject({
+      code: "INVALID_PAYLOAD",
+      error: expect.stringContaining("unsupported keys"),
+    });
+    expect(invoke).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it("routes scoped current branch endpoint", async () => {
     const invoke = vi.fn().mockResolvedValue({ branch: "main" });
     const middleware = createApiV1Middleware(invoke, {
@@ -431,6 +455,86 @@ describe("createApiV1Middleware", () => {
     expect(JSON.parse(getBody())).toEqual({
       data: { successMessage: "Restored" },
     });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("rejects revert payload with unsupported keys", async () => {
+    const invoke = vi.fn();
+    const middleware = createApiV1Middleware(invoke, {
+      resolveRequestContext: resolveRequestContextMock as any,
+    });
+    const req = createMockRequest({
+      method: "POST",
+      url: "/api/v1/orgs/org-1/workspaces/ws-1/apps/77/versions/revert",
+      body: JSON.stringify({
+        previousVersionId: "abc123",
+        appId: 77,
+      }),
+    });
+    const { response, getBody } = createMockResponse();
+    const next = vi.fn();
+
+    await middleware(req, response, next);
+
+    expect(response.statusCode).toBe(400);
+    expect(JSON.parse(getBody())).toMatchObject({
+      code: "INVALID_PAYLOAD",
+      error: expect.stringContaining("unsupported keys"),
+    });
+    expect(invoke).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("routes scoped update chat endpoint with strict payload", async () => {
+    const invoke = vi.fn().mockResolvedValue({ id: 42, title: "Renamed" });
+    const middleware = createApiV1Middleware(invoke, {
+      resolveRequestContext: resolveRequestContextMock as any,
+    });
+    const req = createMockRequest({
+      method: "PATCH",
+      url: "/api/v1/orgs/org-1/workspaces/ws-1/chats/42",
+      body: JSON.stringify({ title: "Renamed" }),
+    });
+    const { response, getBody } = createMockResponse();
+    const next = vi.fn();
+
+    await middleware(req, response, next);
+
+    expect(invoke).toHaveBeenCalledWith(
+      "update-chat",
+      [{ chatId: 42, title: "Renamed" }],
+      {
+        requestContext,
+      },
+    );
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(getBody())).toEqual({
+      data: { id: 42, title: "Renamed" },
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("rejects update chat payload with unsupported keys", async () => {
+    const invoke = vi.fn();
+    const middleware = createApiV1Middleware(invoke, {
+      resolveRequestContext: resolveRequestContextMock as any,
+    });
+    const req = createMockRequest({
+      method: "PATCH",
+      url: "/api/v1/orgs/org-1/workspaces/ws-1/chats/42",
+      body: JSON.stringify({ title: "Renamed", chatId: 99 }),
+    });
+    const { response, getBody } = createMockResponse();
+    const next = vi.fn();
+
+    await middleware(req, response, next);
+
+    expect(response.statusCode).toBe(400);
+    expect(JSON.parse(getBody())).toMatchObject({
+      code: "INVALID_PAYLOAD",
+      error: expect.stringContaining("unsupported keys"),
+    });
+    expect(invoke).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
   });
 

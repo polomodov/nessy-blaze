@@ -400,3 +400,64 @@ test("preview restart rejects unsupported payload keys in v1", async ({
     error: expect.stringContaining("unsupported keys"),
   });
 });
+
+test("version and chat update endpoints reject unsupported payload keys in v1", async ({
+  page,
+}) => {
+  await loginViaPassword(page);
+  const { orgId, workspaceId } = await resolveScopedTenant(page);
+
+  const createResponse = await page.request.post(
+    `/api/v1/orgs/${orgId}/workspaces/${workspaceId}/apps`,
+    {
+      data: { name: `e2e-version-chat-contract-${Date.now()}` },
+    },
+  );
+  expect(createResponse.ok()).toBeTruthy();
+  const createPayload = (await createResponse.json()) as {
+    data?: { app?: { id?: number }; chatId?: number };
+  };
+  const appId = createPayload.data?.app?.id;
+  const chatId = createPayload.data?.chatId;
+  expect(typeof appId).toBe("number");
+  expect(typeof chatId).toBe("number");
+
+  const invalidCheckoutResponse = await page.request.post(
+    `/api/v1/orgs/${orgId}/workspaces/${workspaceId}/apps/${appId}/versions/checkout`,
+    {
+      data: { versionId: "main", appId },
+    },
+  );
+  expect(invalidCheckoutResponse.status()).toBe(400);
+  await expect(
+    invalidCheckoutResponse.json() as Promise<Record<string, unknown>>,
+  ).resolves.toMatchObject({
+    error: expect.stringContaining("unsupported keys"),
+  });
+
+  const invalidRevertResponse = await page.request.post(
+    `/api/v1/orgs/${orgId}/workspaces/${workspaceId}/apps/${appId}/versions/revert`,
+    {
+      data: { previousVersionId: "main", appId },
+    },
+  );
+  expect(invalidRevertResponse.status()).toBe(400);
+  await expect(
+    invalidRevertResponse.json() as Promise<Record<string, unknown>>,
+  ).resolves.toMatchObject({
+    error: expect.stringContaining("unsupported keys"),
+  });
+
+  const invalidUpdateChatResponse = await page.request.patch(
+    `/api/v1/orgs/${orgId}/workspaces/${workspaceId}/chats/${chatId}`,
+    {
+      data: { title: "Renamed", chatId },
+    },
+  );
+  expect(invalidUpdateChatResponse.status()).toBe(400);
+  await expect(
+    invalidUpdateChatResponse.json() as Promise<Record<string, unknown>>,
+  ).resolves.toMatchObject({
+    error: expect.stringContaining("unsupported keys"),
+  });
+});

@@ -135,6 +135,156 @@ function parseProposalActionPayload(body: unknown): {
   return { messageId: payload.messageId };
 }
 
+function parseCheckoutVersionPayload(body: unknown): {
+  versionId: string;
+} {
+  const payload = parseRecordBody(body);
+  const allowedKeys = new Set(["versionId"]);
+  const unsupportedKeys = Object.keys(payload).filter(
+    (key) => !allowedKeys.has(key),
+  );
+
+  if (unsupportedKeys.length > 0) {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      `Invalid payload: unsupported keys (${unsupportedKeys.join(", ")})`,
+    );
+  }
+
+  if (typeof payload.versionId !== "string" || payload.versionId.length === 0) {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      'Invalid payload: "versionId" must be a non-empty string',
+    );
+  }
+
+  return { versionId: payload.versionId };
+}
+
+function parseRevertVersionPayload(body: unknown): {
+  previousVersionId: string;
+  currentChatMessageId?: { chatId: number; messageId: number };
+} {
+  const payload = parseRecordBody(body);
+  const allowedKeys = new Set(["previousVersionId", "currentChatMessageId"]);
+  const unsupportedKeys = Object.keys(payload).filter(
+    (key) => !allowedKeys.has(key),
+  );
+
+  if (unsupportedKeys.length > 0) {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      `Invalid payload: unsupported keys (${unsupportedKeys.join(", ")})`,
+    );
+  }
+
+  if (
+    typeof payload.previousVersionId !== "string" ||
+    payload.previousVersionId.length === 0
+  ) {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      'Invalid payload: "previousVersionId" must be a non-empty string',
+    );
+  }
+
+  if (payload.currentChatMessageId === undefined) {
+    return { previousVersionId: payload.previousVersionId };
+  }
+
+  if (
+    !payload.currentChatMessageId ||
+    typeof payload.currentChatMessageId !== "object" ||
+    Array.isArray(payload.currentChatMessageId)
+  ) {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      'Invalid payload: "currentChatMessageId" must be an object',
+    );
+  }
+
+  const messagePayload = payload.currentChatMessageId as Record<
+    string,
+    unknown
+  >;
+  const nestedAllowedKeys = new Set(["chatId", "messageId"]);
+  const nestedUnsupportedKeys = Object.keys(messagePayload).filter(
+    (key) => !nestedAllowedKeys.has(key),
+  );
+  if (nestedUnsupportedKeys.length > 0) {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      `Invalid payload: unsupported currentChatMessageId keys (${nestedUnsupportedKeys.join(
+        ", ",
+      )})`,
+    );
+  }
+
+  if (
+    typeof messagePayload.chatId !== "number" ||
+    !Number.isFinite(messagePayload.chatId)
+  ) {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      'Invalid payload: "currentChatMessageId.chatId" must be a finite number',
+    );
+  }
+
+  if (
+    typeof messagePayload.messageId !== "number" ||
+    !Number.isFinite(messagePayload.messageId)
+  ) {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      'Invalid payload: "currentChatMessageId.messageId" must be a finite number',
+    );
+  }
+
+  return {
+    previousVersionId: payload.previousVersionId,
+    currentChatMessageId: {
+      chatId: messagePayload.chatId,
+      messageId: messagePayload.messageId,
+    },
+  };
+}
+
+function parseUpdateChatPayload(body: unknown): {
+  title?: string;
+} {
+  const payload = parseRecordBody(body);
+  const allowedKeys = new Set(["title"]);
+  const unsupportedKeys = Object.keys(payload).filter(
+    (key) => !allowedKeys.has(key),
+  );
+
+  if (unsupportedKeys.length > 0) {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      `Invalid payload: unsupported keys (${unsupportedKeys.join(", ")})`,
+    );
+  }
+
+  if ("title" in payload && typeof payload.title !== "string") {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      'Invalid payload: "title" must be a string',
+    );
+  }
+
+  return typeof payload.title === "string" ? { title: payload.title } : {};
+}
+
 const SCOPED_ROUTES: RouteDefinition[] = [
   {
     method: "GET",
@@ -415,10 +565,7 @@ const SCOPED_ROUTES: RouteDefinition[] = [
       if (appId == null) {
         return null;
       }
-      const payload =
-        body && typeof body === "object"
-          ? (body as Record<string, unknown>)
-          : {};
+      const payload = parseCheckoutVersionPayload(body);
       return {
         channel: "checkout-version",
         args: [{ appId, ...payload }],
@@ -453,10 +600,7 @@ const SCOPED_ROUTES: RouteDefinition[] = [
       if (appId == null) {
         return null;
       }
-      const payload =
-        body && typeof body === "object"
-          ? (body as Record<string, unknown>)
-          : {};
+      const payload = parseRevertVersionPayload(body);
       return {
         channel: "revert-version",
         args: [{ appId, ...payload }],
@@ -586,9 +730,10 @@ const SCOPED_ROUTES: RouteDefinition[] = [
       if (chatId == null) {
         return null;
       }
+      const payload = parseUpdateChatPayload(body);
       return {
         channel: "update-chat",
-        args: [{ ...(body as object), chatId }],
+        args: [{ chatId, ...payload }],
         tenantPath: { orgId: match[1], workspaceId: match[2] },
         requiresAuth: true,
       };

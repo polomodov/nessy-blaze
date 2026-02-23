@@ -573,7 +573,9 @@ function resolveApiRoute(
       return {
         method: "POST",
         path: `${scopedBasePath}/apps/${params.appId}/versions/checkout`,
-        body: params,
+        body: {
+          versionId: params.versionId,
+        },
       };
     }
     case "get-current-branch": {
@@ -598,10 +600,26 @@ function resolveApiRoute(
       if (!params || typeof params.appId !== "number") {
         return null;
       }
+      if (
+        typeof params.previousVersionId !== "string" ||
+        !params.previousVersionId
+      ) {
+        return null;
+      }
+      if (
+        params.currentChatMessageId &&
+        (typeof params.currentChatMessageId.chatId !== "number" ||
+          typeof params.currentChatMessageId.messageId !== "number")
+      ) {
+        return null;
+      }
       return {
         method: "POST",
         path: `${scopedBasePath}/apps/${params.appId}/versions/revert`,
-        body: params,
+        body: {
+          previousVersionId: params.previousVersionId,
+          currentChatMessageId: params.currentChatMessageId,
+        },
       };
     }
     case "read-app-file": {
@@ -652,14 +670,17 @@ function resolveApiRoute(
       };
     }
     case "update-chat": {
-      const params = getFirstArg<{ chatId?: number }>(args);
+      const params = getFirstArg<{ chatId?: number; title?: string }>(args);
       if (!params || typeof params.chatId !== "number") {
         return null;
       }
       return {
         method: "PATCH",
         path: `${scopedBasePath}/chats/${params.chatId}`,
-        body: params,
+        body:
+          typeof params.title === "string"
+            ? { title: params.title }
+            : undefined,
       };
     }
     case "delete-chat": {

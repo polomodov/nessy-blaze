@@ -211,7 +211,7 @@ describe("backend_client transport", () => {
       "https://api.example.com/api/v1/orgs/me/workspaces/me/apps/7/versions/checkout",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ appId: 7, versionId: "main" }),
+        body: JSON.stringify({ versionId: "main" }),
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -340,13 +340,50 @@ describe("backend_client transport", () => {
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({
-          appId: 7,
           previousVersionId: "abc123",
           currentChatMessageId: { chatId: 88, messageId: 9 },
         }),
       }),
     );
     expect(result).toEqual({ successMessage: "Restored version" });
+  });
+
+  it("routes update-chat with title-only payload", async () => {
+    window.__BLAZE_REMOTE_CONFIG__ = {
+      backendClient: {
+        baseUrl: "https://api.example.com",
+      },
+    };
+
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: { id: 42, title: "Renamed" },
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createBackendClientTransport();
+    const result = await client.invoke("update-chat", {
+      chatId: 42,
+      title: "Renamed",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.example.com/api/v1/orgs/me/workspaces/me/chats/42",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ title: "Renamed" }),
+      }),
+    );
+    expect(result).toEqual({ id: 42, title: "Renamed" });
   });
 
   it("clears auth context and redirects to /auth when JWT is expired", async () => {

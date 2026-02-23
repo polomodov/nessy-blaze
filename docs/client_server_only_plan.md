@@ -91,11 +91,15 @@ This document locks the runtime scope for the HTTP-only migration.
 - SSE stream payload validation is tightened to active v1 requirements (strict top-level keys plus typed optional `redo|attachments|selectedComponents` fields).
 - Proposal approve/reject HTTP payload contract is tightened to active v1 keys (`messageId` only); unsupported keys are rejected with `400 INVALID_PAYLOAD`.
 - Browser backend proposal action mapping no longer duplicates `chatId` in HTTP body (path-only identity, `messageId` payload only).
+- Version checkout/revert HTTP payload contracts are tightened to active v1 keys (`checkout: versionId`; `revert: previousVersionId + optional currentChatMessageId`); unsupported keys are rejected with `400 INVALID_PAYLOAD`.
+- Chat update HTTP payload contract is tightened to active v1 keys (`title` only); unsupported keys are rejected with `400 INVALID_PAYLOAD`.
+- Browser backend version/chat-update mappings no longer duplicate path identifiers in HTTP body (`appId/chatId` are path-only).
 - Scoped preview restart HTTP payload contract is tightened to active v1 keys (`removeNodeModules` only); unsupported keys are rejected with `400 INVALID_PAYLOAD`.
 - Browser backend restart request mapping no longer duplicates `appId` in HTTP body (path-only identity, optional `removeNodeModules` payload).
 - Unused MCP consent i18n labels are removed from active UI localization bundles.
 - Active chat UI message role mapping uses `assistant` terminology in v1 (legacy `agent` role label removed from renderer message model and typing/status copy).
 - Core web E2E suite now includes strict payload rejection checks for v1 chat/proposal/preview contracts (unsupported top-level keys and invalid attachment object shapes).
+- Core web E2E suite now includes strict payload rejection checks for v1 versions/chat-update contracts (unsupported top-level keys).
 - Core web E2E suite now covers scoped v1 app CRUD contract flow.
 - Core web E2E suite now covers scoped proposal lifecycle contract checks (`get/approve/reject`) with deterministic rejection semantics.
 - Core web E2E suite now covers scoped preview lifecycle API flow (`run/stop/restart`).
