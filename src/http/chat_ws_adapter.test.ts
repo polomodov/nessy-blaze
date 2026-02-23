@@ -38,8 +38,17 @@ describe("chat_ws_adapter", () => {
     expect(parsed).toEqual({
       type: "cancel_chat_stream",
       requestId: "req-1",
-      chatId: undefined,
     });
+  });
+
+  it("rejects cancel_chat_stream payload without requestId", () => {
+    expect(() =>
+      parseWsClientMessage(
+        JSON.stringify({
+          type: "cancel_chat_stream",
+        }),
+      ),
+    ).toThrow("Invalid cancel_chat_stream payload: requestId is required");
   });
 
   it("serializes server events", () => {

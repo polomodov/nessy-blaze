@@ -83,6 +83,8 @@ This document locks the runtime scope for the HTTP-only migration.
 - Version history HTTP payload no longer carries legacy integration timestamp metadata (`dbTimestamp`).
 - Legacy `versions.neon_db_timestamp` column is removed via generated Drizzle migration.
 - HTTP chat stream adapters (SSE/WS) now ignore agent/MCP consent channels and only forward chat response events in v1 mode.
+- Chat stream handler contract is side-effect-only in active runtime path (`Promise<void>`); backward-compat return values are removed from SSE/WS invocation flow.
+- WebSocket cancel stream payload contract is requestId-only in active v1 runtime (legacy chatId-targeted cancel fallback removed).
 - Unused MCP consent i18n labels are removed from active UI localization bundles.
 
 ### In progress

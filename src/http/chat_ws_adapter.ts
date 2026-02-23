@@ -12,8 +12,7 @@ export interface WsStartChatStreamMessage
 
 export interface WsCancelChatStreamMessage {
   type: "cancel_chat_stream";
-  requestId?: string;
-  chatId?: number;
+  requestId: string;
 }
 
 export type WsClientMessage =
@@ -65,15 +64,14 @@ export function parseWsClientMessage(raw: string): WsClientMessage {
 
   if (type === "cancel_chat_stream") {
     const msg = parsed as Partial<WsCancelChatStreamMessage>;
-    if (typeof msg.requestId !== "string" && typeof msg.chatId !== "number") {
+    if (typeof msg.requestId !== "string") {
       throw new Error(
-        "Invalid cancel_chat_stream payload: requestId or chatId is required",
+        "Invalid cancel_chat_stream payload: requestId is required",
       );
     }
     return {
       type: "cancel_chat_stream",
       requestId: msg.requestId,
-      chatId: msg.chatId,
     };
   }
 

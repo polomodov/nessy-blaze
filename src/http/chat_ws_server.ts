@@ -30,11 +30,11 @@ interface ChatStreamHandlers {
   handleChatStreamRequest: (
     eventSink: ServerEventSink,
     req: ChatStreamParams,
-  ) => Promise<unknown>;
+  ) => Promise<void>;
   handleChatCancelRequest: (
     eventSink: ServerEventSink,
     chatId: number,
-  ) => Promise<unknown>;
+  ) => Promise<void>;
 }
 
 function dynamicImportModule<T>(modulePath: string): Promise<T> {
@@ -360,16 +360,11 @@ export function createChatWsSession(
   };
 
   const handleCancel = async (message: WsCancelChatStreamMessage) => {
-    const target = message.requestId
-      ? activeByRequestId.get(message.requestId)
-      : message.chatId != null
-        ? activeByChatId.get(message.chatId)
-        : undefined;
+    const target = activeByRequestId.get(message.requestId);
 
     if (!target) {
       sendError("No active stream found", {
         requestId: message.requestId,
-        chatId: message.chatId,
       });
       return;
     }
@@ -422,16 +417,18 @@ export function createChatWsSession(
         await handleCancel(parsed);
       } catch (error) {
         const requestId = parsed.requestId;
+        const chatId =
+          parsed.type === "start_chat_stream" ? parsed.chatId : undefined;
         if (isHttpError(error)) {
           sendError(error.message, {
             requestId,
-            chatId: parsed.chatId,
+            chatId,
           });
           return;
         }
         sendError(serializeError(error), {
           requestId,
-          chatId: parsed.chatId,
+          chatId,
         });
       }
     },

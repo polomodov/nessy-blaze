@@ -609,7 +609,7 @@ async function processStreamChunks({
 export async function handleChatStreamRequest(
   eventSink: ServerEventSink,
   req: ChatStreamParams,
-) {
+): Promise<void> {
   await initializeDatabase();
   let attachmentPaths: string[] = [];
   try {
@@ -1743,7 +1743,7 @@ ${problemReport.problems
               );
             }
           }
-          return req.chatId;
+          return;
         }
         throw streamError;
       }
@@ -1894,16 +1894,14 @@ ${problemReport.problems
       } satisfies ChatResponseEnd);
     }
 
-    // Return the chat ID for backwards compatibility
-    return req.chatId;
+    return;
   } catch (error) {
     logger.error("Error calling LLM:", error);
     safeSend(eventSink, "chat:response:error", {
       chatId: req.chatId,
       error: `Sorry, there was an error processing your request: ${error}`,
     });
-
-    return "error";
+    return;
   } finally {
     // Clean up the abort controller
     activeStreams.delete(req.chatId);
@@ -1934,7 +1932,7 @@ ${problemReport.problems
 export async function handleChatCancelRequest(
   eventSink: ServerEventSink,
   chatId: number,
-) {
+): Promise<void> {
   await initializeDatabase();
   const abortController = activeStreams.get(chatId);
 
@@ -1953,7 +1951,7 @@ export async function handleChatCancelRequest(
     updatedFiles: false,
   } satisfies ChatResponseEnd);
 
-  return true;
+  return;
 }
 
 export function registerChatStreamHandlers() {}

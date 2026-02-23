@@ -339,13 +339,10 @@ export function createChatStreamMiddleware(
       activeHttpEvents.set(routeState.chatId, event);
 
       let handleChatCancelRequest:
-        | ((eventSink: ServerEventSink, chatId: number) => Promise<unknown>)
+        | ((eventSink: ServerEventSink, chatId: number) => Promise<void>)
         | null = null;
       let handleChatStreamRequest:
-        | ((
-            eventSink: ServerEventSink,
-            req: ChatStreamParams,
-          ) => Promise<unknown>)
+        | ((eventSink: ServerEventSink, req: ChatStreamParams) => Promise<void>)
         | null = null;
 
       try {
