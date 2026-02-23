@@ -89,7 +89,6 @@ function buildPendingProposal(chatId = 77, messageId = 2) {
           path: "src/App.tsx",
           summary: "Update hero",
           type: "write" as const,
-          isServerFunction: false,
         },
       ],
       packagesAdded: ["zod"],

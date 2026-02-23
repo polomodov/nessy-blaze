@@ -90,13 +90,6 @@ interface OAuth2TokenResponse {
   error_description?: string;
 }
 
-function isServerFunction(filePath: string): boolean {
-  return (
-    filePath.startsWith("supabase/functions/") &&
-    !filePath.startsWith("supabase/functions/_shared/")
-  );
-}
-
 interface OAuth2ResolvedConfig {
   enabled: boolean;
   providerName: string;
@@ -572,21 +565,18 @@ function buildCodeProposalFromMessage(messageContent: string) {
       path: tag.path,
       summary: tag.description ?? "(no change summary found)",
       type: "write" as const,
-      isServerFunction: isServerFunction(tag.path),
     })),
     ...proposalRenameFiles.map((tag) => ({
       name: path.basename(tag.to),
       path: tag.to,
       summary: `Rename from ${tag.from} to ${tag.to}`,
       type: "rename" as const,
-      isServerFunction: isServerFunction(tag.to),
     })),
     ...proposalDeleteFiles.map((tagPath) => ({
       name: path.basename(tagPath),
       path: tagPath,
       summary: "Delete file",
       type: "delete" as const,
-      isServerFunction: isServerFunction(tagPath),
     })),
   ];
 
