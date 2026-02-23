@@ -98,6 +98,22 @@ describe("backend_client transport", () => {
             "content-type": "application/json",
           },
         }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: { success: true } }), {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 204,
+          headers: {
+            "content-type": "application/json",
+          },
+        }),
       );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -108,6 +124,8 @@ describe("backend_client transport", () => {
       appId: 42,
       filePath: "src/App.tsx",
     });
+    await client.invoke("approve-proposal", { chatId: 77, messageId: 99 });
+    await client.invoke("reject-proposal", { chatId: 77, messageId: 99 });
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
@@ -118,6 +136,22 @@ describe("backend_client transport", () => {
       2,
       "https://api.example.com/api/v1/orgs/me/workspaces/me/apps/42/file?path=src%2FApp.tsx",
       expect.objectContaining({ method: "GET" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "https://api.example.com/api/v1/orgs/me/workspaces/me/chats/77/proposal/approve",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ messageId: 99 }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "https://api.example.com/api/v1/orgs/me/workspaces/me/chats/77/proposal/reject",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ messageId: 99 }),
+      }),
     );
   });
 
@@ -186,6 +220,90 @@ describe("backend_client transport", () => {
       expect.objectContaining({ method: "GET" }),
     );
     expect(branch).toEqual({ branch: "main" });
+  });
+
+  it("routes preview lifecycle channels and keeps restart payload strict", async () => {
+    window.__BLAZE_REMOTE_CONFIG__ = {
+      backendClient: {
+        baseUrl: "https://api.example.com",
+      },
+    };
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              previewUrl: "http://127.0.0.1:32100",
+              originalUrl: "http://127.0.0.1:3000",
+            },
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 204,
+          headers: {
+            "content-type": "application/json",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              success: true,
+              previewUrl: "http://127.0.0.1:32101",
+              originalUrl: "http://127.0.0.1:3001",
+            },
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createBackendClientTransport();
+
+    await client.invoke("run-app", { appId: 7 });
+    await client.invoke("stop-app", { appId: 7 });
+    await client.invoke("restart-app", { appId: 7, removeNodeModules: true });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "https://api.example.com/api/v1/orgs/me/workspaces/me/apps/7/run",
+      expect.objectContaining({
+        method: "POST",
+        body: undefined,
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "https://api.example.com/api/v1/orgs/me/workspaces/me/apps/7/stop",
+      expect.objectContaining({
+        method: "POST",
+        body: undefined,
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "https://api.example.com/api/v1/orgs/me/workspaces/me/apps/7/restart",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ removeNodeModules: true }),
+      }),
+    );
   });
 
   it("routes revert-version to dedicated HTTP endpoint", async () => {

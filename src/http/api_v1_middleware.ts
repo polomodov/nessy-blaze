@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { isHttpError } from "/src/http/http_errors.ts";
+import { HttpError, isHttpError } from "/src/http/http_errors.ts";
 import { resolveRequestContext } from "/src/http/request_context.ts";
 
 type Next = (error?: unknown) => void;
@@ -62,6 +62,77 @@ function parseNumber(value: string | undefined): number | null {
     return null;
   }
   return parsed;
+}
+
+function parseRecordBody(body: unknown): Record<string, unknown> {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return {};
+  }
+  return body as Record<string, unknown>;
+}
+
+function parseRestartAppPayload(body: unknown): {
+  removeNodeModules?: boolean;
+} {
+  const payload = parseRecordBody(body);
+  const allowedKeys = new Set(["removeNodeModules"]);
+  const unsupportedKeys = Object.keys(payload).filter(
+    (key) => !allowedKeys.has(key),
+  );
+
+  if (unsupportedKeys.length > 0) {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      `Invalid payload: unsupported keys (${unsupportedKeys.join(", ")})`,
+    );
+  }
+
+  if (
+    "removeNodeModules" in payload &&
+    typeof payload.removeNodeModules !== "boolean"
+  ) {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      'Invalid payload: "removeNodeModules" must be a boolean',
+    );
+  }
+
+  return typeof payload.removeNodeModules === "boolean"
+    ? { removeNodeModules: payload.removeNodeModules }
+    : {};
+}
+
+function parseProposalActionPayload(body: unknown): {
+  messageId: number;
+} {
+  const payload = parseRecordBody(body);
+  const allowedKeys = new Set(["messageId"]);
+  const unsupportedKeys = Object.keys(payload).filter(
+    (key) => !allowedKeys.has(key),
+  );
+
+  if (unsupportedKeys.length > 0) {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      `Invalid payload: unsupported keys (${unsupportedKeys.join(", ")})`,
+    );
+  }
+
+  if (
+    typeof payload.messageId !== "number" ||
+    !Number.isFinite(payload.messageId)
+  ) {
+    throw new HttpError(
+      400,
+      "INVALID_PAYLOAD",
+      'Invalid payload: "messageId" must be a finite number',
+    );
+  }
+
+  return { messageId: payload.messageId };
 }
 
 const SCOPED_ROUTES: RouteDefinition[] = [
@@ -309,10 +380,7 @@ const SCOPED_ROUTES: RouteDefinition[] = [
       if (appId == null) {
         return null;
       }
-      const payload =
-        body && typeof body === "object"
-          ? (body as Record<string, unknown>)
-          : {};
+      const payload = parseRestartAppPayload(body);
       return {
         channel: "restart-app",
         args: [{ appId, ...payload }],
@@ -473,10 +541,7 @@ const SCOPED_ROUTES: RouteDefinition[] = [
       if (chatId == null) {
         return null;
       }
-      const payload =
-        body && typeof body === "object"
-          ? (body as Record<string, unknown>)
-          : {};
+      const payload = parseProposalActionPayload(body);
       return {
         channel: "approve-proposal",
         args: [{ chatId, ...payload }],
@@ -494,10 +559,7 @@ const SCOPED_ROUTES: RouteDefinition[] = [
       if (chatId == null) {
         return null;
       }
-      const payload =
-        body && typeof body === "object"
-          ? (body as Record<string, unknown>)
-          : {};
+      const payload = parseProposalActionPayload(body);
       return {
         channel: "reject-proposal",
         args: [{ chatId, ...payload }],

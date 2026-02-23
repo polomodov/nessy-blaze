@@ -89,9 +89,16 @@ This document locks the runtime scope for the HTTP-only migration.
 - WebSocket cancel stream payload contract is requestId-only in active v1 runtime (legacy chatId-targeted cancel fallback removed).
 - WebSocket stream payload validation is tightened to active v1 requirements (non-empty request/org/workspace/prompt strings, finite chatId, typed optional fields, and rejection of unsupported top-level keys).
 - SSE stream payload validation is tightened to active v1 requirements (strict top-level keys plus typed optional `redo|attachments|selectedComponents` fields).
+- Proposal approve/reject HTTP payload contract is tightened to active v1 keys (`messageId` only); unsupported keys are rejected with `400 INVALID_PAYLOAD`.
+- Browser backend proposal action mapping no longer duplicates `chatId` in HTTP body (path-only identity, `messageId` payload only).
+- Scoped preview restart HTTP payload contract is tightened to active v1 keys (`removeNodeModules` only); unsupported keys are rejected with `400 INVALID_PAYLOAD`.
+- Browser backend restart request mapping no longer duplicates `appId` in HTTP body (path-only identity, optional `removeNodeModules` payload).
 - Unused MCP consent i18n labels are removed from active UI localization bundles.
 - Active chat UI message role mapping uses `assistant` terminology in v1 (legacy `agent` role label removed from renderer message model and typing/status copy).
-- Core web E2E suite now includes chat stream payload contract checks for v1 rejection paths (unsupported top-level keys and invalid attachment object shapes).
+- Core web E2E suite now includes strict payload rejection checks for v1 chat/proposal/preview contracts (unsupported top-level keys and invalid attachment object shapes).
+- Core web E2E suite now covers scoped v1 app CRUD contract flow.
+- Core web E2E suite now covers scoped proposal lifecycle contract checks (`get/approve/reject`) with deterministic rejection semantics.
+- Core web E2E suite now covers scoped preview lifecycle API flow (`run/stop/restart`).
 
 ### Prioritized Checklist (February 23, 2026)
 
@@ -102,7 +109,7 @@ Priority `P0` (must close for v1 cut):
 
 Priority `P1` (core flow reliability):
 
-- [ ] Extend E2E coverage for core v1 flow:
+- [x] Extend E2E coverage for core v1 flow:
   - app CRUD
   - chat/proposal lifecycle (approve/reject)
   - preview run/stop/restart

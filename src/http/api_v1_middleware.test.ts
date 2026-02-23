@@ -243,6 +243,59 @@ describe("createApiV1Middleware", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it("routes proposal reject endpoint", async () => {
+    const invoke = vi.fn().mockResolvedValue(undefined);
+    const middleware = createApiV1Middleware(invoke, {
+      resolveRequestContext: resolveRequestContextMock as any,
+    });
+    const req = createMockRequest({
+      method: "POST",
+      url: "/api/v1/orgs/org-1/workspaces/ws-1/chats/42/proposal/reject",
+      body: JSON.stringify({ messageId: 7 }),
+    });
+    const { response } = createMockResponse();
+    const next = vi.fn();
+
+    await middleware(req, response, next);
+
+    expect(invoke).toHaveBeenCalledWith(
+      "reject-proposal",
+      [{ chatId: 42, messageId: 7 }],
+      {
+        requestContext,
+      },
+    );
+    expect(response.statusCode).toBe(204);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("rejects proposal action payload with unsupported keys", async () => {
+    const invoke = vi.fn();
+    const middleware = createApiV1Middleware(invoke, {
+      resolveRequestContext: resolveRequestContextMock as any,
+    });
+    const req = createMockRequest({
+      method: "POST",
+      url: "/api/v1/orgs/org-1/workspaces/ws-1/chats/42/proposal/approve",
+      body: JSON.stringify({
+        messageId: 7,
+        chatId: 999,
+      }),
+    });
+    const { response, getBody } = createMockResponse();
+    const next = vi.fn();
+
+    await middleware(req, response, next);
+
+    expect(response.statusCode).toBe(400);
+    expect(JSON.parse(getBody())).toMatchObject({
+      code: "INVALID_PAYLOAD",
+      error: expect.stringContaining("unsupported keys"),
+    });
+    expect(invoke).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it("routes app file read endpoint", async () => {
     const invoke = vi.fn().mockResolvedValue("file-content");
     const middleware = createApiV1Middleware(invoke, {
@@ -378,6 +431,71 @@ describe("createApiV1Middleware", () => {
     expect(JSON.parse(getBody())).toEqual({
       data: { successMessage: "Restored" },
     });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("routes scoped app restart endpoint with strict payload", async () => {
+    const invoke = vi.fn().mockResolvedValue({
+      success: true,
+      previewUrl: "http://127.0.0.1:32100",
+      originalUrl: "http://127.0.0.1:3000",
+    });
+    const middleware = createApiV1Middleware(invoke, {
+      resolveRequestContext: resolveRequestContextMock as any,
+    });
+    const req = createMockRequest({
+      method: "POST",
+      url: "/api/v1/orgs/org-1/workspaces/ws-1/apps/77/restart",
+      body: JSON.stringify({ removeNodeModules: true }),
+    });
+    const { response, getBody } = createMockResponse();
+    const next = vi.fn();
+
+    await middleware(req, response, next);
+
+    expect(invoke).toHaveBeenCalledWith(
+      "restart-app",
+      [{ appId: 77, removeNodeModules: true }],
+      {
+        requestContext,
+      },
+    );
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(getBody())).toEqual({
+      data: {
+        success: true,
+        previewUrl: "http://127.0.0.1:32100",
+        originalUrl: "http://127.0.0.1:3000",
+      },
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("rejects restart payload with unsupported keys", async () => {
+    const invoke = vi.fn();
+    const middleware = createApiV1Middleware(invoke, {
+      resolveRequestContext: resolveRequestContextMock as any,
+    });
+    const req = createMockRequest({
+      method: "POST",
+      url: "/api/v1/orgs/org-1/workspaces/ws-1/apps/77/restart",
+      body: JSON.stringify({
+        removeNodeModules: false,
+        appId: 10,
+        unsupported: true,
+      }),
+    });
+    const { response, getBody } = createMockResponse();
+    const next = vi.fn();
+
+    await middleware(req, response, next);
+
+    expect(response.statusCode).toBe(400);
+    expect(JSON.parse(getBody())).toMatchObject({
+      code: "INVALID_PAYLOAD",
+      error: expect.stringContaining("unsupported keys"),
+    });
+    expect(invoke).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
   });
 

@@ -533,14 +533,23 @@ function resolveApiRoute(
       };
     }
     case "restart-app": {
-      const params = getFirstArg<{ appId?: number }>(args);
+      const params = getFirstArg<{
+        appId?: number;
+        removeNodeModules?: boolean;
+      }>(args);
       if (!params || typeof params.appId !== "number") {
         return null;
       }
+      const body =
+        typeof params.removeNodeModules === "boolean"
+          ? {
+              removeNodeModules: params.removeNodeModules,
+            }
+          : undefined;
       return {
         method: "POST",
         path: `${scopedBasePath}/apps/${params.appId}/restart`,
-        body: params,
+        body,
       };
     }
     case "list-versions": {
@@ -675,24 +684,36 @@ function resolveApiRoute(
     }
     case "approve-proposal": {
       const params = getFirstArg<{ chatId?: number; messageId?: number }>(args);
-      if (!params || typeof params.chatId !== "number") {
+      if (
+        !params ||
+        typeof params.chatId !== "number" ||
+        typeof params.messageId !== "number"
+      ) {
         return null;
       }
       return {
         method: "POST",
         path: `${scopedBasePath}/chats/${params.chatId}/proposal/approve`,
-        body: params,
+        body: {
+          messageId: params.messageId,
+        },
       };
     }
     case "reject-proposal": {
       const params = getFirstArg<{ chatId?: number; messageId?: number }>(args);
-      if (!params || typeof params.chatId !== "number") {
+      if (
+        !params ||
+        typeof params.chatId !== "number" ||
+        typeof params.messageId !== "number"
+      ) {
         return null;
       }
       return {
         method: "POST",
         path: `${scopedBasePath}/chats/${params.chatId}/proposal/reject`,
-        body: params,
+        body: {
+          messageId: params.messageId,
+        },
       };
     }
     case "get-workspace-model-settings":
