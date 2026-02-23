@@ -257,25 +257,6 @@ export const apps = pgTable(
     })
       .notNull()
       .defaultNow(),
-    githubOrg: text("github_org"),
-    githubRepo: text("github_repo"),
-    githubBranch: text("github_branch"),
-    supabaseProjectId: text("supabase_project_id"),
-    // If supabaseProjectId is a branch, then the parent project id set.
-    // This is because there's no way to retrieve ALL the branches for ALL projects
-    // in a single API call
-    // This is only used for display purposes but is NOT used for any actual
-    // supabase management logic.
-    supabaseParentProjectId: text("supabase_parent_project_id"),
-    // Supabase organization slug for credential lookup
-    supabaseOrganizationSlug: text("supabase_organization_slug"),
-    neonProjectId: text("neon_project_id"),
-    neonDevelopmentBranchId: text("neon_development_branch_id"),
-    neonPreviewBranchId: text("neon_preview_branch_id"),
-    vercelProjectId: text("vercel_project_id"),
-    vercelProjectName: text("vercel_project_name"),
-    vercelTeamId: text("vercel_team_id"),
-    vercelDeploymentUrl: text("vercel_deployment_url"),
     installCommand: text("install_command"),
     startCommand: text("start_command"),
     chatContext: jsonb("chat_context"),

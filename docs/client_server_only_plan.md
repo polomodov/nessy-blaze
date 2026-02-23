@@ -46,6 +46,10 @@ This document locks the runtime scope for the HTTP-only migration.
   - `vercelAccessToken`
   - `supabase`
   - `neon`
+- Legacy Supabase settings flags are removed from active runtime schema.
+- `blaze-execute-sql` integration branch is disabled in response processing for client-server-only mode.
+- Local-agent and response processing contexts no longer depend on Supabase/Neon app metadata.
+- Legacy integration columns are removed from the `apps` Drizzle schema and migration is generated.
 - App HTTP payload shape no longer exposes legacy integration metadata:
   - `github*`
   - `supabase*`
@@ -60,6 +64,6 @@ This document locks the runtime scope for the HTTP-only migration.
 
 ### Next steps
 
-1. Remove remaining integration flags from settings/domain schemas where they are no longer consumed in v1.
-2. Hard-disable integration side effects in legacy processing paths (Supabase/Neon deployment hooks) for client-server mode.
+1. Drop legacy integration columns from DB schema and backfill migration strategy.
+2. Continue reducing compatibility-only integration code outside active runtime path.
 3. Add/extend E2E coverage for core v1 flow (app CRUD + chat/proposal + preview) with strict payload shape checks.

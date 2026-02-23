@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ServerEventSink } from "@/ipc/utils/server_event_sink";
+import { db } from "@/db";
 
 // ============================================================================
 // Test Fakes & Builders
@@ -46,7 +47,6 @@ function buildTestChat(
       aiMessagesJson?: unknown;
       createdAt?: Date;
     }>;
-    supabaseProjectId?: string | null;
   } = {},
 ) {
   const chatId = overrides.chatId ?? 1;
@@ -72,7 +72,6 @@ function buildTestChat(
       path: overrides.appPath ?? "test-app-path",
       createdAt: new Date(),
       updatedAt: new Date(),
-      supabaseProjectId: overrides.supabaseProjectId ?? null,
     },
   };
 }
@@ -368,6 +367,36 @@ describe("handleLocalAgentStream", () => {
           },
         ),
       ).rejects.toThrow("Chat not found: 1");
+    });
+
+    it("queries chat app with minimal columns for client-server-only mode", async () => {
+      const { event } = createFakeEvent();
+      mockSettings = buildTestSettings({ enableBlazePro: true });
+      mockChatData = buildTestChat();
+      mockStreamResult = createFakeStream([]);
+
+      await handleLocalAgentStream(
+        event,
+        { chatId: 1, prompt: "test" },
+        new AbortController(),
+        {
+          placeholderMessageId: 10,
+          systemPrompt: "You are helpful",
+          blazeRequestId,
+        },
+      );
+
+      const queryArgs = vi.mocked(db.query.chats.findFirst).mock.calls[0]?.[0];
+      expect(queryArgs).toMatchObject({
+        with: {
+          app: {
+            columns: {
+              id: true,
+              path: true,
+            },
+          },
+        },
+      });
     });
   });
 

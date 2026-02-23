@@ -233,6 +233,7 @@ describe("readSettings", () => {
         // Extra fields that are not in the schema (should be preserved)
         unknownField: "should be preserved",
         deprecatedSetting: true,
+        enableSupabaseWriteSqlMigration: true,
         extraConfig: {
           someValue: 123,
           anotherValue: "test",
@@ -260,6 +261,7 @@ describe("readSettings", () => {
       const resultAny = result as any;
       expect(resultAny.unknownField).toBeUndefined();
       expect(resultAny.deprecatedSetting).toBeUndefined();
+      expect(resultAny.enableSupabaseWriteSqlMigration).toBeUndefined();
       expect(resultAny.extraConfig).toBeUndefined();
 
       // Should still have defaults for missing properties

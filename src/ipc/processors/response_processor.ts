@@ -8,7 +8,6 @@ import { safeJoin } from "/src/ipc/utils/path_utils.ts";
 
 import { log } from "/src/lib/logger.ts";
 import { executeAddDependency } from "/src/ipc/processors/executeAddDependency.ts";
-import { UserSettings } from "/src/lib/schemas.ts";
 import {
   gitCommit,
   gitAdd,
@@ -17,14 +16,11 @@ import {
   getGitUncommittedFiles,
   isGitStatusClean,
 } from "/src/ipc/utils/git_utils.ts";
-import { readSettings } from "/src/main/settings.ts";
-import { writeMigrationFile } from "/src/ipc/utils/file_utils.ts";
 import {
   getBlazeWriteTags,
   getBlazeRenameTags,
   getBlazeDeleteTags,
   getBlazeAddDependencyTags,
-  getBlazeExecuteSqlTags,
   getBlazeSearchReplaceTags,
 } from "/src/ipc/utils/blaze_tag_parser.ts";
 import { applySearchReplace } from "/src/core/main/ipc/processors/search_replace_processor.ts";
@@ -32,54 +28,6 @@ import { FileUploadsState } from "/src/ipc/utils/file_uploads_state.ts";
 
 const readFile = fs.promises.readFile;
 const logger = log.scope("response_processor");
-
-function isServerFunction(_filePath: string): boolean {
-  return false;
-}
-
-function isSharedServerModule(_filePath: string): boolean {
-  return false;
-}
-
-async function deleteSupabaseFunction(_params: {
-  supabaseProjectId: string;
-  functionName: string;
-  organizationSlug: string | null;
-}): Promise<void> {}
-
-async function deploySupabaseFunction(_params: {
-  supabaseProjectId: string;
-  functionName: string;
-  appPath: string;
-  organizationSlug: string | null;
-}): Promise<void> {}
-
-async function executeSupabaseSql(_params: {
-  supabaseProjectId: string;
-  query: string;
-  organizationSlug: string | null;
-}): Promise<void> {}
-
-async function deployAllSupabaseFunctions(_params: {
-  appPath: string;
-  supabaseProjectId: string;
-  supabaseOrganizationSlug: string | null;
-}): Promise<string[]> {
-  return [];
-}
-
-function extractFunctionNameFromPath(filePath: string): string {
-  const normalized = filePath.replace(/\\/g, "/");
-  const match = normalized.match(/^supabase\/functions\/([^/]+)/);
-  if (match?.[1]) {
-    return match[1];
-  }
-  return path.basename(path.dirname(normalized));
-}
-
-async function storeDbTimestampAtCurrentVersion(_params: {
-  appId: number;
-}): Promise<void> {}
 
 interface Output {
   message: string;
@@ -183,7 +131,11 @@ export async function processFullResponseActions(
   const chatWithApp = await db.query.chats.findFirst({
     where: eq(chats.id, chatId),
     with: {
-      app: true,
+      app: {
+        columns: {
+          path: true,
+        },
+      },
     },
   });
   if (!chatWithApp || !chatWithApp.app) {
@@ -191,33 +143,12 @@ export async function processFullResponseActions(
     return {};
   }
 
-  if (
-    chatWithApp.app.neonProjectId &&
-    chatWithApp.app.neonDevelopmentBranchId
-  ) {
-    try {
-      await storeDbTimestampAtCurrentVersion({
-        appId: chatWithApp.app.id,
-      });
-    } catch (error) {
-      logger.error("Error creating Neon branch at current version:", error);
-      throw new Error(
-        "Could not create Neon branch; database versioning functionality is not working: " +
-          error,
-      );
-    }
-  }
-
-  const settings: UserSettings = readSettings();
   const appPath = getBlazeAppPath(chatWithApp.app.path);
   const writtenFiles: string[] = [];
   const renamedFiles: string[] = [];
   const deletedFiles: string[] = [];
   let hasChanges = false;
-  // Track if any shared modules were modified
-  let sharedModulesChanged = false;
 
-  const warnings: Output[] = [];
   const errors: Output[] = [];
   const searchReplaceFailures: { filePath: string; error: string }[] = [];
 
@@ -228,9 +159,6 @@ export async function processFullResponseActions(
     const blazeDeletePaths = getBlazeDeleteTags(fullResponse);
     const blazeSearchReplaceTags = getBlazeSearchReplaceTags(fullResponse);
     const blazeAddDependencyPackages = getBlazeAddDependencyTags(fullResponse);
-    const blazeExecuteSqlQueries = chatWithApp.app.supabaseProjectId
-      ? getBlazeExecuteSqlTags(fullResponse)
-      : [];
 
     const message = await db.query.messages.findFirst({
       where: and(
@@ -243,42 +171,6 @@ export async function processFullResponseActions(
     if (!message) {
       logger.error(`No message found for ID: ${messageId}`);
       return {};
-    }
-
-    // Handle SQL execution tags
-    if (blazeExecuteSqlQueries.length > 0) {
-      for (const query of blazeExecuteSqlQueries) {
-        try {
-          await executeSupabaseSql({
-            supabaseProjectId: chatWithApp.app.supabaseProjectId!,
-            query: query.content,
-            organizationSlug: chatWithApp.app.supabaseOrganizationSlug ?? null,
-          });
-
-          // Only write migration file if SQL execution succeeded
-          if (settings.enableSupabaseWriteSqlMigration) {
-            try {
-              const migrationFilePath = await writeMigrationFile(
-                appPath,
-                query.content,
-                query.description,
-              );
-              writtenFiles.push(migrationFilePath);
-            } catch (error) {
-              errors.push({
-                message: `Failed to write SQL migration file for: ${query.description}`,
-                error: error,
-              });
-            }
-          }
-        } catch (error) {
-          errors.push({
-            message: `Failed to execute SQL query: ${query.content}`,
-            error: error,
-          });
-        }
-      }
-      logger.log(`Executed ${blazeExecuteSqlQueries.length} SQL queries`);
     }
 
     // TODO: Handle add dependency tags
@@ -324,11 +216,6 @@ export async function processFullResponseActions(
     for (const filePath of blazeDeletePaths) {
       const fullFilePath = safeJoin(appPath, filePath);
 
-      // Track if this is a shared module
-      if (isSharedServerModule(filePath)) {
-        sharedModulesChanged = true;
-      }
-
       // Delete the file if it exists
       if (fs.existsSync(fullFilePath)) {
         if (fs.lstatSync(fullFilePath).isDirectory()) {
@@ -349,32 +236,12 @@ export async function processFullResponseActions(
       } else {
         logger.warn(`File to delete does not exist: ${fullFilePath}`);
       }
-      // Only delete individual functions, not shared modules
-      if (isServerFunction(filePath)) {
-        try {
-          await deleteSupabaseFunction({
-            supabaseProjectId: chatWithApp.app.supabaseProjectId!,
-            functionName: extractFunctionNameFromPath(filePath),
-            organizationSlug: chatWithApp.app.supabaseOrganizationSlug ?? null,
-          });
-        } catch (error) {
-          errors.push({
-            message: `Failed to delete Supabase function: ${filePath}`,
-            error: error,
-          });
-        }
-      }
     }
 
     // Process all file renames
     for (const tag of blazeRenameTags) {
       const fromPath = safeJoin(appPath, tag.from);
       const toPath = safeJoin(appPath, tag.to);
-
-      // Track if this involves shared modules
-      if (isSharedServerModule(tag.from) || isSharedServerModule(tag.to)) {
-        sharedModulesChanged = true;
-      }
 
       // Ensure target directory exists
       const dirPath = path.dirname(toPath);
@@ -397,48 +264,12 @@ export async function processFullResponseActions(
       } else {
         logger.warn(`Source file for rename does not exist: ${fromPath}`);
       }
-      // Only handle individual functions, not shared modules
-      if (isServerFunction(tag.from)) {
-        try {
-          await deleteSupabaseFunction({
-            supabaseProjectId: chatWithApp.app.supabaseProjectId!,
-            functionName: extractFunctionNameFromPath(tag.from),
-            organizationSlug: chatWithApp.app.supabaseOrganizationSlug ?? null,
-          });
-        } catch (error) {
-          warnings.push({
-            message: `Failed to delete Supabase function: ${tag.from} as part of renaming ${tag.from} to ${tag.to}`,
-            error: error,
-          });
-        }
-      }
-      // Deploy renamed function (skip if shared modules changed - will be handled later)
-      if (isServerFunction(tag.to) && !sharedModulesChanged) {
-        try {
-          await deploySupabaseFunction({
-            supabaseProjectId: chatWithApp.app.supabaseProjectId!,
-            functionName: extractFunctionNameFromPath(tag.to),
-            appPath,
-            organizationSlug: chatWithApp.app.supabaseOrganizationSlug ?? null,
-          });
-        } catch (error) {
-          errors.push({
-            message: `Failed to deploy Supabase function: ${tag.to} as part of renaming ${tag.from} to ${tag.to}`,
-            error: error,
-          });
-        }
-      }
     }
 
     // Process all search-replace edits
     for (const tag of blazeSearchReplaceTags) {
       const filePath = tag.path;
       const fullFilePath = safeJoin(appPath, filePath);
-
-      // Track if this is a shared module
-      if (isSharedServerModule(filePath)) {
-        sharedModulesChanged = true;
-      }
 
       try {
         if (!fs.existsSync(fullFilePath)) {
@@ -458,24 +289,6 @@ export async function processFullResponseActions(
         // Write modified content
         fs.writeFileSync(fullFilePath, result.content);
         writtenFiles.push(filePath);
-
-        // If server function (not shared), redeploy (skip if shared modules changed)
-        if (isServerFunction(filePath) && !sharedModulesChanged) {
-          try {
-            await deploySupabaseFunction({
-              supabaseProjectId: chatWithApp.app.supabaseProjectId!,
-              functionName: extractFunctionNameFromPath(filePath),
-              appPath,
-              organizationSlug:
-                chatWithApp.app.supabaseOrganizationSlug ?? null,
-            });
-          } catch (error) {
-            errors.push({
-              message: `Failed to deploy Supabase function after search-replace: ${filePath}`,
-              error: error,
-            });
-          }
-        }
       } catch (error) {
         searchReplaceFailures.push({
           filePath,
@@ -493,11 +306,6 @@ export async function processFullResponseActions(
       const filePath = tag.path;
       let content: string | Buffer = tag.content;
       const fullFilePath = safeJoin(appPath, filePath);
-
-      // Track if this is a shared module
-      if (isSharedServerModule(filePath)) {
-        sharedModulesChanged = true;
-      }
 
       // Check if content (stripped of whitespace) exactly matches a file ID and replace with actual file content
       if (fileUploadsMap) {
@@ -531,56 +339,6 @@ export async function processFullResponseActions(
       fs.writeFileSync(fullFilePath, content);
       logger.log(`Successfully wrote file: ${fullFilePath}`);
       writtenFiles.push(filePath);
-      // Deploy individual function (skip if shared modules changed - will be handled later)
-      if (
-        isServerFunction(filePath) &&
-        typeof content === "string" &&
-        !sharedModulesChanged
-      ) {
-        try {
-          await deploySupabaseFunction({
-            supabaseProjectId: chatWithApp.app.supabaseProjectId!,
-            functionName: extractFunctionNameFromPath(filePath),
-            appPath,
-            organizationSlug: chatWithApp.app.supabaseOrganizationSlug ?? null,
-          });
-        } catch (error) {
-          errors.push({
-            message: `Failed to deploy Supabase function: ${filePath}`,
-            error: error,
-          });
-        }
-      }
-    }
-
-    // If shared modules changed, redeploy all functions
-    if (sharedModulesChanged && chatWithApp.app.supabaseProjectId) {
-      try {
-        logger.info(
-          "Shared modules changed, redeploying all Supabase functions",
-        );
-        const deployErrors = await deployAllSupabaseFunctions({
-          appPath,
-          supabaseProjectId: chatWithApp.app.supabaseProjectId,
-          supabaseOrganizationSlug:
-            chatWithApp.app.supabaseOrganizationSlug ?? null,
-        });
-        if (deployErrors.length > 0) {
-          for (const err of deployErrors) {
-            errors.push({
-              message:
-                "Failed to deploy Supabase function after shared module change",
-              error: err,
-            });
-          }
-        }
-      } catch (error) {
-        errors.push({
-          message:
-            "Failed to redeploy all Supabase functions after shared module change",
-          error: error,
-        });
-      }
     }
 
     // If we have any file changes, commit them all at once
@@ -624,8 +382,6 @@ export async function processFullResponseActions(
           changes.push(
             `added ${blazeAddDependencyPackages.join(", ")} package(s)`,
           );
-        if (blazeExecuteSqlQueries.length > 0)
-          changes.push(`executed ${blazeExecuteSqlQueries.length} SQL queries`);
 
         let message = chatSummary
           ? `[blaze] ${chatSummary} - ${changes.join(", ")}`
@@ -709,14 +465,6 @@ export async function processFullResponseActions(
   } finally {
     const appendedParts: string[] = [];
 
-    if (warnings.length > 0) {
-      appendedParts.push(
-        ...warnings.map(
-          (warning) =>
-            `<blaze-output type="warning" message="${escapeXmlAttr(warning.message)}">${escapeXmlContent(toErrorString(warning.error))}</blaze-output>`,
-        ),
-      );
-    }
     if (errors.length > 0) {
       appendedParts.push(
         ...errors.map(

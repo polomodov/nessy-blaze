@@ -136,7 +136,12 @@ export async function handleLocalAgentStream(
       messages: {
         orderBy: (messages, { asc }) => [asc(messages.createdAt)],
       },
-      app: true,
+      app: {
+        columns: {
+          id: true,
+          path: true,
+        },
+      },
     },
   });
 
@@ -173,10 +178,7 @@ export async function handleLocalAgentStream(
       appId: chat.app.id,
       appPath,
       chatId: chat.id,
-      supabaseProjectId: chat.app.supabaseProjectId,
-      supabaseOrganizationSlug: chat.app.supabaseOrganizationSlug,
       messageId: placeholderMessageId,
-      isSharedModulesChanged: false,
       todos: [],
       blazeRequestId,
       onXmlStream: (accumulatedXml: string) => {

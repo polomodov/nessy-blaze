@@ -36,10 +36,7 @@ export interface AgentContext {
   appId: number;
   appPath: string;
   chatId: number;
-  supabaseProjectId: string | null;
-  supabaseOrganizationSlug: string | null;
   messageId: number;
-  isSharedModulesChanged: boolean;
   chatSummary?: string;
   /** Turn-scoped todo list for agent task tracking */
   todos: Todo[];

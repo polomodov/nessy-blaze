@@ -22,13 +22,7 @@ export interface FileOperationResult {
  * Integration deployment hooks are disabled in client-server core mode.
  */
 export async function deployAllFunctionsIfNeeded(
-  ctx: Pick<
-    AgentContext,
-    | "appPath"
-    | "supabaseProjectId"
-    | "supabaseOrganizationSlug"
-    | "isSharedModulesChanged"
-  >,
+  ctx: Pick<AgentContext, "appPath">,
 ): Promise<FileOperationResult> {
   void ctx;
   logger.info("Skipping external integration deployment");
@@ -39,7 +33,7 @@ export async function deployAllFunctionsIfNeeded(
  * Commit all changes
  */
 export async function commitAllChanges(
-  ctx: Pick<AgentContext, "appPath" | "supabaseProjectId">,
+  ctx: Pick<AgentContext, "appPath">,
   chatSummary?: string,
 ): Promise<{
   commitHash?: string;

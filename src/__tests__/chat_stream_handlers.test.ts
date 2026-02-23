@@ -712,6 +712,57 @@ describe("processFullResponse", () => {
     expect(fs.writeFileSync).not.toHaveBeenCalled();
   });
 
+  it("loads only app path from chat relation in client-server-only mode", async () => {
+    await processFullResponseActions("No blaze-write tags here", 1, {
+      chatSummary: undefined,
+      messageId: 1,
+    });
+
+    const queryArgs = vi.mocked(db.query.chats.findFirst).mock.calls[0]?.[0];
+    expect(queryArgs).toMatchObject({
+      with: {
+        app: {
+          columns: {
+            path: true,
+          },
+        },
+      },
+    });
+  });
+
+  it("ignores legacy blaze-execute-sql tags in client-server-only mode", async () => {
+    vi.mocked(db.query.chats.findFirst).mockResolvedValueOnce({
+      id: 1,
+      appId: 1,
+      title: "Test Chat",
+      createdAt: new Date(),
+      app: {
+        id: 1,
+        name: "Mock App",
+        path: "mock-app-path",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        supabaseProjectId: "legacy-project-id",
+        supabaseOrganizationSlug: "legacy-org",
+      },
+      messages: [],
+    } as any);
+
+    const response = `<blaze-execute-sql description="legacy sql">select 1;</blaze-execute-sql>`;
+
+    const result = await processFullResponseActions(response, 1, {
+      chatSummary: undefined,
+      messageId: 1,
+    });
+
+    expect(gitCommit).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      updatedFiles: false,
+      extraFiles: undefined,
+      extraFilesError: undefined,
+    });
+  });
+
   it("should not append completion metadata when there are no warnings or errors", async () => {
     vi.mocked(fs.mkdirSync).mockImplementation(() => undefined);
     vi.mocked(fs.writeFileSync).mockImplementation(() => undefined);

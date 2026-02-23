@@ -90,6 +90,7 @@ describe("invokeIpcChannelOverHttp", () => {
             vercelAccessToken: "legacy-vercel-token",
             supabase: { organizations: {} },
             neon: { accessToken: "legacy-neon-token" },
+            enableSupabaseWriteSqlMigration: true,
           } as Record<string, unknown>,
         ],
       )) as Record<string, unknown>;
@@ -100,6 +101,9 @@ describe("invokeIpcChannelOverHttp", () => {
       expect(updatedSettings).not.toHaveProperty("vercelAccessToken");
       expect(updatedSettings).not.toHaveProperty("supabase");
       expect(updatedSettings).not.toHaveProperty("neon");
+      expect(updatedSettings).not.toHaveProperty(
+        "enableSupabaseWriteSqlMigration",
+      );
 
       const persistedSettings = (await invokeIpcChannelOverHttp(
         "get-user-settings",
@@ -110,6 +114,9 @@ describe("invokeIpcChannelOverHttp", () => {
       expect(persistedSettings).not.toHaveProperty("vercelAccessToken");
       expect(persistedSettings).not.toHaveProperty("supabase");
       expect(persistedSettings).not.toHaveProperty("neon");
+      expect(persistedSettings).not.toHaveProperty(
+        "enableSupabaseWriteSqlMigration",
+      );
     } finally {
       await invokeIpcChannelOverHttp("set-user-settings", [
         { uiLanguage: initialLanguage },

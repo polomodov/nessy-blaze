@@ -157,7 +157,6 @@ export type ChatMode = z.infer<typeof ChatModeSchema>;
 export const ExperimentsSchema = z.object({
   // Deprecated
   enableLocalAgent: z.boolean().describe("DEPRECATED").optional(),
-  enableSupabaseIntegration: z.boolean().describe("DEPRECATED").optional(),
   enableFileEditing: z.boolean().describe("DEPRECATED").optional(),
 });
 export type Experiments = z.infer<typeof ExperimentsSchema>;
@@ -247,7 +246,6 @@ export const UserSettingsSchema = z.object({
   selectedTemplateId: z.string(),
   selectedThemeId: z.string().optional(),
   uiLanguage: z.enum(["ru", "en"]).optional(),
-  enableSupabaseWriteSqlMigration: z.boolean().optional(),
   selectedChatMode: ChatModeSchema.optional(),
   defaultChatMode: ChatModeSchema.optional(),
   acceptedCommunityCode: z.boolean().optional(),
