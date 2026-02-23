@@ -14,7 +14,6 @@ function createSettings(overrides?: Partial<UserSettings>): UserSettings {
     telemetryConsent: "unset",
     telemetryUserId: "test-user",
     hasRunBefore: false,
-    experiments: {},
     enableProLazyEditsMode: true,
     enableProSmartFilesContextMode: true,
     selectedChatMode: "build",

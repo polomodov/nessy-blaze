@@ -110,7 +110,6 @@ const DEFAULT_USER_SETTINGS: UserSettings = UserSettingsSchema.parse({
   telemetryConsent: "unset",
   telemetryUserId: randomUUID(),
   hasRunBefore: false,
-  experiments: {},
   enableProLazyEditsMode: true,
   enableProSmartFilesContextMode: true,
   selectedChatMode: "build",
@@ -132,6 +131,7 @@ const REMOVED_USER_SETTINGS_KEYS = [
   "supabase",
   "neon",
   "agentToolConsents",
+  "experiments",
 ] as const;
 
 type RemovedUserSettingsKey = (typeof REMOVED_USER_SETTINGS_KEYS)[number];
@@ -165,23 +165,6 @@ function stripLegacyUserSettings(settings: UserSettings): UserSettings {
   for (const key of REMOVED_USER_SETTINGS_KEYS) {
     delete sanitized[key as RemovedUserSettingsKey];
   }
-
-  if (
-    sanitized.experiments &&
-    typeof sanitized.experiments === "object" &&
-    !Array.isArray(sanitized.experiments)
-  ) {
-    const experiments = {
-      ...(sanitized.experiments as Record<string, unknown>),
-    };
-    delete experiments.enableLocalAgent;
-    delete experiments.enableFileEditing;
-    if (Object.keys(experiments).length === 0) {
-      delete sanitized.experiments;
-    } else {
-      sanitized.experiments = experiments;
-    }
-  }
   return UserSettingsSchema.parse(normalizeLegacyUserSettingsModes(sanitized));
 }
 
@@ -193,23 +176,6 @@ function sanitizeUserSettingsPatch(
   };
   for (const key of REMOVED_USER_SETTINGS_KEYS) {
     delete sanitized[key as RemovedUserSettingsKey];
-  }
-
-  if (
-    sanitized.experiments &&
-    typeof sanitized.experiments === "object" &&
-    !Array.isArray(sanitized.experiments)
-  ) {
-    const experiments = {
-      ...(sanitized.experiments as Record<string, unknown>),
-    };
-    delete experiments.enableLocalAgent;
-    delete experiments.enableFileEditing;
-    if (Object.keys(experiments).length === 0) {
-      delete sanitized.experiments;
-    } else {
-      sanitized.experiments = experiments;
-    }
   }
   return normalizeLegacyUserSettingsModes(sanitized) as Partial<UserSettings>;
 }

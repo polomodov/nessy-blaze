@@ -154,13 +154,6 @@ export type RuntimeMode2 = z.infer<typeof RuntimeMode2Schema>;
 export const ChatModeSchema = z.enum(["build", "ask"]);
 export type ChatMode = z.infer<typeof ChatModeSchema>;
 
-export const ExperimentsSchema = z.object({
-  // Deprecated
-  enableLocalAgent: z.boolean().describe("DEPRECATED").optional(),
-  enableFileEditing: z.boolean().describe("DEPRECATED").optional(),
-});
-export type Experiments = z.infer<typeof ExperimentsSchema>;
-
 export const BlazeProBudgetSchema = z.object({
   budgetResetAt: z.string(),
   maxBudget: z.number(),
@@ -234,7 +227,6 @@ export const UserSettingsSchema = z.object({
   telemetryUserId: z.string().optional(),
   hasRunBefore: z.boolean().optional(),
   enableBlazePro: z.boolean().optional(),
-  experiments: ExperimentsSchema.optional(),
   lastShownReleaseNotesVersion: z.string().optional(),
   maxChatTurnsInContext: z.number().optional(),
   thinkingBudget: z.enum(["low", "medium", "high"]).optional(),

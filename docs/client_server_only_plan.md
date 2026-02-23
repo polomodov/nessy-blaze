@@ -46,7 +46,7 @@ This document locks the runtime scope for the HTTP-only migration.
   - `vercelAccessToken`
   - `supabase`
   - `neon`
-- User settings HTTP contract strips agent-only consent/experiment fields (`agentToolConsents`, legacy local-agent experiment toggles).
+- User settings HTTP contract strips agent-only fields (`agentToolConsents`) and drops legacy `experiments` payload keys.
 - Shared IPC type surface drops unused agent-tool consent DTOs from active client-server contracts.
 - Legacy Supabase settings flags are removed from active runtime schema.
 - `blaze-execute-sql` integration branch is disabled in response processing for client-server-only mode.
