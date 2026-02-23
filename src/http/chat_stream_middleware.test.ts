@@ -289,40 +289,34 @@ describe("createChatStreamMiddleware", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it("returns 410 for legacy unscoped stream route", async () => {
+  it("passes through legacy unscoped stream route", async () => {
     const middleware = createMiddleware();
     const req = createMockRequest({
       method: "POST",
       url: "/api/v1/chats/22/stream",
       body: JSON.stringify({ prompt: "Legacy stream should be blocked" }),
     });
-    const { response, getBody } = createMockResponse();
+    const { response } = createMockResponse();
+    const next = vi.fn();
 
-    await middleware(req, response, vi.fn());
+    await middleware(req, response, next);
 
-    expect(response.statusCode).toBe(410);
-    expect(JSON.parse(getBody())).toEqual({
-      error:
-        "Legacy unscoped stream routes are disabled. Use /api/v1/orgs/:orgId/workspaces/:workspaceId/chats/:chatId/stream.",
-    });
+    expect(next).toHaveBeenCalledOnce();
     expect(mockHandleChatStreamRequest).not.toHaveBeenCalled();
   });
 
-  it("returns 410 for legacy unscoped cancel route", async () => {
+  it("passes through legacy unscoped cancel route", async () => {
     const middleware = createMiddleware();
     const req = createMockRequest({
       method: "POST",
       url: "/api/v1/chats/23/stream/cancel",
     });
-    const { response, getBody } = createMockResponse();
+    const { response } = createMockResponse();
+    const next = vi.fn();
 
-    await middleware(req, response, vi.fn());
+    await middleware(req, response, next);
 
-    expect(response.statusCode).toBe(410);
-    expect(JSON.parse(getBody())).toEqual({
-      error:
-        "Legacy unscoped stream routes are disabled. Use /api/v1/orgs/:orgId/workspaces/:workspaceId/chats/:chatId/stream.",
-    });
+    expect(next).toHaveBeenCalledOnce();
     expect(mockHandleChatCancelRequest).not.toHaveBeenCalled();
   });
 });

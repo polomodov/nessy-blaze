@@ -75,6 +75,7 @@ This document locks the runtime scope for the HTTP-only migration.
 - Legacy unscoped chat stream routes are disabled; active runtime chat streaming is scoped-only:
   - `/api/v1/orgs/:orgId/workspaces/:workspaceId/chats/:chatId/stream`
   - `/api/v1/orgs/:orgId/workspaces/:workspaceId/chats/:chatId/stream/cancel`
+- Legacy unscoped stream route compatibility shim is removed from SSE middleware; non-scoped stream URLs are no longer handled in the active stream transport path.
 - Proposal payload contract no longer carries Supabase-specific `isServerFunction` file metadata.
 - Proposal payload contract no longer carries legacy SQL migration metadata (`sqlQueries`).
 - Shared proposal type contract is narrowed to active v1 `code-proposal` payloads (legacy action/tip proposal DTOs removed).

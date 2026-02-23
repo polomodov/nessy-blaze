@@ -20,9 +20,6 @@ const SCOPED_STREAM_ROUTE =
 const SCOPED_CANCEL_STREAM_ROUTE =
   /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/chats\/(\d+)\/stream\/cancel$/;
 
-const LEGACY_STREAM_ROUTE = /^\/api\/v1\/chats\/(\d+)\/stream$/;
-const LEGACY_CANCEL_STREAM_ROUTE = /^\/api\/v1\/chats\/(\d+)\/stream\/cancel$/;
-
 const activeHttpEvents = new Map<number, ServerEventSink>();
 
 type ChatStreamHandlerModule =
@@ -127,7 +124,6 @@ function parseRoute(
 ): {
   isStreamRoute: boolean;
   isCancelRoute: boolean;
-  isLegacyRoute: boolean;
   chatId: number | null;
   orgId?: string;
   workspaceId?: string;
@@ -139,7 +135,6 @@ function parseRoute(
       return {
         isStreamRoute: Number.isFinite(chatId),
         isCancelRoute: false,
-        isLegacyRoute: false,
         chatId: Number.isFinite(chatId) ? chatId : null,
         orgId: scopedStream[1],
         workspaceId: scopedStream[2],
@@ -152,32 +147,9 @@ function parseRoute(
       return {
         isStreamRoute: false,
         isCancelRoute: Number.isFinite(chatId),
-        isLegacyRoute: false,
         chatId: Number.isFinite(chatId) ? chatId : null,
         orgId: scopedCancel[1],
         workspaceId: scopedCancel[2],
-      };
-    }
-
-    const legacyStream = pathName.match(LEGACY_STREAM_ROUTE);
-    if (legacyStream) {
-      const chatId = Number(legacyStream[1]);
-      return {
-        isStreamRoute: Number.isFinite(chatId),
-        isCancelRoute: false,
-        isLegacyRoute: true,
-        chatId: Number.isFinite(chatId) ? chatId : null,
-      };
-    }
-
-    const legacyCancel = pathName.match(LEGACY_CANCEL_STREAM_ROUTE);
-    if (legacyCancel) {
-      const chatId = Number(legacyCancel[1]);
-      return {
-        isStreamRoute: false,
-        isCancelRoute: Number.isFinite(chatId),
-        isLegacyRoute: true,
-        chatId: Number.isFinite(chatId) ? chatId : null,
       };
     }
   }
@@ -185,7 +157,6 @@ function parseRoute(
   return {
     isStreamRoute: false,
     isCancelRoute: false,
-    isLegacyRoute: false,
     chatId: null,
   };
 }
@@ -214,20 +185,8 @@ export function createChatStreamMiddleware(
     const pathName = requestUrl.pathname;
 
     const routeState = parseRoute(method, pathName);
-    if (
-      !routeState.isStreamRoute &&
-      !routeState.isCancelRoute &&
-      !routeState.isLegacyRoute
-    ) {
+    if (!routeState.isStreamRoute && !routeState.isCancelRoute) {
       next();
-      return;
-    }
-
-    if (routeState.isLegacyRoute) {
-      writeJson(res, 410, {
-        error:
-          "Legacy unscoped stream routes are disabled. Use /api/v1/orgs/:orgId/workspaces/:workspaceId/chats/:chatId/stream.",
-      });
       return;
     }
 
