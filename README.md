@@ -142,4 +142,5 @@ npm run e2e
 ## Документация
 
 - Архитектура: `docs/architecture.md`
+- Core взаимодействия с Agent: `docs/agent_editing_core.md`
 - Workflow переводов: `docs/i18n_translation_workflow.md`
