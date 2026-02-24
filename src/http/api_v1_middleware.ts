@@ -842,23 +842,6 @@ const SCOPED_ROUTES: RouteDefinition[] = [
     },
   },
   {
-    method: "GET",
-    pattern:
-      /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/apps\/(\d+)\/branch$/,
-    build: (_url, match) => {
-      const appId = parseNumber(match[3]);
-      if (appId == null) {
-        return null;
-      }
-      return {
-        channel: "get-current-branch",
-        args: [{ appId }],
-        tenantPath: { orgId: match[1], workspaceId: match[2] },
-        requiresAuth: true,
-      };
-    },
-  },
-  {
     method: "POST",
     pattern:
       /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/apps\/(\d+)\/versions\/revert$/,
@@ -1024,38 +1007,6 @@ const SCOPED_ROUTES: RouteDefinition[] = [
   },
   {
     method: "GET",
-    pattern:
-      /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/settings\/models$/,
-    build: (_url, match) => ({
-      channel: "get-workspace-model-settings",
-      args: [],
-      tenantPath: { orgId: match[1], workspaceId: match[2] },
-      requiresAuth: true,
-    }),
-  },
-  {
-    method: "PATCH",
-    pattern:
-      /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/settings\/models$/,
-    build: (_url, match, body) => ({
-      channel: "set-workspace-model-settings",
-      args: [body],
-      tenantPath: { orgId: match[1], workspaceId: match[2] },
-      requiresAuth: true,
-    }),
-  },
-  {
-    method: "GET",
-    pattern: /^\/api\/v1\/orgs\/([^/]+)\/workspaces\/([^/]+)\/env\/providers$/,
-    build: (_url, match) => ({
-      channel: "get-workspace-env-providers",
-      args: [],
-      tenantPath: { orgId: match[1], workspaceId: match[2] },
-      requiresAuth: true,
-    }),
-  },
-  {
-    method: "GET",
     pattern: /^\/api\/v1\/settings\/user$/,
     build: () => ({
       channel: "get-user-settings",
@@ -1077,15 +1028,6 @@ const SCOPED_ROUTES: RouteDefinition[] = [
     pattern: /^\/api\/v1\/env-vars$/,
     build: () => ({
       channel: "get-env-vars",
-      args: [],
-      requiresAuth: true,
-    }),
-  },
-  {
-    method: "GET",
-    pattern: /^\/api\/v1\/language-model\/providers$/,
-    build: () => ({
-      channel: "get-language-model-providers",
       args: [],
       requiresAuth: true,
     }),

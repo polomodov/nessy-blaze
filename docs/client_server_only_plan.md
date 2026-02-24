@@ -111,13 +111,21 @@ This document locks the runtime scope for the HTTP-only migration.
 - Core web E2E suite now covers scoped v1 app CRUD contract flow.
 - Core web E2E suite now covers scoped proposal lifecycle contract checks (`get/approve/reject`) with deterministic rejection semantics.
 - Core web E2E suite now covers scoped preview lifecycle API flow (`run/stop/restart`).
+- Preview panel active UI surface is now core-only: non-core placeholder tabs are removed from the runtime entry path.
+- Preview tab placeholder i18n keys are removed from active localization bundles (`en`/`ru`).
+- Non-core HTTP IPC channels are removed from active v1 API/mapping surface:
+  - app branch lookup (`get-current-branch`, `/apps/:appId/branch`)
+  - workspace model settings (`get/set-workspace-model-settings`)
+  - workspace env provider listing (`get-workspace-env-providers`)
+  - language model providers listing (`get-language-model-providers`)
+- Request-context legacy tenant backfill no longer mutates MCP compatibility tables (`mcpServers`, `mcpToolConsents`) in active v1 runtime.
 
 ### Prioritized Checklist (February 23, 2026)
 
 Priority `P0` (must close for v1 cut):
 
-- [ ] Remove remaining integration-specific execution branches from legacy compatibility code paths.
-- [ ] Tighten runtime contracts so only v1 core features remain reachable from active UI/API entry points.
+- [x] Remove remaining integration-specific execution branches from legacy compatibility code paths.
+- [x] Tighten runtime contracts so only v1 core features remain reachable from active UI/API entry points.
 
 Priority `P1` (core flow reliability):
 
@@ -129,17 +137,14 @@ Priority `P1` (core flow reliability):
 
 Priority `P2` (UI/API cleanup):
 
-- [ ] Complete MCP/agent-only surface cleanup from active UI entry points in v1.
-- [ ] Remove or isolate compatibility-only local-agent artifacts from active web client paths.
+- [x] Complete MCP/agent-only surface cleanup from active UI entry points in v1.
+- [x] Remove or isolate compatibility-only local-agent artifacts from active web client paths.
 
 Priority `P3` (follow-up hygiene):
 
 - [x] Keep transport policy mapping in sync with runtime API routes.
-- [ ] Continue narrowing legacy compatibility utilities not required by active v1 runtime.
+- [x] Continue narrowing legacy compatibility utilities not required by active v1 runtime.
 
 ### Next implementation sequence
 
-1. Close `P0` runtime branch cleanup (integration-specific compatibility branches).
-2. Complete `P1` E2E coverage for CRUD + proposal + preview flows.
-3. Finish `P2` MCP/agent UI entry-point cleanup.
-4. Execute `P3` compatibility utility reduction pass.
+Completed for current v1 scope. Use this document as the current baseline; add new checklist items only when a new scope extension is approved.

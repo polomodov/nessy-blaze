@@ -4,9 +4,7 @@ Blaze runs in client-server web mode for local development.
 
 ## Reference docs
 
-- High-level architecture: [docs/architecture.md](./docs/architecture.md)
-- Local agent architecture: [docs/agent_architecture.md](./docs/agent_architecture.md)
-- DeepWiki overview: [deepwiki.com/blaze-sh/blaze](https://deepwiki.com/blaze-sh/blaze)
+- Architecture: [docs/architecture.md](./docs/architecture.md)
 
 ## Environment setup
 

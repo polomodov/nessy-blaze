@@ -1,52 +1,253 @@
-# Blaze Architecture
+# Blaze Architecture (Client-Server v1)
 
-This doc describes how the Blaze desktop app works at a high-level. If something is out of date, please feel free to suggest a change via a pull request.
+Этот документ описывает актуальную архитектуру проекта в режиме client-server (HTTP-only transport).
 
-## Overview
+## 1. Контекст и границы
 
-Blaze is an Electron app that is a local, open-source alternative to AI app builders like Lovable, v0, and Bolt. While the specifics of how other AI app builders are constructed aren't publicly documented, there is available information like [system prompts](https://github.com/x1xhlol/system-prompts-and-models-of-ai-tools) about these other app builders.
+### 1.1 Цель
 
-## Electron Architecture
+Blaze предоставляет workspace, где пользователь:
 
-If you're not familiar with Electron apps, they are similar to a full-stack JavaScript app where there's a client-side called the **renderer process** which executes the UI code like React and then there's a Node.js process called the **main process** which is comparable to the server-side portion of a full-stack app. The main process is privileged, meaning it has access to the filesystem and other system resources, whereas the renderer process is sandboxed. The renderer process can communicate to the main process using [IPCs](https://en.wikipedia.org/wiki/Inter-process_communication) which is similar to how the browser communicates to the server using HTTP requests.
+- создает/выбирает проект;
+- отправляет запрос в чат;
+- получает стриминговый ответ модели;
+- применяет предложенные изменения;
+- видит результат в live preview.
 
-## Life of a request
+### 1.2 Границы v1
 
-The core workflow of Blaze is that a user sends a prompt to the AI which edits the code and is reflected in the preview. We'll break this down step-by-step.
+В active runtime path остаются только core-сценарии:
 
-1. **Constructing an LLM request** - the LLM request that Blaze sends consists of much more than the prompt (i.e. user input). It includes, by default, the entire codebase as well as a detailed [system prompt](https://github.com/blaze-sh/blaze/blob/main/src/prompts/system_prompt.ts) which gives the LLM instructions to respond in a specific XML-like format (e.g. `<blaze-write path="path/to/file.ts">console.log("hi")</blaze-write>`).
-2. **Stream the LLM response to the UI** - It's important to provide visual feedback to the user otherwise they're waiting for several minutes without knowing what's happening so we stream the LLM response and show the LLM response. We have a specialized [Markdown parser](https://github.com/blaze-sh/blaze/blob/main/src/components/chat/BlazeMarkdownParser.tsx) which parses these `<blaze-*>` tags like the `<blaze-write>` tag shown earlier, so we can display the LLM output in a nice UI rather than just printing out raw XML-like text.
-3. **Process the LLM response** - Once the LLM response has finished, and the user has approved the changes, the [response processor](https://github.com/blaze-sh/blaze/blob/main/src/ipc/processors/response_processor.ts) in the main process applies these changes. Essentially each `<blaze-*>` tag described in the [system prompt](https://github.com/blaze-sh/blaze/blob/main/src/prompts/system_prompt.ts) maps to specific logic in the response processor, e.g. writing a file, deleting a file, adding a new NPM package, etc.
+- auth + tenant scope;
+- app/chat/proposal/preview lifecycle;
+- user settings, необходимые для web UI.
 
-To recap, Blaze essentially tells the LLM about a bunch of tools like writing files using the `<blaze-*>` tags, the renderer process displays these Blaze tags in a nice UI and the main process executes these Blaze tags to apply the changes.
+Legacy/compatibility поверхности (desktop-only, local-agent/MCP entry points, интеграционные ветки вне core flow) не должны быть активной частью HTTP v1 контракта.
 
-## FAQ
+## 2. Runtime topology
 
-### Why not use actual tool calls?
+### 2.1 Frontend runtime
 
-One thing that may seem strange is that we don't use actual function calling/tool calling capabilities of the AI and instead use these XML-like syntax which simulate tool calling. This is something I observed from studying the [system prompts](https://github.com/x1xhlol/system-prompts-and-models-of-ai-tools) of other app builders.
+- Entry: `src/renderer.tsx`
+- Routing: `src/router.ts`, `src/routes/*`
+- Shell: `src/app/layout.tsx`
+- Main workspace UI: `src/components/workspace/*`
 
-I think the two main reasons to use this XML-like format instead of actual tool calling is that:
+Frontend работает как SPA:
 
-1. You can call many tools at once, although some models allow [parallel calls](https://platform.openai.com/docs/guides/function-calling/parallel-function-calling#parallel-function-calling), many don't.
-2. There's also [evidence](https://aider.chat/2024/08/14/code-in-json.html) that forcing LLMs to return code in JSON (which is essentially what tool calling would entail here) negatively affects the quality.
+- TanStack Router для маршрутов (`/auth`, `/`);
+- TanStack Query + Jotai для состояния и кэшей;
+- `IpcClient` как фасад вызовов бэкенда.
 
-However, many AI editors _do_ heavily rely on tool calling and this is something that we're evaluating, particularly with upcoming MCP support.
+### 2.2 Backend runtime
 
-### Why isn't Blaze more agentic?
+В dev-режиме backend поднимается внутри Vite через плагин `ipcHttpGatewayPlugin` в `vite.renderer.config.mts`:
 
-Many other systems (e.g. Cursor) are much more agentic than Blaze. For example, they will call many tools and do things like create a plan, use command-line tools to search through the codebase, run linters and tests and automatically fix the code based on those output.
+- `src/http/api_v1_middleware.ts` (REST contract);
+- `src/http/chat_stream_middleware.ts` (SSE stream);
+- `src/http/chat_ws_server.ts` (WS stream/cancel, feature-flagged);
+- `src/http/ipc_http_gateway.ts` (domain handlers).
 
-Blaze, on the other hand, has a relatively simple agentic loop. We will fix TypeScript compiler errors if Auto-fix problems is enabled, but otherwise it's usually a single request to the AI.
+### 2.3 Data/runtime dependencies
 
-The biggest issue with complex agentic workflows is that they can get very expensive very quickly! It's not uncommon to see users report spending a few dollars with a single request because under the hood, that single user requests turns into dozens of LLM requests. To keep Blaze as cost-efficient as possible, we've avoided complex agentic workflows at least until the cost of LLMs is more affordable.
+- PostgreSQL + drizzle (`src/db/index.ts`, `src/db/schema.ts`);
+- локальная файловая система для app workspaces (`~/blaze-apps/*`);
+- системные subprocess для preview run/restart;
+- AI provider APIs через настройки/env.
 
-### Why does Blaze send the entire codebase with each AI request?
+## 3. Layered architecture
 
-Sending the right context to the AI has been rightfully emphasized as important, so much so that the term ["context engineering"](https://www.philschmid.de/context-engineering) is now in vogue.
+### 3.1 UI layer
 
-Sending the entire codebase is the simplest approach and quite effective for small codebases. Another approach is for the user to explicitly select the part of the codebase to use as context. This can be done through the [select component](https://www.blaze.sh/docs/releases/0.8.0) feature or [manual context management](https://www.blaze.sh/docs/guides/large-apps#manual-context-management).
+Ключевые экраны/блоки:
 
-However, both of these approaches require users to manually select the right files which isn't always practical. Blaze's [Smart Context](https://www.blaze.sh/docs/guides/ai-models/pro-modes#smart-context) feature essentially uses smaller models to filter out the most important files in the given chat. That said, we are constantly experimenting with new approaches to context selection as it's quite a difficult problem.
+- `BlazeSidebar` (тенант, список проектов, базовые действия);
+- `BlazeChatArea` (чат, history, approve/reject, stream UX);
+- `BlazePreviewPanel` (run/stop/restart preview, route/device controls, autofix triggers).
 
-One approach that we don't use is a more agentic-style like what Claude Code and Cursor does where it iteratively searches and navigates through a codebase using tool calls. The main reason we don't do this is due to cost (see the above question: [Why isn't Blaze more agentic](#why-isnt-blaze-more-agentic)).
+### 3.2 Client transport layer
+
+- `src/ipc/backend_client.ts`:
+  - маппит channel names на scoped HTTP endpoints (`/api/v1/orgs/:orgId/workspaces/:workspaceId/...`);
+  - добавляет auth/dev headers;
+  - обрабатывает retriable сетевые ошибки и auth-session-expired.
+- `src/ipc/ipc_client.ts`:
+  - предоставляет типизированный API для UI;
+  - содержит логику SSE streaming, cancel, normalize response payloads.
+
+### 3.3 HTTP contract layer
+
+- `src/http/api_v1_middleware.ts`:
+
+  - strict routing + payload validation;
+  - reject unsupported top-level keys;
+  - resolve tenant/auth context и прокидывание в gateway.
+
+- `src/http/chat_stream_payload_validation.ts`:
+  - отдельная строгая валидация stream payload (prompt, redo, attachments, selectedComponents).
+
+### 3.4 Domain/service layer
+
+- `src/http/ipc_http_gateway.ts`:
+
+  - основной orchestration слой по каналам (apps, chats, proposals, preview, settings, auth);
+  - работа с БД, git, файловой системой, quota/audit.
+
+- `src/http/scoped_repositories.ts`:
+
+  - tenant-safe query helpers.
+
+- `src/http/request_context.ts`:
+  - JWT/dev-bypass identity resolution;
+  - upsert user + org/workspace membership resolution;
+  - RBAC checks for mutations.
+
+### 3.5 AI orchestration and apply layer
+
+- `src/ipc/handlers/chat_stream_handlers.ts`:
+
+  - формирует контекст (codebase + history + selected components);
+  - запускает `streamText`;
+  - стримит chunk events в SSE/WS sinks;
+  - финализирует сообщение и решает auto-apply/manual flow.
+
+- `src/ipc/processors/response_processor.ts`:
+  - парсит `<blaze-*>` action tags;
+  - применяет write/rename/delete/search-replace/dependency changes;
+  - коммитит изменения в git;
+  - сохраняет статус применения.
+
+## 4. Ключевые потоки
+
+### 4.1 Standard REST request
+
+1. UI вызывает `IpcClient`.
+2. `BackendClient` преобразует channel в HTTP route.
+3. `api_v1_middleware` валидирует payload и route params.
+4. `resolveRequestContext` определяет tenant+identity.
+5. `invokeIpcChannelOverHttp` выполняет handler в `ipc_http_gateway`.
+6. Ответ возвращается в envelope `{ data: ... }` или `204`.
+
+### 4.2 Chat stream (SSE/WS)
+
+1. UI вызывает `IpcClient.streamMessage(...)`.
+2. SSE POST на scoped `/chats/:chatId/stream` (или WS start message).
+3. Middleware валидирует payload + tenant scope.
+4. `handleChatStreamRequest`:
+   - добавляет user message;
+   - создает assistant placeholder;
+   - стримит `chat:response:chunk`.
+5. На финале:
+   - сохраняется итоговый assistant response;
+   - при auto-apply вызывается `processFullResponseActions`;
+   - отправляется `chat:response:end`.
+
+### 4.3 Proposal lifecycle
+
+- Read proposal: derive из последнего assistant message.
+- Approve:
+  - validate message ownership/scope;
+  - apply actions через `response_processor`;
+  - mark approval state.
+- Reject:
+  - mark `approvalState = rejected`.
+
+### 4.4 Preview lifecycle
+
+- `run-app`:
+
+  - резолвит app path и команды;
+  - поднимает subprocess dev server;
+  - запускает proxy worker;
+  - возвращает `previewUrl` + `originalUrl`.
+
+- `stop-app`:
+
+  - завершает процесс приложения и proxy.
+
+- `restart-app`:
+  - stop + optional `removeNodeModules` + start.
+
+## 5. Tenant and auth model
+
+### 5.1 Identity sources
+
+- Bearer JWT (`Authorization`).
+- Dev bypass headers (`x-blaze-dev-*`) при `AUTH_DEV_BYPASS_ENABLED=true` и non-production.
+
+### 5.2 Tenant scope
+
+Все core endpoints scoped:
+
+- `/api/v1/orgs/:orgId/workspaces/:workspaceId/...`
+
+Fallback defaults в клиенте:
+
+- `orgId = me`, `workspaceId = me` (если не задано явно).
+
+### 5.3 RBAC
+
+Mutation operations требуют роли выше `viewer` (см. `requireRoleForMutation`).
+
+## 6. Persistence model (high-level)
+
+Ключевые сущности:
+
+- `users`, `organizations`, `workspaces`;
+- memberships (`organization_memberships`, `workspace_memberships`);
+- `apps`, `chats`, `messages`, `versions`;
+- `language_model_providers`, `language_models`;
+- `audit_events`, `usage_events`, quotas.
+
+Принцип:
+
+- tenant columns (`organizationId`, `workspaceId`, `createdByUserId`) проходят через scoped flow и проверяются в обработчиках.
+
+## 7. Configuration model
+
+### 7.1 Environment loading
+
+`getEnvVar` объединяет:
+
+1. shell env,
+2. `.env`,
+3. `.env.local`,
+4. `process.env`.
+
+### 7.2 Critical runtime flags
+
+- `DATABASE_URL` (fallback `POSTGRES_URL`)
+- `MULTITENANT_MODE` (`shadow` / `enforce`)
+- `WS_STREAMING_ENABLED`
+- `AUTH_DEV_BYPASS_ENABLED`
+- `AUTH_OAUTH2_*`
+
+## 8. Observability and controls
+
+- Audit trail: `writeAuditEvent`.
+- Usage/quota: `enforceAndRecordUsage`.
+- Stream/transport errors нормализуются в HTTP/WS events.
+- Frontend telemetry через PostHog hooks (`src/renderer.tsx`).
+
+## 9. Active vs legacy code
+
+В репозитории еще есть compatibility-артефакты (например local-agent/MCP модули), но активный v1 runtime path построен вокруг HTTP-only контрактов и core workspace flow.
+
+Если добавляется новая фича:
+
+- сначала проектировать ее как HTTP-scoped API;
+- затем подключать через `BackendClient`/`IpcClient`;
+- только после этого рассматривать compatibility hooks.
+
+## 10. Testing strategy (architecture-level)
+
+- Unit/integration: Vitest для transport/contracts/handlers/utils.
+- E2E: Playwright сценарии core web flow + strict payload rejection checks.
+- Для контрактных изменений обязательно обновлять:
+  - `backend_client` mapping tests,
+  - `api_v1_middleware` payload tests,
+  - gateway handler tests.
+
+## 11. Related docs
+
+- Migration scope: `docs/client_server_only_plan.md`

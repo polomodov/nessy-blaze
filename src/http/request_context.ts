@@ -7,8 +7,6 @@ import {
   chats,
   language_model_providers,
   language_models,
-  mcpServers,
-  mcpToolConsents,
   membershipRoleEnum,
   messages,
   organizationMemberships,
@@ -608,27 +606,6 @@ async function maybeBackfillLegacyTenantData(ctx: {
           isNull(language_models.createdByUserId),
         ),
       );
-    await tx
-      .update(mcpServers)
-      .set(tenantPatch)
-      .where(
-        or(
-          isNull(mcpServers.organizationId),
-          isNull(mcpServers.workspaceId),
-          isNull(mcpServers.createdByUserId),
-        ),
-      );
-    await tx
-      .update(mcpToolConsents)
-      .set(tenantPatch)
-      .where(
-        or(
-          isNull(mcpToolConsents.organizationId),
-          isNull(mcpToolConsents.workspaceId),
-          isNull(mcpToolConsents.createdByUserId),
-        ),
-      );
-
     await tx.insert(tenantMigrationMarkers).values({
       key: LEGACY_BACKFILL_MARKER,
     });

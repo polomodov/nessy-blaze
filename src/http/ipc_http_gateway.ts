@@ -14,7 +14,6 @@ import {
   messages,
   organizationMemberships,
   organizations,
-  workspaceModelSettings,
   workspaceMemberships,
   workspaces,
 } from "/src/db/schema.ts";
@@ -1041,53 +1040,6 @@ async function startPreviewAppForHttp(
     }
     throw error;
   }
-}
-
-function hasConfiguredSecretValue(value: unknown): boolean {
-  if (!value) {
-    return false;
-  }
-
-  if (typeof value === "string") {
-    return value.trim().length > 0;
-  }
-
-  if (
-    typeof value === "object" &&
-    "value" in (value as Record<string, unknown>)
-  ) {
-    const nestedValue = (value as Record<string, unknown>).value;
-    return typeof nestedValue === "string" && nestedValue.trim().length > 0;
-  }
-
-  return true;
-}
-
-function maskProviderSettings(
-  input: unknown,
-): Record<string, { configured: boolean; keys: string[] }> {
-  if (!input || typeof input !== "object") {
-    return {};
-  }
-
-  const output: Record<string, { configured: boolean; keys: string[] }> = {};
-  for (const [provider, rawValue] of Object.entries(
-    input as Record<string, unknown>,
-  )) {
-    if (!rawValue || typeof rawValue !== "object") {
-      output[provider] = { configured: false, keys: [] };
-      continue;
-    }
-
-    const configObj = rawValue as Record<string, unknown>;
-    const keys = Object.keys(configObj);
-    const configured = Object.values(configObj).some((value) =>
-      hasConfiguredSecretValue(value),
-    );
-    output[provider] = { configured, keys };
-  }
-
-  return output;
 }
 
 const handlers: Record<string, InvokeHandler> = {
@@ -2131,54 +2083,6 @@ const handlers: Record<string, InvokeHandler> = {
     });
   },
 
-  async "get-current-branch"(args, meta) {
-    const [payload] = args as [{ appId?: number } | undefined];
-    const appId = payload?.appId;
-    if (typeof appId !== "number") {
-      throw new Error("Invalid app ID");
-    }
-
-    const scopedContext = getRequestContext(meta);
-    let appPath: string;
-    if (scopedContext) {
-      const app = await getAppByIdForScope(scopedContext, appId);
-      appPath = getBlazeAppPath(app.path);
-    } else {
-      if (isMultitenantEnforced()) {
-        throw new HttpError(
-          400,
-          "TENANT_SCOPE_REQUIRED",
-          "get-current-branch requires tenant scope in enforce mode",
-        );
-      }
-
-      const app = await db.query.apps.findFirst({
-        where: eq(apps.id, appId),
-        columns: {
-          path: true,
-        },
-      });
-      if (!app?.path) {
-        throw new Error("App not found");
-      }
-      appPath = getBlazeAppPath(app.path);
-    }
-
-    if (!fs.existsSync(path.join(appPath, ".git"))) {
-      throw new Error("Not a git repository");
-    }
-
-    const branch = await git.currentBranch({
-      fs,
-      dir: appPath,
-      fullname: false,
-    });
-
-    return {
-      branch: branch ?? "<no-branch>",
-    };
-  },
-
   async "revert-version"(args, meta) {
     const [payload] = args as [
       | {
@@ -2604,98 +2508,6 @@ const handlers: Record<string, InvokeHandler> = {
     return;
   },
 
-  async "get-workspace-model-settings"(_args, meta) {
-    const context = requireScopedContext(meta);
-    const [row] = await db
-      .select({
-        selectedModelJson: workspaceModelSettings.selectedModelJson,
-        providerSettingsJson: workspaceModelSettings.providerSettingsJson,
-        updatedAt: workspaceModelSettings.updatedAt,
-      })
-      .from(workspaceModelSettings)
-      .where(
-        and(
-          eq(workspaceModelSettings.organizationId, context.orgId),
-          eq(workspaceModelSettings.workspaceId, context.workspaceId),
-        ),
-      )
-      .limit(1);
-
-    return {
-      selectedModel: row?.selectedModelJson ?? null,
-      providerSettings: maskProviderSettings(row?.providerSettingsJson ?? null),
-      updatedAt: toIsoDate(row?.updatedAt),
-    };
-  },
-
-  async "set-workspace-model-settings"(args, meta) {
-    const context = requireScopedContext(meta);
-    requireRoleForMutation(context);
-    const [payload] = args as [
-      | {
-          selectedModel?: Record<string, unknown>;
-          providerSettings?: Record<string, unknown>;
-        }
-      | undefined,
-    ];
-
-    const [row] = await db
-      .insert(workspaceModelSettings)
-      .values({
-        organizationId: context.orgId,
-        workspaceId: context.workspaceId,
-        selectedModelJson: payload?.selectedModel ?? null,
-        providerSettingsJson: payload?.providerSettings ?? null,
-        updatedByUserId: context.userId,
-      })
-      .onConflictDoUpdate({
-        target: workspaceModelSettings.workspaceId,
-        set: {
-          selectedModelJson: payload?.selectedModel ?? null,
-          providerSettingsJson: payload?.providerSettings ?? null,
-          updatedByUserId: context.userId,
-          updatedAt: new Date(),
-        },
-      })
-      .returning({
-        selectedModelJson: workspaceModelSettings.selectedModelJson,
-        providerSettingsJson: workspaceModelSettings.providerSettingsJson,
-        updatedAt: workspaceModelSettings.updatedAt,
-      });
-
-    await writeAuditEvent({
-      context,
-      action: "workspace_model_settings_update",
-      resourceType: "workspace_model_settings",
-      metadata: {
-        selectedModelSet: Boolean(payload?.selectedModel),
-        providerSettingsKeys: Object.keys(payload?.providerSettings ?? {}),
-      },
-    });
-
-    return {
-      selectedModel: row.selectedModelJson ?? null,
-      providerSettings: maskProviderSettings(row.providerSettingsJson ?? null),
-      updatedAt: toIsoDate(row.updatedAt),
-    };
-  },
-
-  async "get-workspace-env-providers"(_args, meta) {
-    const context = requireScopedContext(meta);
-    const providers = await listLanguageModelProviders(context);
-    return providers.map((provider) => {
-      const envVarName =
-        "envVarName" in provider ? provider.envVarName : undefined;
-      return {
-        id: provider.id,
-        name: provider.name,
-        envVarName: envVarName ?? null,
-        configured: Boolean(envVarName && getEnvVar(envVarName)),
-        type: provider.type,
-      };
-    });
-  },
-
   async "get-env-vars"(_args, meta) {
     const providers = await listLanguageModelProviders(getRequestContext(meta));
     const envVars: Record<string, string | undefined> = {};
@@ -2707,10 +2519,6 @@ const handlers: Record<string, InvokeHandler> = {
       }
     }
     return envVars;
-  },
-
-  async "get-language-model-providers"(_args, meta) {
-    return listLanguageModelProviders(getRequestContext(meta));
   },
 
   async "run-app"(args, meta) {

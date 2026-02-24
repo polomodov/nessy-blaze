@@ -600,16 +600,6 @@ function resolveApiRoute(
         },
       };
     }
-    case "get-current-branch": {
-      const params = getFirstArg<{ appId?: number }>(args);
-      if (!params || typeof params.appId !== "number") {
-        return null;
-      }
-      return {
-        method: "GET",
-        path: `${scopedBasePath}/apps/${params.appId}/branch`,
-      };
-    }
     case "revert-version": {
       const params = getFirstArg<{
         appId?: number;
@@ -759,31 +749,10 @@ function resolveApiRoute(
         },
       };
     }
-    case "get-workspace-model-settings":
-      return {
-        method: "GET",
-        path: `${scopedBasePath}/settings/models`,
-      };
-    case "set-workspace-model-settings":
-      return {
-        method: "PATCH",
-        path: `${scopedBasePath}/settings/models`,
-        body: getFirstArg(args),
-      };
-    case "get-workspace-env-providers":
-      return {
-        method: "GET",
-        path: `${scopedBasePath}/env/providers`,
-      };
     case "get-env-vars":
       return {
         method: "GET",
         path: "/api/v1/env-vars",
-      };
-    case "get-language-model-providers":
-      return {
-        method: "GET",
-        path: "/api/v1/language-model/providers",
       };
     case "get-app-version":
       return {

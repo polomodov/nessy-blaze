@@ -141,38 +141,6 @@ describe("BlazePreviewPanel", () => {
     expect(iframe.getAttribute("src")).toBe("about:blank");
   });
 
-  it("switches to placeholder content for non-preview tabs", async () => {
-    runAppMock.mockImplementation(
-      async (
-        appId: number,
-        onOutput: (payload: {
-          type: "info";
-          message: string;
-          appId: number;
-          timestamp: number;
-        }) => void,
-      ) => {
-        onOutput({
-          type: "info",
-          message:
-            "[blaze-proxy-server]started=[about:blank] original=[http://127.0.0.1:5173]",
-          appId,
-          timestamp: Date.now(),
-        });
-      },
-    );
-
-    render(<BlazePreviewPanel activeAppId={42} />);
-
-    await screen.findByTitle("Предпросмотр сгенерированного приложения");
-    fireEvent.click(screen.getByTestId("preview-tab-cloud"));
-
-    expect(screen.getByTestId("preview-tab-placeholder")).toBeTruthy();
-    expect(
-      screen.queryByTitle("Предпросмотр сгенерированного приложения"),
-    ).toBeNull();
-  });
-
   it("refreshes iframe source when refresh button is clicked", async () => {
     runAppMock.mockImplementation(
       async (

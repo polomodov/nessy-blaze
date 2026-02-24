@@ -259,7 +259,7 @@ describe("backend_client transport", () => {
     );
   });
 
-  it("routes versions and branch channels to dedicated HTTP endpoints", async () => {
+  it("routes version channels to dedicated HTTP endpoints", async () => {
     window.__BLAZE_REMOTE_CONFIG__ = {
       backendClient: {
         baseUrl: "https://api.example.com",
@@ -288,14 +288,6 @@ describe("backend_client transport", () => {
             "content-type": "application/json",
           },
         }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ data: { branch: "main" } }), {
-          status: 200,
-          headers: {
-            "content-type": "application/json",
-          },
-        }),
       );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -303,7 +295,6 @@ describe("backend_client transport", () => {
 
     await client.invoke("list-versions", { appId: 7 });
     await client.invoke("checkout-version", { appId: 7, versionId: "main" });
-    const branch = await client.invoke("get-current-branch", { appId: 7 });
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
@@ -318,12 +309,6 @@ describe("backend_client transport", () => {
         body: JSON.stringify({ versionId: "main" }),
       }),
     );
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      3,
-      "https://api.example.com/api/v1/orgs/me/workspaces/me/apps/7/branch",
-      expect.objectContaining({ method: "GET" }),
-    );
-    expect(branch).toEqual({ branch: "main" });
   });
 
   it("routes preview lifecycle channels and keeps restart payload strict", async () => {
