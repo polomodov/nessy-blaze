@@ -144,4 +144,5 @@ npm run e2e
 - Архитектура: `docs/architecture.md`
 - Core взаимодействия с Agent: `docs/agent_editing_core.md`
 - MVP roadmap: `docs/mvp_roadmap.md`
+- Sandboxing roadmap: `docs/sandboxing_roadmap.md`
 - Workflow переводов: `docs/i18n_translation_workflow.md`
