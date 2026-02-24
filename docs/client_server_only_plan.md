@@ -105,6 +105,7 @@ This document locks the runtime scope for the HTTP-only migration.
 - Local-agent compatibility flow no longer executes legacy integration deployment hook path; the no-op deploy branch is removed from active processing.
 - Unused MCP consent i18n labels are removed from active UI localization bundles.
 - Active chat UI message role mapping uses `assistant` terminology in v1 (legacy `agent` role label removed from renderer message model and typing/status copy).
+- Active chat UI style tokens are normalized to `assistant` naming (`assistant-bubble`), replacing residual legacy `agent` naming in core chat surfaces.
 - Core web E2E suite now includes strict payload rejection checks for v1 chat/proposal/preview contracts (unsupported top-level keys and invalid attachment object shapes).
 - Core web E2E suite now includes strict payload rejection checks for v1 app/versions/chat-update contracts (unsupported top-level keys).
 - Core web E2E suite now includes strict payload rejection checks for tenant org/workspace contract endpoints.

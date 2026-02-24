@@ -131,7 +131,7 @@ body[data-scroll-locked] .app-region-drag {
   --surface: hsl(0 0% 100%);
   --surface-hover: hsl(0 0% 96%);
   --yellow-glow: hsl(48 100% 65%);
-  --agent-bubble: hsl(0 0% 95%);
+  --assistant-bubble: hsl(0 0% 95%);
   --user-bubble: hsl(48 100% 59%);
 }
 
@@ -180,7 +180,7 @@ body[data-scroll-locked] .app-region-drag {
   --surface: hsl(0 0% 12%);
   --surface-hover: hsl(0 0% 16%);
   --yellow-glow: hsl(48 100% 62%);
-  --agent-bubble: hsl(0 0% 14%);
+  --assistant-bubble: hsl(0 0% 14%);
   --user-bubble: hsl(48 100% 50%);
 }
 
@@ -228,7 +228,7 @@ body[data-scroll-locked] .app-region-drag {
   --color-surface: var(--surface);
   --color-surface-hover: var(--surface-hover);
   --color-yellow-glow: var(--yellow-glow);
-  --color-agent-bubble: var(--agent-bubble);
+  --color-assistant-bubble: var(--assistant-bubble);
   --color-user-bubble: var(--user-bubble);
 }
 

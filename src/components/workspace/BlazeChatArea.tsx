@@ -1255,7 +1255,7 @@ export function BlazeChatArea({
                               ? "bg-user-bubble text-primary-foreground"
                               : message.isAssistantActionOnly
                                 ? "border border-dashed border-primary/40 bg-primary/5 text-muted-foreground"
-                                : "bg-agent-bubble text-foreground"
+                                : "bg-assistant-bubble text-foreground"
                           }`}
                         >
                           {message.content &&
@@ -1357,7 +1357,7 @@ export function BlazeChatArea({
                     animate={{ opacity: 1 }}
                     className="mb-4 flex justify-start"
                   >
-                    <div className="rounded-2xl bg-agent-bubble px-4 py-3">
+                    <div className="rounded-2xl bg-assistant-bubble px-4 py-3">
                       <div className="flex items-center gap-1.5">
                         <span className="h-2 w-2 animate-pulse-dot rounded-full bg-muted-foreground" />
                         <span className="h-2 w-2 animate-pulse-dot rounded-full bg-muted-foreground [animation-delay:0.2s]" />
