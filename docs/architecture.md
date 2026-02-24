@@ -247,7 +247,3 @@ Mutation operations требуют роли выше `viewer` (см. `requireRol
   - `backend_client` mapping tests,
   - `api_v1_middleware` payload tests,
   - gateway handler tests.
-
-## 11. Related docs
-
-- Migration scope: `docs/client_server_only_plan.md`

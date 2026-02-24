@@ -142,5 +142,4 @@ npm run e2e
 ## Документация
 
 - Архитектура: `docs/architecture.md`
-- План миграции client-server only: `docs/client_server_only_plan.md`
 - Workflow переводов: `docs/i18n_translation_workflow.md`
