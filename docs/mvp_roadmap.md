@@ -33,6 +33,7 @@
 - [ ] Изменения из чата применяются и фиксируются в Git-коммитах.
 - [ ] Есть стабильный push в наш remote-репозиторий.
 - [ ] Есть deploy одной командой/действием в нашей инфре.
+- [ ] Есть MVP-интеграция MCP-инструментов с consent и tenant scope.
 - [ ] Есть минимум 5 демонстрационных кейсов редактирования (см. раздел 8).
 - [ ] Развернут production-инстанс Blaze для внутреннего использования.
 
@@ -125,12 +126,38 @@ Deliverables:
 - [ ] Smoke мониторинг критичных цепочек (chat/apply/git/deploy).
 - [ ] Demo pack из 5 кейсов редактирования (раздел 8).
 
+## Этап P6. MVP интеграция MCP-инструментов
+
+Цель: безопасно подключить MCP tools к активному client-server chat runtime.
+
+Deliverables:
+
+- [ ] MCP server lifecycle (create/list/update/delete/enable) в tenant scope.
+- [ ] Consent flow для MCP tools (`ask once / always / deny`) с сохранением в БД.
+- [ ] Интеграция read-only MCP tools в `chat_stream` за feature flag.
+- [ ] Базовые guardrails: timeout, лимит вызовов, audit trail.
+- [ ] Минимум 2 e2e кейса: consent approve и consent deny.
+
+Технические точки:
+
+- `src/http/ipc_http_gateway.ts`
+- `src/ipc/handlers/chat_stream_handlers.ts`
+- `src/ipc/utils/mcp_manager.ts`
+- `src/ipc/utils/mcp_consent.ts`
+- `src/http/chat_stream_middleware.ts`
+- `src/http/chat_ws_server.ts`
+
+Подробнее:
+
+- `docs/mcp_mvp_roadmap.md`
+
 ## 5. Приоритеты
 
 - `P0` и `P1` — блокирующие для старта MVP demo.
 - `P2` и `P3` — блокирующие для продуктовой ценности (наш git + наш llm proxy).
 - `P4` — блокирующий для end-to-end обещания “создал -> задеплоил”.
 - `P5` — блокирующий для внутреннего запуска и принятия MVP.
+- `P6` — блокирующий для сценариев tool-augmented editing и extensibility MVP.
 
 ## 6. Риски и контроль
 
@@ -146,6 +173,9 @@ Deliverables:
 - Риск: deploy flakes.
   Контроль: идемпотентный deploy job + прозрачные статусы/логи.
 
+- Риск: небезопасные MCP tool вызовы/эскалация доступа.
+  Контроль: consent, tenant scope, transport policy, runtime limits.
+
 ## 7. Метрики MVP
 
 - Time-to-first-preview (create from template -> preview up).
@@ -153,6 +183,7 @@ Deliverables:
 - Git success rate (commit+push success %).
 - Deploy success rate.
 - P95 latency chat stream start / apply completion.
+- MCP tool call success rate / timeout rate.
 
 ## 8. Кейсы редактирования приложения (демо-набор)
 
