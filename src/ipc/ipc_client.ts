@@ -16,6 +16,7 @@ import type {
   CreateWorkspaceParams,
   FileAttachment,
   Message,
+  PatchAppParams,
   RevertVersionParams,
   RevertVersionResponse,
   TenantOrganization,
@@ -167,6 +168,14 @@ function normalizeChat(rawChat: Chat): Chat {
   };
 }
 
+function normalizeApp(rawApp: App): App {
+  return {
+    ...rawApp,
+    createdAt: normalizeDate(rawApp.createdAt),
+    updatedAt: normalizeDate(rawApp.updatedAt),
+  };
+}
+
 async function encodeAttachmentsForStream(
   attachments: FileAttachment[] | undefined,
 ): Promise<EncodedStreamAttachment[]> {
@@ -269,11 +278,7 @@ export class IpcClient {
   public async listApps(): Promise<{ apps: App[] }> {
     const response = await this.backend.invoke<{ apps: App[] }>("list-apps");
     return {
-      apps: (response.apps ?? []).map((app) => ({
-        ...app,
-        createdAt: normalizeDate(app.createdAt),
-        updatedAt: normalizeDate(app.updatedAt),
-      })),
+      apps: (response.apps ?? []).map((app) => normalizeApp(app)),
     };
   }
 
@@ -282,15 +287,18 @@ export class IpcClient {
     if (!app) {
       return null;
     }
-    return {
-      ...app,
-      createdAt: normalizeDate(app.createdAt),
-      updatedAt: normalizeDate(app.updatedAt),
-    };
+    return normalizeApp(app);
   }
 
   public async createApp(params: CreateAppParams): Promise<CreateAppResult> {
     return this.backend.invoke("create-app", params);
+  }
+
+  public async patchApp(appId: number, params: PatchAppParams): Promise<App> {
+    const updatedApp = await this.backend.invoke<App>("patch-app", appId, {
+      ...params,
+    });
+    return normalizeApp(updatedApp);
   }
 
   public async getChats(appId?: number): Promise<ChatSummary[]> {

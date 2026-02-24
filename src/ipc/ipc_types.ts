@@ -71,6 +71,11 @@ export interface CreateAppParams {
   name: string;
 }
 
+export interface PatchAppParams {
+  name?: string;
+  isFavorite?: boolean;
+}
+
 export interface CreateAppResult {
   app: {
     id: number;

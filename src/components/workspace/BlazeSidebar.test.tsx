@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,8 +8,10 @@ import {
 } from "@/ipc/backend_client";
 import { BlazeSidebar } from "./BlazeSidebar";
 
-const { listAppsMock } = vi.hoisted(() => ({
+const { listAppsMock, createAppMock, patchAppMock } = vi.hoisted(() => ({
   listAppsMock: vi.fn(),
+  createAppMock: vi.fn(),
+  patchAppMock: vi.fn(),
 }));
 
 const { settingsRef, updateSettingsMock } = vi.hoisted(() => ({
@@ -39,6 +41,8 @@ vi.mock("@/ipc/ipc_client", () => ({
   IpcClient: {
     getInstance: vi.fn(() => ({
       listApps: listAppsMock,
+      createApp: createAppMock,
+      patchApp: patchAppMock,
       listOrganizations: vi.fn().mockResolvedValue([]),
       listWorkspaces: vi.fn().mockResolvedValue([]),
     })),
@@ -118,6 +122,13 @@ describe("BlazeSidebar", () => {
     vi.clearAllMocks();
     settingsRef.current = { autoApproveChanges: true };
     updateSettingsMock.mockResolvedValue({ autoApproveChanges: true });
+    createAppMock.mockResolvedValue({
+      app: {
+        id: 303,
+      },
+      chatId: 404,
+    });
+    patchAppMock.mockResolvedValue({});
     listAppsMock.mockResolvedValue({
       apps: [
         {
@@ -142,6 +153,12 @@ describe("BlazeSidebar", () => {
     expect(onSelectProject).toHaveBeenCalledWith(101);
   });
 
+  it("shows project time in a compact secondary line", async () => {
+    renderSidebar();
+    const timeMeta = await screen.findByTestId("project-time-101");
+    expect((timeMeta as HTMLElement).className).toContain("text-[10px]");
+  });
+
   it("calls onNewProject when new project button is clicked", () => {
     const onNewProject = vi.fn();
 
@@ -150,6 +167,41 @@ describe("BlazeSidebar", () => {
     fireEvent.click(screen.getByRole("button", { name: "Новый проект" }));
 
     expect(onNewProject).toHaveBeenCalledTimes(1);
+  });
+
+  it("creates a project with a custom name", async () => {
+    const onSelectProject = vi.fn();
+    renderSidebar({ onSelectProject });
+
+    fireEvent.click(screen.getByRole("button", { name: "Новый проект" }));
+
+    fireEvent.change(screen.getByTestId("create-project-input"), {
+      target: { value: "My app name" },
+    });
+    fireEvent.click(screen.getByTestId("create-project-submit"));
+
+    await waitFor(() => {
+      expect(createAppMock).toHaveBeenCalledWith({ name: "My app name" });
+    });
+    expect(onSelectProject).toHaveBeenCalledWith(303);
+  });
+
+  it("renames an existing project", async () => {
+    renderSidebar();
+
+    await screen.findByText("Landing");
+    fireEvent.click(screen.getByTestId("rename-project-button-101"));
+
+    fireEvent.change(screen.getByTestId("rename-project-input-101"), {
+      target: { value: "Landing updated" },
+    });
+    fireEvent.click(screen.getByTestId("rename-project-save-101"));
+
+    await waitFor(() => {
+      expect(patchAppMock).toHaveBeenCalledWith(101, {
+        name: "Landing updated",
+      });
+    });
   });
 
   it("calls onToggleTheme when theme button is clicked", () => {

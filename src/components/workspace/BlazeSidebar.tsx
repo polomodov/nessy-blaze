@@ -3,14 +3,17 @@ import { motion } from "framer-motion";
 import {
   AppWindow,
   CalendarClock,
+  Check,
   Flame,
   Folder,
+  Pencil,
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
   Search,
   Sun,
+  X,
   LogOut,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -107,6 +110,16 @@ function getDateLabel(
   });
 }
 
+function resolveProjectActionError(
+  error: unknown,
+  fallbackMessage: string,
+): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  return fallbackMessage;
+}
+
 export function BlazeSidebar({
   activeProjectId,
   collapsed,
@@ -122,6 +135,16 @@ export function BlazeSidebar({
   const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState(() => getConfiguredTenantScope());
+  const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
+  const [renamingProjectId, setRenamingProjectId] = useState<number | null>(
+    null,
+  );
+  const [renamingProjectName, setRenamingProjectName] = useState("");
+  const [projectActionError, setProjectActionError] = useState<string | null>(
+    null,
+  );
+  const [isProjectActionPending, setIsProjectActionPending] = useState(false);
   const dateFnsLocale = useMemo(() => getDateFnsLocale(language), [language]);
   const intlLocaleCode = useMemo(() => getIntlLocaleCode(language), [language]);
 
@@ -167,6 +190,112 @@ export function BlazeSidebar({
   const handleScopeChange = async () => {
     const nextScope = getConfiguredTenantScope();
     setScope(nextScope);
+  };
+
+  const refreshProjects = async () => {
+    await queryClient.invalidateQueries({
+      queryKey: [PROJECTS_QUERY_KEY, scope.orgId, scope.workspaceId],
+    });
+  };
+
+  const openCreateProjectForm = () => {
+    onNewProject();
+    setIsCreateProjectOpen(true);
+    setNewProjectName("");
+    setRenamingProjectId(null);
+    setRenamingProjectName("");
+    setProjectActionError(null);
+  };
+
+  const closeCreateProjectForm = () => {
+    setIsCreateProjectOpen(false);
+    setNewProjectName("");
+    setProjectActionError(null);
+  };
+
+  const handleCreateProject = async () => {
+    if (isProjectActionPending) {
+      return;
+    }
+
+    const trimmedProjectName = newProjectName.trim();
+    if (!trimmedProjectName) {
+      setProjectActionError(t("sidebar.error.projectNameRequired"));
+      return;
+    }
+
+    setIsProjectActionPending(true);
+    setProjectActionError(null);
+
+    try {
+      const createResult = await IpcClient.getInstance().createApp({
+        name: trimmedProjectName,
+      });
+      closeCreateProjectForm();
+      await refreshProjects();
+      onSelectProject(createResult.app.id);
+    } catch (error) {
+      setProjectActionError(
+        resolveProjectActionError(
+          error,
+          t("sidebar.error.createProjectFailed"),
+        ),
+      );
+    } finally {
+      setIsProjectActionPending(false);
+    }
+  };
+
+  const startRenameProject = (project: WorkspaceProject) => {
+    setIsCreateProjectOpen(false);
+    setNewProjectName("");
+    setProjectActionError(null);
+    setRenamingProjectId(project.id);
+    setRenamingProjectName(project.title);
+  };
+
+  const cancelRenameProject = () => {
+    setRenamingProjectId(null);
+    setRenamingProjectName("");
+    setProjectActionError(null);
+  };
+
+  const handleRenameProject = async (projectId: number) => {
+    if (isProjectActionPending) {
+      return;
+    }
+
+    const trimmedProjectName = renamingProjectName.trim();
+    if (!trimmedProjectName) {
+      setProjectActionError(t("sidebar.error.projectNameRequired"));
+      return;
+    }
+
+    const project = projects.find((candidate) => candidate.id === projectId);
+    if (project && project.title.trim() === trimmedProjectName) {
+      cancelRenameProject();
+      return;
+    }
+
+    setIsProjectActionPending(true);
+    setProjectActionError(null);
+
+    try {
+      await IpcClient.getInstance().patchApp(projectId, {
+        name: trimmedProjectName,
+      });
+      await refreshProjects();
+      cancelRenameProject();
+    } catch (error) {
+      setProjectActionError(
+        resolveProjectActionError(
+          error,
+          t("sidebar.error.renameProjectFailed"),
+        ),
+      );
+    } finally {
+      setIsProjectActionPending(false);
+    }
   };
 
   const handleSignOut = () => {
@@ -227,7 +356,7 @@ export function BlazeSidebar({
           <button
             onClick={() => {
               onToggleCollapse();
-              setTimeout(onNewProject, 250);
+              setTimeout(openCreateProjectForm, 250);
             }}
             className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-all hover:brightness-105"
             title={t("sidebar.title.newProject")}
@@ -306,12 +435,66 @@ export function BlazeSidebar({
         <>
           <div className="px-3 pt-3">
             <button
-              onClick={onNewProject}
+              onClick={openCreateProjectForm}
+              disabled={isProjectActionPending}
               className="flex w-full items-center gap-2 rounded-lg bg-primary px-3 py-2.5 text-sm font-medium text-primary-foreground transition-all hover:brightness-105 active:scale-[0.98]"
             >
               <Plus size={16} />
               {t("sidebar.button.newProject")}
             </button>
+            {isCreateProjectOpen && (
+              <form
+                className="mt-2 space-y-2 rounded-lg border border-border/80 p-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handleCreateProject();
+                }}
+              >
+                <input
+                  data-testid="create-project-input"
+                  value={newProjectName}
+                  onChange={(event) => {
+                    setNewProjectName(event.target.value);
+                    if (projectActionError) {
+                      setProjectActionError(null);
+                    }
+                  }}
+                  autoFocus
+                  placeholder={t("sidebar.input.newProjectName")}
+                  className="w-full rounded-md border border-border/80 bg-background px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground"
+                  disabled={isProjectActionPending}
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    type="submit"
+                    data-testid="create-project-submit"
+                    disabled={isProjectActionPending}
+                    className="flex-1 rounded-md bg-primary px-2 py-1.5 text-xs font-medium text-primary-foreground transition-all hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {isProjectActionPending
+                      ? t("sidebar.button.creatingProject")
+                      : t("sidebar.button.createProject")}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="create-project-cancel"
+                    disabled={isProjectActionPending}
+                    onClick={closeCreateProjectForm}
+                    className="rounded-md border border-border/80 px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {t("sidebar.button.cancel")}
+                  </button>
+                </div>
+              </form>
+            )}
+            {projectActionError && (
+              <div
+                className="mt-2 rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1.5 text-xs text-destructive"
+                role="alert"
+              >
+                {projectActionError}
+              </div>
+            )}
           </div>
 
           <div className="px-3 pt-3">
@@ -355,6 +538,7 @@ export function BlazeSidebar({
                 const shouldShowDate = dateLabel !== previousDate;
                 previousDate = dateLabel;
                 const isActive = project.id === activeProjectId;
+                const isRenaming = renamingProjectId === project.id;
 
                 return (
                   <div key={project.id}>
@@ -363,31 +547,98 @@ export function BlazeSidebar({
                         {dateLabel}
                       </p>
                     )}
-                    <button
-                      onClick={() => onSelectProject(project.id)}
-                      className={`group mb-0.5 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors ${
-                        isActive
-                          ? "bg-muted text-foreground"
-                          : "text-foreground hover:bg-surface-hover"
-                      }`}
-                    >
-                      <Folder
-                        size={14}
-                        className="flex-shrink-0 text-muted-foreground"
-                      />
-                      <span className="flex-1 truncate text-sm font-medium">
-                        {project.title}
-                      </span>
-                      <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                        <CalendarClock size={11} />
-                        {project.createdAt
-                          ? formatDistanceToNow(project.createdAt, {
-                              addSuffix: true,
-                              locale: dateFnsLocale,
-                            })
-                          : t("sidebar.projectTimeUnknown")}
-                      </span>
-                    </button>
+                    {isRenaming ? (
+                      <form
+                        className="mb-0.5 flex items-center gap-1 rounded-lg border border-border/80 bg-background px-2 py-1.5"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void handleRenameProject(project.id);
+                        }}
+                      >
+                        <Folder
+                          size={14}
+                          className="flex-shrink-0 text-muted-foreground"
+                        />
+                        <input
+                          data-testid={`rename-project-input-${project.id}`}
+                          value={renamingProjectName}
+                          onChange={(event) => {
+                            setRenamingProjectName(event.target.value);
+                            if (projectActionError) {
+                              setProjectActionError(null);
+                            }
+                          }}
+                          autoFocus
+                          className="min-w-0 flex-1 bg-transparent text-sm text-foreground focus:outline-none"
+                          disabled={isProjectActionPending}
+                        />
+                        <button
+                          type="submit"
+                          data-testid={`rename-project-save-${project.id}`}
+                          disabled={isProjectActionPending}
+                          className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground disabled:cursor-not-allowed disabled:opacity-70"
+                          aria-label={t("sidebar.button.save")}
+                        >
+                          <Check size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          data-testid={`rename-project-cancel-${project.id}`}
+                          disabled={isProjectActionPending}
+                          onClick={cancelRenameProject}
+                          className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground disabled:cursor-not-allowed disabled:opacity-70"
+                          aria-label={t("sidebar.button.cancel")}
+                        >
+                          <X size={13} />
+                        </button>
+                      </form>
+                    ) : (
+                      <div
+                        className={`group mb-0.5 flex items-center gap-1 rounded-lg px-2 py-2 transition-colors ${
+                          isActive
+                            ? "bg-muted text-foreground"
+                            : "text-foreground hover:bg-surface-hover"
+                        }`}
+                      >
+                        <button
+                          onClick={() => onSelectProject(project.id)}
+                          className="flex min-w-0 flex-1 items-start gap-2 text-left"
+                        >
+                          <Folder
+                            size={14}
+                            className="mt-0.5 flex-shrink-0 text-muted-foreground"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-medium leading-tight">
+                              {project.title}
+                            </span>
+                            <span
+                              data-testid={`project-time-${project.id}`}
+                              className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground"
+                            >
+                              <CalendarClock size={10} />
+                              <span className="truncate">
+                                {project.createdAt
+                                  ? formatDistanceToNow(project.createdAt, {
+                                      addSuffix: true,
+                                      locale: dateFnsLocale,
+                                    })
+                                  : t("sidebar.projectTimeUnknown")}
+                              </span>
+                            </span>
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          data-testid={`rename-project-button-${project.id}`}
+                          onClick={() => startRenameProject(project)}
+                          className="rounded-md p-1 text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-foreground group-hover:opacity-100"
+                          aria-label={t("sidebar.button.renameProject")}
+                        >
+                          <Pencil size={12} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })
